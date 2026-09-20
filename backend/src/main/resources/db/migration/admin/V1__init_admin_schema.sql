@@ -130,3 +130,22 @@ CREATE INDEX idx_business_plan     ON admin.business (plan_id);
 CREATE INDEX idx_bmodule_business  ON admin.business_module (business_id);
 CREATE INDEX idx_sale_business     ON admin.superadmin_sale (business_id);
 CREATE INDEX idx_audit_global_time ON admin.audit_log_global (created_at);
+
+-- ---------------------------------------------------------------------
+-- Permisos para el rol de aplicación (pos_app), que NO es superusuario.
+-- El schema admin lo administra el rol dueño (Flyway); la aplicación solo
+-- necesita leer/escribir datos. Se otorgan permisos si el rol existe.
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pos_app') THEN
+        EXECUTE 'GRANT USAGE ON SCHEMA admin TO pos_app';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA admin TO pos_app';
+        EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA admin TO pos_app';
+        EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA admin '
+              || 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO pos_app';
+        EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA admin '
+              || 'GRANT USAGE, SELECT ON SEQUENCES TO pos_app';
+    END IF;
+END
+$$;

@@ -40,25 +40,29 @@ Convenciones:
 
 ## Etapa 1 — Plataforma: Multi-Tenancy
 
-- [ ] 1.1 Implementar `TenantContext` y resolución de tenant.
-  - ThreadLocal/Context para `tenantId`; filtro que lo fija desde subdominio/encabezado/claim JWT.
+- [x] 1.1 Implementar `TenantContext` y resolución de tenant.
+  - `TenantContext` (ThreadLocal), `TenantResolver` (encabezado X-Tenant-Id / subdominio),
+    `TenantFilter` (fija y limpia el contexto por petición). `TenantSchema` valida nombres.
   - _Requisitos: 1.2, 1.6._
 
-- [ ] 1.2 Implementar enrutamiento de conexión por schema.
-  - `AbstractRoutingDataSource` que fija `search_path = tenant_<id>` por petición.
-  - `TenantConnectionProvider` configurable (para migrar a base dedicada después).
+- [x] 1.2 Implementar enrutamiento de conexión por schema.
+  - `TenantAwareDataSource` envuelve el pool y fija `search_path` por conexión.
+    Registrado vía `BeanPostProcessor` (compatible con la autoconfiguración de Boot 4).
+  - Preparado para base dedicada por tenant (configuración de conexión aislada).
   - _Requisitos: 1.1, 1.4._
 
-- [ ] 1.3 Implementar Row-Level Security (RLS).
-  - Políticas RLS y `SET app.current_tenant` por sesión de conexión.
+- [x] 1.3 Implementar Row-Level Security (RLS).
+  - Variable de sesión `app.current_tenant` + políticas RLS con FORCE en las tablas de tenant.
   - _Requisitos: 1.3, 1.5._
 
-- [ ] 1.4 Servicio de aprovisionamiento de tenant.
-  - Crear schema `tenant_<id>`, correr migraciones sobre él, aplicar RLS.
+- [x] 1.4 Servicio de aprovisionamiento de tenant.
+  - `TenantProvisioningService`: crea schema `tenant_<id>` y corre migraciones del tenant
+    (Flyway con placeholder `${tenant_schema}`) aplicando RLS.
   - _Requisitos: 1.1._
 
-- [ ] 1.5 Pruebas de aislamiento multi-tenant.
-  - Verificar que un tenant no puede leer datos de otro (por schema y por RLS).
+- [x] 1.5 Pruebas de aislamiento multi-tenant.
+  - Verificado con PostgreSQL real y rol NO superusuario: cada tenant ve solo sus datos y
+    RLS rechaza filas de otro tenant. `mvn test` → 4/4 en verde.
   - _Requisitos: 1.3, 1.5._
 
 ---
