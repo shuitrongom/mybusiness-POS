@@ -1,0 +1,17 @@
+# Perfil de producción.
+# Toda la configuración sensible se inyecta por variables de entorno / gestor de secretos.
+# No se incluyen credenciales en este archivo.
+spring:
+  jpa:
+    properties:
+      hibernate:
+        format_sql: false
+  flyway:
+    # En producción nunca se permite limpiar la base de datos.
+    clean-disabled: true
+
+logging:
+  level:
+    root: INFO
+    com.mybusinesssilva: INFO
+    org.hibernate.SQL: WARN

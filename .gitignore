@@ -1,0 +1,51 @@
+# ===== Java / Maven =====
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+*.jar
+*.war
+*.log
+hs_err_pid*
+
+# ===== Node / Frontend =====
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+coverage/
+
+# ===== Flutter / Dart =====
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/build/
+mobile/.pub-cache/
+mobile/.pub/
+
+# ===== IDE / Editor =====
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+# Salida de compilación de Eclipse/VS Code Java
+bin/
+.settings/
+.classpath
+.project
+
+# ===== Entorno / Secretos =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+
+# ===== Docker =====
+*.pid
+
+# ===== Sistema =====
+Thumbs.db

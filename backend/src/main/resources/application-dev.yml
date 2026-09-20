@@ -1,0 +1,13 @@
+# Perfil de desarrollo local.
+# Usa la base de datos levantada con infra/docker-compose.yml
+spring:
+  jpa:
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    clean-disabled: false
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG

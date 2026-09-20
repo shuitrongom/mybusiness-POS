@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Propuesta — Sistema Punto de Venta en la Nube</title>
+<style>
+  :root {
+    --primary: #1a2b5c;
+    --accent: #2e6ef2;
+    --accent2: #12b886;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --bg-soft: #f6f8fc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+  h1, h2, h3 { color: var(--primary); margin: 0; }
+  p { margin: 0 0 8px; }
+
+  /* Portada */
+  .cover {
+    height: 1050px;
+    background: linear-gradient(140deg, #1a2b5c 0%, #24408c 55%, #2e6ef2 100%);
+    color: #fff;
+    padding: 90px 70px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::after {
+    content: "";
+    position: absolute;
+    right: -120px; top: -120px;
+    width: 460px; height: 460px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 50%;
+  }
+  .cover::before {
+    content: "";
+    position: absolute;
+    right: 60px; bottom: -160px;
+    width: 360px; height: 360px;
+    background: rgba(46,110,242,0.35);
+    border-radius: 50%;
+  }
+  .badge {
+    display: inline-block;
+    border: 1px solid rgba(255,255,255,0.4);
+    padding: 6px 14px;
+    border-radius: 40px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #cfe0ff;
+  }
+  .cover h1 {
+    color: #fff;
+    font-size: 52px;
+    line-height: 1.1;
+    margin: 24px 0 16px;
+    font-weight: 800;
+    max-width: 620px;
+  }
+  .cover .sub {
+    font-size: 19px;
+    color: #d5e2ff;
+    max-width: 560px;
+    font-weight: 400;
+  }
+  .cover .meta {
+    font-size: 13px;
+    color: #b9caee;
+    z-index: 2;
+  }
+  .cover .meta strong { color: #fff; }
+
+  /* Contenido */
+  .page { padding: 60px 66px; }
+  .section-title {
+    font-size: 24px;
+    border-left: 6px solid var(--accent);
+    padding-left: 14px;
+    margin: 0 0 6px;
+  }
+  .section-sub { color: var(--muted); margin-bottom: 22px; font-size: 13px; }
+
+  .lead {
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 28px;
+  }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    background: #fff;
+    page-break-inside: avoid;
+  }
+  .card h3 {
+    font-size: 14.5px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px; height: 26px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .card p { color: #374151; font-size: 12px; margin: 0; }
+
+  ul.clean { margin: 6px 0 0; padding-left: 18px; }
+  ul.clean li { margin-bottom: 4px; color: #374151; }
+
+  .kv {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 12px;
+  }
+  .kv td { border: 1px solid var(--line); padding: 9px 12px; vertical-align: top; }
+  .kv td:first-child { background: var(--bg-soft); font-weight: 600; width: 32%; color: var(--primary); }
+
+  .pill {
+    display: inline-block;
+    background: #e9f2ff;
+    color: var(--accent);
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin: 2px 4px 2px 0;
+  }
+  .pill.green { background: #e6f7f0; color: var(--accent2); }
+
+  .page-break { page-break-before: always; }
+
+  .footer {
+    margin-top: 30px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+    color: var(--muted);
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .highlight-box {
+    background: linear-gradient(135deg, #eef4ff, #e6f7f0);
+    border: 1px solid #cfe0ff;
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-top: 8px;
+  }
+  .highlight-box h3 { font-size: 15px; margin-bottom: 6px; }
+
+  /* Logo */
+  .logo { display: flex; align-items: center; gap: 14px; margin-bottom: 40px; z-index: 2; position: relative; }
+  .logo-mark {
+    width: 60px; height: 60px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #ffffff, #d7e6ff);
+    color: #1a2b5c;
+    font-weight: 800;
+    font-size: 24px;
+    letter-spacing: -1px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  }
+  .logo-text { display: flex; flex-direction: column; line-height: 1.1; }
+  .logo-name { font-size: 22px; font-weight: 700; color: #ffffff; }
+  .logo-tag { font-size: 11px; letter-spacing: 4px; color: #aec6f5; margin-top: 2px; }
+
+  .footer-logo { display: flex; align-items: center; gap: 8px; }
+  .footer-mark {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: linear-gradient(135deg, #2e6ef2, #1a2b5c);
+    color: #fff; font-weight: 800; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- PORTADA -->
+<div class="cover">
+  <div>
+    <div class="logo">
+      <div class="logo-mark">MS</div>
+      <div class="logo-text">
+        <span class="logo-name">MyBusiness&nbsp;Silva</span>
+        <span class="logo-tag">CLOUD POS</span>
+      </div>
+    </div>
+    <span class="badge">Propuesta de Solución</span>
+    <div style="font-size:15px;letter-spacing:3px;text-transform:uppercase;margin-top:20px;color:#aec6f5;">Punto de Venta en la Nube</div>
+    <h1>MyBusiness Silva</h1>
+    <div class="sub">Plataforma SaaS multi-empresa, multi-giro, con facturación electrónica CFDI 4.0, Business Intelligence avanzado y app móvil premium.</div>
+  </div>
+  <div class="meta">
+    <p><strong>Preparado para:</strong> Cliente</p>
+    <p><strong>Documento:</strong> MyBusiness Silva — Alcance funcional y requisitos</p>
+    <p><strong>Fecha:</strong> Septiembre 2026</p>
+    <p><strong>Versión:</strong> 1.0</p>
+  </div>
+</div>
+
+<!-- RESUMEN EJECUTIVO -->
+<div class="page">
+  <h2 class="section-title">Resumen ejecutivo</h2>
+  <p class="section-sub">Una visión general de la solución propuesta.</p>
+
+  <div class="lead">
+    <p>Proponemos el desarrollo de un <strong>punto de venta 100% en la nube</strong>, diseñado para
+    pequeñas y medianas empresas mexicanas. A diferencia de los sistemas de escritorio tradicionales
+    —que se instalan por máquina, funcionan solo en Windows y cobran cada actualización— nuestra
+    solución es accesible desde cualquier dispositivo, se actualiza automáticamente y permite al dueño
+    monitorear su negocio en tiempo real desde el celular.</p>
+    <p style="margin-bottom:0">El sistema es <strong>multi-empresa</strong> (cada negocio con sus datos totalmente aislados y seguros),
+    <strong>multi-giro</strong> (abarrotes, materias primas, panadería, pollería y cualquier otro giro sin reprogramar),
+    y cumple con la <strong>facturación electrónica CFDI 4.0</strong> del SAT.</p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>☁️ 100% en la nube</h3>
+      <p>Trabaja desde PC, tablet o celular. Sin instalaciones complicadas y con respaldo automático de tu información.</p>
+    </div>
+    <div class="card">
+      <h3>🔒 Seguridad de nivel bancario</h3>
+      <p>Datos de cada empresa completamente aislados, cifrado, doble factor y buenas prácticas OWASP contra hackeos.</p>
+    </div>
+    <div class="card">
+      <h3>📊 Inteligencia de negocio</h3>
+      <p>Dashboards en tiempo real, predicción de demanda, sugerencia de compra y detección de mermas y fraudes.</p>
+    </div>
+    <div class="card">
+      <h3>🧾 CFDI 4.0 y más</h3>
+      <p>Facturación electrónica, recargas, pago de servicios e impresión de tickets en cualquier impresora.</p>
+    </div>
+  </div>
+</div>
+
+<!-- VENTAJA COMPETITIVA -->
+<div class="page page-break">
+  <h2 class="section-title">Por qué supera a los sistemas actuales</h2>
+  <p class="section-sub">Comparativo frente a un POS de escritorio tradicional.</p>
+
+  <table class="kv">
+    <tr><td>Acceso</td><td>Desde cualquier lugar y dispositivo (PC, tablet, móvil), no solo en la máquina donde se instaló.</td></tr>
+    <tr><td>Multi-empresa</td><td>Una sola plataforma administra varios negocios con datos totalmente separados y seguros.</td></tr>
+    <tr><td>Multi-giro</td><td>Se adapta a cualquier giro por configuración, sin cambiar de programa ni reprogramar.</td></tr>
+    <tr><td>Actualizaciones</td><td>Automáticas y sin costo adicional; siempre la última versión.</td></tr>
+    <tr><td>Funciona sin internet</td><td>Modo offline: sigue vendiendo aunque se caiga la conexión y sincroniza al reconectar.</td></tr>
+    <tr><td>App del dueño</td><td>App móvil premium para ver reportes y el estado del negocio en tiempo real.</td></tr>
+    <tr><td>Inteligencia de negocio</td><td>BI avanzado con predicciones e IA, no solo reportes básicos.</td></tr>
+    <tr><td>Facturación</td><td>CFDI 4.0 integrado, factura global y autofacturación para el cliente.</td></tr>
+  </table>
+
+  <div class="highlight-box" style="margin-top:24px">
+    <h3>Preparado para crecer sin reprogramar</h3>
+    <p style="margin:0">La arquitectura permite agregar nuevos giros, sucursales y empresas, e incluso migrar un
+    cliente grande a su propia infraestructura dedicada, todo sin rehacer el sistema. Se construye bien desde el
+    inicio para no romper nada en el futuro.</p>
+  </div>
+</div>
+
+<!-- MODULOS / ALCANCE -->
+<div class="page page-break">
+  <h2 class="section-title">Alcance funcional</h2>
+  <p class="section-sub">Módulos y capacidades incluidos en la solución.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3><span class="num">1</span> Multi-empresa</h3>
+      <p>Cada negocio con sus datos aislados y seguros. Migrable a infraestructura dedicada sin reprogramar.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">2</span> Licenciamiento</h3>
+      <p>Alta de negocios con periodo de prueba o licencia definitiva. Bloqueo automático al vencer y avisos de renovación.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">3</span> Seguridad</h3>
+      <p>Contraseñas cifradas, doble factor, sesiones seguras, control de intentos y auditoría completa.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">4</span> Roles y permisos</h3>
+      <p>Dueño, administrador, supervisor y cajero, con permisos finos por módulo y acción.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">5</span> Motor multi-giro</h3>
+      <p>Abarrotes, materias primas, panadería, pollería y más. El giro es configuración, no programación.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">6</span> Punto de venta</h3>
+      <p>Ventas rápidas, modo offline, código de barras, báscula, promociones, devoluciones y multi-caja/sucursal.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">7</span> Inventario</h3>
+      <p>Tiempo real por sucursal, traspasos, stock mínimo, caducidades, lotes y kardex.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">8</span> Compras y proveedores</h3>
+      <p>Órdenes de compra, recepción, costos y cuentas por pagar.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">9</span> Clientes y CRM</h3>
+      <p>Crédito, cuentas por cobrar, programa de lealtad y monedero electrónico.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">10</span> Facturación CFDI 4.0</h3>
+      <p>Timbrado con PAC, complemento de pagos, cancelación, factura global y autofacturación.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">11</span> Recargas y servicios</h3>
+      <p>Tiempo aire multimarca y pago de servicios (luz, agua, TV, gas) con comisión por operación.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">12</span> Impresión de tickets</h3>
+      <p>Compatible con impresoras de marca y genéricas/chinas. Diseñador visual de tickets y cajón de dinero.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">13</span> Cortes de caja</h3>
+      <p>Apertura y cierre de turno, arqueo, corte Z y control de entradas/salidas de efectivo.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">14</span> Business Intelligence</h3>
+      <p>Dashboards en tiempo real, predicción de demanda, análisis ABC y detección de mermas/fraude.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">15</span> Catálogos precargados</h3>
+      <p>Catálogo SAT y productos comunes ya cargados. La base crece con el uso y beneficia a todos.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">16</span> App móvil del dueño</h3>
+      <p>App premium (iOS y Android) con reportes en tiempo real y notificaciones push.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">17</span> Diseño responsivo</h3>
+      <p>Interfaz moderna nivel enterprise, 100% responsiva, optimizada para PC y adaptable a móvil.</p>
+    </div>
+    <div class="card">
+      <h3><span class="num">18</span> Auditoría</h3>
+      <p>Registro de quién hizo qué y cuándo, con trazabilidad total e inalterable.</p>
+    </div>
+  </div>
+</div>
+
+<!-- CARACTERISTICAS DESTACADAS -->
+<div class="page page-break">
+  <h2 class="section-title">Características destacadas</h2>
+  <p class="section-sub">Los diferenciadores que aportan más valor al negocio.</p>
+
+  <div class="card" style="margin-bottom:12px">
+    <h3>🛒 Venta ágil y sin interrupciones</h3>
+    <ul class="clean">
+      <li>Escaneo por código de barras y venta por peso con báscula electrónica.</li>
+      <li>Modo offline: nunca dejas de vender aunque falle el internet.</li>
+      <li>Promociones automáticas: 2x1, descuentos por volumen y combos.</li>
+      <li>Múltiples formas de pago, incluyendo pagos mixtos.</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-bottom:12px">
+    <h3>🧾 Cumplimiento fiscal mexicano</h3>
+    <ul class="clean">
+      <li>Facturación electrónica CFDI 4.0 timbrada ante el SAT.</li>
+      <li>Factura global del público en general y complemento de pagos.</li>
+      <li>Portal de autofacturación: el cliente factura su ticket con su folio.</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-bottom:12px">
+    <h3>📈 Decisiones basadas en datos</h3>
+    <ul class="clean">
+      <li>Dashboards en tiempo real: ventas del día, ticket promedio y productos estrella.</li>
+      <li>Predicción de demanda y sugerencia inteligente de compra.</li>
+      <li>Detección de mermas y patrones anómalos en caja.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>🔐 Seguridad en todos los frentes</h3>
+    <ul class="clean">
+      <li>Datos de cada empresa completamente aislados (doble barrera de seguridad).</li>
+      <li>Doble factor de autenticación y cifrado de información.</li>
+      <li>Auditoría completa de todas las operaciones sensibles.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- TECNOLOGIA -->
+<div class="page page-break">
+  <h2 class="section-title">Tecnología y arquitectura</h2>
+  <p class="section-sub">Construido con estándares profesionales para durar y escalar.</p>
+
+  <table class="kv">
+    <tr><td>Backend</td><td>Java Spring Boot con arquitectura hexagonal y seguridad reforzada (OWASP).</td></tr>
+    <tr><td>Frontend web</td><td>Aplicación web responsiva instalable (PWA) con modo offline.</td></tr>
+    <tr><td>App móvil</td><td>Flutter — máxima calidad visual y rendimiento en iOS y Android.</td></tr>
+    <tr><td>Base de datos</td><td>PostgreSQL con aislamiento por empresa y seguridad a nivel de fila (RLS).</td></tr>
+    <tr><td>Infraestructura</td><td>Arranque de bajo costo, escalable a nube mayor sin reprogramar.</td></tr>
+    <tr><td>Fiscal</td><td>Integración con PAC autorizado para timbrado CFDI 4.0.</td></tr>
+  </table>
+
+  <div class="highlight-box" style="margin-top:24px">
+    <h3>Metodología de trabajo</h3>
+    <p style="margin:0">Desarrollo por etapas, profesional y verificado. Cada módulo se construye, prueba y valida
+    antes de avanzar, garantizando calidad enterprise y un sistema estable desde el primer día.</p>
+  </div>
+
+  <div style="margin-top:24px">
+    <span class="pill green">Nube</span>
+    <span class="pill green">Multi-empresa</span>
+    <span class="pill green">Multi-giro</span>
+    <span class="pill">CFDI 4.0</span>
+    <span class="pill">Offline</span>
+    <span class="pill">BI con IA</span>
+    <span class="pill">App móvil</span>
+    <span class="pill">Seguridad OWASP</span>
+    <span class="pill">Responsivo</span>
+  </div>
+
+  <div class="footer">
+    <span class="footer-logo"><span class="footer-mark">MS</span> MyBusiness Silva — Propuesta de solución</span>
+    <span>Confidencial · Septiembre 2026</span>
+  </div>
+</div>
+
+<!-- GLOSARIO -->
+<div class="page page-break">
+  <h2 class="section-title">Glosario en palabras sencillas</h2>
+  <p class="section-sub">Términos que aparecen en esta propuesta, explicados sin tecnicismos.</p>
+
+  <table class="kv">
+    <tr><td>En la nube</td><td>Que el sistema vive en internet, no instalado en una sola computadora. Puedes entrar desde cualquier dispositivo con tu usuario y contraseña, y tu información está respaldada automáticamente.</td></tr>
+    <tr><td>SaaS</td><td>"Software como servicio". En lugar de comprar un programa e instalarlo, lo usas por internet mediante una suscripción o licencia. Nosotros nos encargamos de mantenerlo y actualizarlo.</td></tr>
+    <tr><td>Multi-empresa</td><td>Una sola plataforma puede manejar varios negocios a la vez, y cada uno ve únicamente su propia información, totalmente separada de los demás.</td></tr>
+    <tr><td>Multi-giro</td><td>El sistema se adapta a distintos tipos de negocio (abarrotes, panadería, pollería, ferretería, etc.) sin tener que cambiar de programa.</td></tr>
+    <tr><td>Punto de venta (POS)</td><td>La pantalla donde el cajero cobra: registra productos, aplica descuentos, cobra y entrega el ticket.</td></tr>
+    <tr><td>Modo offline</td><td>El sistema sigue funcionando y puedes seguir vendiendo aunque se caiga el internet. Cuando la conexión regresa, todo se guarda y sincroniza solo.</td></tr>
+    <tr><td>PWA (App instalable)</td><td>Una página web que se comporta como una aplicación: se puede instalar en la computadora o el celular y abrir con un icono, sin pasar por una tienda de apps.</td></tr>
+    <tr><td>App móvil</td><td>La aplicación para celular (iOS y Android) donde el dueño ve las ventas y reportes de su negocio en tiempo real, desde donde sea.</td></tr>
+    <tr><td>Notificación push</td><td>Un aviso que llega al celular del dueño automáticamente, por ejemplo cuando se hace el corte de caja o cuando un producto está por agotarse.</td></tr>
+    <tr><td>CFDI 4.0</td><td>La factura electrónica oficial de México, en su versión vigente exigida por el SAT. El sistema la genera y la envía al SAT de forma automática.</td></tr>
+    <tr><td>SAT</td><td>Servicio de Administración Tributaria: la autoridad fiscal de México ante la que se emiten y validan las facturas.</td></tr>
+    <tr><td>PAC</td><td>Empresa autorizada por el SAT para "sellar" (timbrar) las facturas electrónicas y hacerlas válidas. El sistema se conecta con uno de ellos automáticamente.</td></tr>
+    <tr><td>Timbrar</td><td>El paso final que vuelve válida una factura ante el SAT. El sistema lo hace solo al emitir cada factura.</td></tr>
+    <tr><td>Factura global</td><td>Una sola factura que agrupa todas las ventas del día hechas al "público en general", muy usada en tiendas.</td></tr>
+    <tr><td>Autofacturación</td><td>Un portal donde el propio cliente genera su factura escribiendo el folio de su ticket, sin que el cajero tenga que hacerlo.</td></tr>
+    <tr><td>Complemento de pagos</td><td>Un documento fiscal que se genera cuando un cliente paga en abonos una factura a crédito.</td></tr>
+    <tr><td>Inventario</td><td>El control de cuántos productos tienes, cuánto entra y cuánto sale. El sistema lo actualiza solo con cada venta o compra.</td></tr>
+    <tr><td>Kardex</td><td>El historial de movimientos de cada producto: cuándo entró, cuándo salió y por qué.</td></tr>
+    <tr><td>Traspaso</td><td>Mover productos de una sucursal a otra, dejando registro del movimiento.</td></tr>
+    <tr><td>Stock mínimo</td><td>La cantidad más baja que quieres tener de un producto. Al llegar a ese punto, el sistema te avisa para que compres más.</td></tr>
+    <tr><td>Lote y caducidad</td><td>Control de fechas de vencimiento y del grupo (lote) al que pertenece un producto, importante en abarrotes y panadería.</td></tr>
+    <tr><td>Merma</td><td>La pérdida de producto por caducidad, daño o robo. El sistema ayuda a detectarla y reducirla.</td></tr>
+    <tr><td>Corte de caja / Arqueo</td><td>El conteo del dinero al cerrar un turno, comparando lo que dice el sistema contra el efectivo real en la caja.</td></tr>
+    <tr><td>Corte Z</td><td>El reporte final del día o del turno con el total de ventas y movimientos de dinero.</td></tr>
+    <tr><td>CRM</td><td>Herramienta para administrar a tus clientes: sus datos, sus compras, su crédito y sus puntos de lealtad.</td></tr>
+    <tr><td>Programa de lealtad / Monedero</td><td>Premiar a los clientes frecuentes acumulando puntos o saldo que pueden usar en futuras compras.</td></tr>
+    <tr><td>Cuentas por cobrar / pagar</td><td>El dinero que te deben tus clientes (por cobrar) y el que tú debes a tus proveedores (por pagar).</td></tr>
+    <tr><td>Recargas</td><td>Venta de tiempo aire (saldo de celular) de las distintas compañías telefónicas.</td></tr>
+    <tr><td>Pago de servicios</td><td>Cobro de recibos como luz, agua, teléfono, TV o gas, ganando una comisión por cada uno (como lo hacen las tiendas de conveniencia).</td></tr>
+    <tr><td>ESC/POS</td><td>El "idioma" estándar que entienden casi todas las impresoras de tickets, tanto de marca como económicas/chinas. Por eso el sistema es compatible con casi cualquier impresora.</td></tr>
+    <tr><td>Báscula electrónica</td><td>La pesa conectada al sistema que calcula el precio de productos que se venden por peso (a granel).</td></tr>
+    <tr><td>Código de barras</td><td>Las líneas que se escanean para identificar un producto al instante y agregarlo a la venta.</td></tr>
+    <tr><td>Business Intelligence (BI)</td><td>Reportes y gráficas inteligentes que te ayudan a entender tu negocio: qué se vende más, en qué horarios, qué conviene comprar.</td></tr>
+    <tr><td>Inteligencia Artificial (IA)</td><td>Tecnología que aprende del historial de tu negocio para predecir la demanda, sugerir compras y detectar comportamientos raros o fraudes.</td></tr>
+    <tr><td>Análisis ABC</td><td>Clasificar tus productos según cuáles te dan más ganancias, para enfocar tu atención en los más importantes.</td></tr>
+    <tr><td>Dashboard</td><td>Una pantalla principal con los números clave de tu negocio de un solo vistazo (ventas, ganancias, alertas).</td></tr>
+    <tr><td>Licencia definitiva</td><td>La compra completa del sistema, sin fecha de vencimiento.</td></tr>
+    <tr><td>Periodo de prueba</td><td>Un tiempo limitado (por ejemplo un mes) para usar el sistema gratis antes de decidir comprarlo.</td></tr>
+    <tr><td>Super Admin</td><td>El administrador general (el proveedor del sistema) que crea los negocios y controla las licencias y pruebas.</td></tr>
+    <tr><td>Roles y permisos</td><td>Definir qué puede hacer cada empleado. Por ejemplo, un cajero cobra pero no puede cancelar ventas sin autorización.</td></tr>
+    <tr><td>Auditoría</td><td>Un registro de quién hizo qué y cuándo, para tener control total y detectar errores o malos manejos.</td></tr>
+    <tr><td>Responsivo</td><td>Que la pantalla se acomoda bien y se ve correctamente en computadora, tablet o celular.</td></tr>
+    <tr><td>Enterprise</td><td>De nivel profesional, la calidad que usan las grandes empresas.</td></tr>
+    <tr><td>Seguridad / OWASP</td><td>Conjunto de buenas prácticas reconocidas mundialmente para proteger el sistema contra hackeos y robo de información.</td></tr>
+    <tr><td>Doble factor (MFA)</td><td>Un segundo paso al iniciar sesión (además de la contraseña) para asegurarse de que eres tú, dando más protección a tu cuenta.</td></tr>
+    <tr><td>Cifrado</td><td>Proteger la información convirtiéndola en un código ilegible para cualquiera que no tenga permiso.</td></tr>
+    <tr><td>Arquitectura hexagonal</td><td>Una forma profesional de organizar el sistema por dentro para que sea fácil de mantener, cambiar de proveedores y crecer sin romper lo que ya funciona.</td></tr>
+    <tr><td>Infraestructura escalable</td><td>El sistema puede empezar con costos bajos y crecer contratando más capacidad conforme aumenten los clientes, sin tener que rehacerlo.</td></tr>
+  </table>
+
+  <div class="footer">
+    <span class="footer-logo"><span class="footer-mark">MS</span> MyBusiness Silva — Glosario</span>
+    <span>Confidencial · Septiembre 2026</span>
+  </div>
+</div>
+
+</body>
+</html>

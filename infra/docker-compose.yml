@@ -1,0 +1,27 @@
+# Infraestructura de desarrollo local para MyBusiness Silva.
+# Levanta PostgreSQL para el backend. Uso:
+#   docker compose -f infra/docker-compose.yml up -d
+services:
+  postgres:
+    image: postgres:17
+    container_name: mbs-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mybusiness_silva
+      POSTGRES_USER: pos_admin
+      POSTGRES_PASSWORD: pos_admin_dev
+      TZ: America/Mexico_City
+    ports:
+      # Se expone en 5544 en el host para no chocar con instancias locales de PostgreSQL (5432/5433).
+      - "5544:5432"
+    volumes:
+      - mbs_pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos_admin -d mybusiness_silva"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mbs_pgdata:

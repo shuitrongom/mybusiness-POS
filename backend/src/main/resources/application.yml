@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: mybusiness-silva-pos
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5544/mybusiness_silva}
+    username: ${DB_USERNAME:pos_app}
+    password: ${DB_PASSWORD:pos_app_dev}
+    hikari:
+      pool-name: mbs-pool
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: 30000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: America/Mexico_City
+
+  flyway:
+    enabled: true
+    # El schema global de administración (negocios, planes, licencias, catálogo SAT, catálogo maestro).
+    default-schema: admin
+    schemas: admin
+    create-schemas: true
+    locations: classpath:db/migration/admin
+    baseline-on-migrate: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+  forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    root: INFO
+    com.mybusinesssilva: ${LOG_LEVEL_APP:DEBUG}
