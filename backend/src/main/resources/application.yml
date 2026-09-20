@@ -33,6 +33,16 @@ spring:
     locations: classpath:db/migration/admin
     baseline-on-migrate: true
 
+app:
+  security:
+    jwt:
+      # En producción, DB_* y este secreto deben venir de variables de entorno / gestor de secretos.
+      # El secreto debe tener al menos 32 bytes (256 bits) para HMAC-SHA256.
+      secret: ${JWT_SECRET:dev-secret-change-me-please-32bytes-minimum-0123456789}
+      access-ttl-minutes: ${JWT_ACCESS_TTL_MIN:15}
+      refresh-ttl-days: ${JWT_REFRESH_TTL_DAYS:7}
+      issuer: ${JWT_ISSUER:mybusiness-silva}
+
 server:
   port: ${SERVER_PORT:8080}
   error:

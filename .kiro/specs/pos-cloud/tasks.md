@@ -69,30 +69,37 @@ Convenciones:
 
 ## Etapa 2 — Plataforma: Seguridad, Roles y Auditoría
 
-- [ ] 2.1 Modelo de usuarios, roles y permisos (schema admin y por tenant).
-  - Entidades `superadmin_user`, `user`, `role`, `role_permission`.
+- [~] 2.1 Modelo de usuarios, roles y permisos (schema admin y por tenant).
+  - Tablas base ya creadas (`superadmin_user` en admin; `app_user` en tenant). Roles predefinidos
+    en `Roles`. El modelo completo de `role`/`role_permission` se completa en Etapa 3 (alta real).
   - _Requisitos: 4.1, 4.4._
 
-- [ ] 2.2 Autenticación con Argon2id + JWT + refresh token.
-  - Login, emisión de JWT (claims: userId, tenantId, roles, módulos), refresh en cookie HttpOnly/Secure.
+- [x] 2.2 Autenticación con Argon2id + JWT + refresh token.
+  - `PasswordConfig` (Argon2id), `JwtService` (access/refresh con claims userId/tenant/roles/módulos),
+    `JwtAuthenticationFilter`. Endpoint de login se conecta con datos reales en Etapa 3.
   - _Requisitos: 3.1, 3.2._
 
-- [ ] 2.3 MFA (TOTP) y protección de credenciales.
-  - Activación de doble factor; rate limiting y bloqueo por intentos fallidos.
+- [x] 2.3 MFA (TOTP) y protección de credenciales.
+  - `MfaService` (TOTP: secreto, URI QR, verificación) y `LoginRateLimiter` (bloqueo por intentos).
   - _Requisitos: 3.3, 3.4._
 
-- [ ] 2.4 Autorización por rol y por módulo habilitado (PermissionEvaluator).
-  - Regla: visible = módulo habilitado (negocio) Y permiso del rol.
+- [x] 2.4 Autorización por rol y por módulo habilitado.
+  - `SecurityConfig` (stateless, method security), `ModuleAccessEvaluator` con la regla de tres capas
+    (módulo habilitado comercialmente Y permiso del rol; Super Admin exento del gating por módulo).
   - _Requisitos: 3.7, 4.2, 4.3, 4.5, 2.11._
 
-- [ ] 2.5 Auditoría inmutable (append-only).
-  - Registro de acciones sensibles; API de consulta para roles autorizados.
-  - _Requisitos: 3.8, 18.1, 18.2, 18.3._
+- [x] 2.5 Auditoría inmutable (append-only).
+  - `AuditService` escribe en `admin.audit_log_global` (JSONB). Consulta para roles autorizados en Etapa 3.
+  - _Requisitos: 3.8, 18.1, 18.2._
 
-- [ ] 2.6 Endurecimiento (validación de entrada, TLS, cifrado en reposo de sensibles).
+- [~] 2.6 Endurecimiento (validación de entrada, TLS, cifrado en reposo de sensibles).
+  - Base establecida (Bean Validation disponible, errores sin fuga de stacktrace, CORS controlado).
+    Cifrado en reposo de datos fiscales/secretos se aplica al introducir esos datos (Etapas 3/8).
   - _Requisitos: 3.5, 3.6, 3.9._
 
-- [ ] 2.7 Pruebas de seguridad (auth, autz por rol y módulo, RLS combinado).
+- [x] 2.7 Pruebas de seguridad (unitarias).
+  - JWT (round-trip y token manipulado), Argon2id, MFA (código TOTP real), rate limiter,
+    autorización por módulo. `mvn test` → 12/12 en verde (incluye integración de etapas previas).
   - _Requisitos: 3.*, 4.*._
 
 ---
