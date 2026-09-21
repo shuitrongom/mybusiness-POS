@@ -1,0 +1,7 @@
+target/
+*.log
+.git/
+.env
+.env.*
+bin/
+.idea/

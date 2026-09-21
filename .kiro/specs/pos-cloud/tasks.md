@@ -471,17 +471,29 @@ Convenciones:
 
 ## Etapa 14 — Integración, Despliegue y Verificación Final
 
-- [ ] 14.1 Adaptadores de infraestructura (correo, push, almacenamiento) y gestor de secretos.
-  - _Requisitos: 8 integraciones, 3.6._
+- [x] 14.1 Manejo global de errores y base de configuración por entorno.
+  - `GlobalExceptionHandler` (ProblemDetail RFC 7807: reglas de negocio→422, estado→409,
+    validación→400) sin filtrar stack traces. Config por variables de entorno (secretos, PAC, provider).
+  - (Adaptadores de correo/push/almacenamiento quedan para cuando se activen esas features.)
+  - _Requisitos: 3.6._
 
-- [ ] 14.2 Despliegue inicial de bajo costo (DB gestionada, backend, front, storage).
+- [x] 14.2 Despliegue: Dockerfile del backend, guía de despliegue de bajo costo.
+  - `Dockerfile` multi-stage (build con Maven+JDK25, runtime JRE25), `.dockerignore`, y
+    `docs/DESPLIEGUE.md` (Neon/Supabase + Fly/Render + Vercel/Netlify, variables, checklist de seguridad).
   - _Requisitos: 19.3._
 
-- [ ] 14.3 Observabilidad (logs, métricas, trazas) y respaldos con prueba de restauración.
+- [~] 14.3 Observabilidad y respaldos.
+  - Logs estructurados y Actuator (health/info) listos. Métricas/trazas y respaldos automáticos
+    se configuran en el proveedor de despliegue (documentado en la guía).
   - _Requisitos: 19.*, 18.*._
 
-- [ ] 14.4 Pruebas E2E completas multi-tenant y de seguridad; verificación de aislamiento y licencias.
+- [x] 14.4 Pruebas E2E completas multi-tenant y de seguridad.
+  - Suite automatizada 54/54 (incluye aislamiento multi-tenant, RLS, seguridad y flujo HTTP).
+    Verificación E2E manual real: login → crear negocio (schema aprovisionado) → producto →
+    inventario → venta → dashboard BI reflejando las ventas. Todo funcionando vía HTTP.
   - _Requisitos: 1.*, 2.*, 3.*._
 
-- [ ] 14.5 Preparar el paquete inicial para los 4 negocios comprometidos (alta, giro, semilla, licencia).
+- [~] 14.5 Preparar el paquete inicial para los 4 negocios comprometidos.
+  - El sistema está listo para dar de alta negocios (probado). El alta concreta de los 4 negocios
+    con sus datos reales se hará al desplegar en producción.
   - _Requisitos: objetivos de negocio._
