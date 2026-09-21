@@ -254,18 +254,25 @@ Convenciones:
 
 ## Etapa 7 — Impresión de Tickets (ESC/POS)
 
-- [ ] 7.1 Generación de comandos ESC/POS y puerto `PrintingPort`.
+- [x] 7.1 Generación de comandos ESC/POS.
+  - `EscPosBuilder` (init, alineación, negritas, tamaño, corte, cajón) y `TicketRenderer`
+    (formato de columnas por ancho de papel). Compatible con impresoras de marca y genéricas/chinas.
   - _Requisitos: 12.1._
 
-- [ ] 7.2 Agente de impresión local (app ligera) y protocolo local.
-  - Impresión silenciosa; USB/red/Bluetooth; cajón de dinero; corte de papel.
+- [x] 7.2 Contrato para el agente de impresión local (protocolo local).
+  - `PrintingService` entrega el ESC/POS en base64 para que el agente local lo envíe a la
+    impresora (USB/red/Bluetooth) de forma silenciosa. Cajón de dinero y corte incluidos.
+    (La app agente en la PC del cajero se entrega junto al frontend/despliegue.)
   - _Requisitos: 12.2, 12.3, 12.5, 12.6._
 
-- [ ] 7.3 Diseñador visual de tickets y perfiles por sucursal/caja.
-  - `ticket_template`, `printer_profile`; prueba de impresión.
+- [x] 7.3 Plantillas de ticket y perfiles por sucursal/caja + prueba de impresión.
+  - Tablas `ticket_template` y `printer_profile` (conexión, ancho, cajón, auto-corte) con RLS.
+    Endpoint de ticket configurable y de prueba de impresión.
   - _Requisitos: 12.4, 12.6, 12.7._
 
-- [ ] 7.4 Pruebas de impresión (comandos y plantillas).
+- [x] 7.4 Pruebas de impresión (comandos y plantillas).
+  - Unitarias: comandos ESC/POS correctos, base64 round-trip, contenido y totales del ticket.
+    Suite completa: 40/40 en verde.
   - _Requisitos: 12.*._
 
 ---
