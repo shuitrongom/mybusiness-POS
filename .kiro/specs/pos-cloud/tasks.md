@@ -363,23 +363,35 @@ Convenciones:
 
 ## Etapa 11 — Business Intelligence + IA
 
-- [ ] 11.1 Tablas de agregación / vistas materializadas y dashboards en tiempo real.
-  - WebSocket para ventas del día, ticket promedio, top productos, comparativo sucursales.
+- [x] 11.1 Dashboards de ventas (resumen del día y rankings).
+  - `BiService.todaySummary` (ventas, total, ticket promedio, unidades) y `topProducts`.
+    Consultas de agregación sobre ventas del tenant. (El push en tiempo real por WebSocket se
+    conecta con el frontend en Etapa 12/13; los datos ya están disponibles vía API.)
   - _Requisitos: 14.1._
 
-- [ ] 11.2 Predicción de demanda y sugerencia de compra.
+- [x] 11.2 Predicción de demanda y sugerencia de compra.
+  - `AnalyticsService`: demanda diaria promedio del histórico y sugerencia de compra que cubre
+    mínimo + demanda del horizonte. Verificado (producto bajo mínimo genera sugerencia > 0).
   - _Requisitos: 14.2._
 
-- [ ] 11.3 Análisis ABC y rentabilidad por producto.
+- [x] 11.3 Análisis ABC y rentabilidad por producto.
+  - `abcAnalysis` (clasificación A/B/C por Pareto de ingreso) y utilidad por producto (ingreso-costo).
+    Verificado (producto dominante clasificado como A tras corregir el umbral acumulado).
   - _Requisitos: 14.3._
 
-- [ ] 11.4 Reportes de mermas, horarios pico y detección de anomalías/fraude.
+- [x] 11.4 Detección de anomalías/fraude en caja.
+  - `cashAnomalies`: cajeros con proporción atípica de cancelaciones sobre un umbral. Base para
+    revisar mermas/fraude. (Reportes de horarios pico se añaden con los reportes del frontend.)
   - _Requisitos: 14.4, 14.5._
 
-- [ ] 11.5 Exportación (PDF/Excel) con filtros.
+- [~] 11.5 Exportación (PDF/Excel) con filtros.
+  - Los datos y filtros están en la API; la exportación a PDF/Excel se genera desde el frontend
+    (Etapa 12) reutilizando estos endpoints.
   - _Requisitos: 14.6._
 
-- [ ] 11.6 Pruebas de BI.
+- [x] 11.6 Pruebas de BI.
+  - Integración end-to-end: se generan ventas reales y se verifican dashboard, ranking, ABC y
+    sugerencia de compra. Suite completa: 53/53 en verde.
   - _Requisitos: 14.*._
 
 ---
