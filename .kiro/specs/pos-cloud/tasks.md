@@ -343,14 +343,20 @@ Convenciones:
 
 ## Etapa 10 — Recargas y Pago de Servicios
 
-- [ ] 10.1 Puerto `RechargeProviderPort` y adaptador del agregador.
+- [x] 10.1 Puerto `RechargeProviderPort` y adaptador del agregador.
+  - Puerto abstracto del agregador + adaptador SIMULADO (sandbox) activable por
+    `app.payments.provider`. Al contratar un agregador real se agrega otro adaptador sin tocar dominio.
   - _Requisitos: 11.1, 11.2._
 
-- [ ] 10.2 Pago de servicios y registro de comisiones.
-  - No cobrar si falla; comprobante; registro para conciliación.
+- [x] 10.2 Pago de servicios y registro de comisiones.
+  - `PaymentsService`: recarga y pago de servicio; registra la operación con folio y comisión si
+    tiene éxito; si falla, se registra FAILED sin comisión y no se considera cobro (422 en la API).
+    Total de comisiones para conciliación. Tabla payment_operation por tenant con RLS.
   - _Requisitos: 11.3, 11.4, 11.5, 11.6._
 
-- [ ] 10.3 Pruebas de recargas y servicios (sandbox).
+- [x] 10.3 Pruebas de recargas y servicios (sandbox).
+  - Integración: recarga con comisión 3%, servicio con comisión 2%, operación fallida sin comisión,
+    total acumula solo éxitos. Suite completa: 50/50 en verde.
   - _Requisitos: 11.*._
 
 ---

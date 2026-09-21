@@ -37,6 +37,9 @@ app:
   cfdi:
     # Proveedor de timbrado: 'simulated' (sandbox, por defecto) o 'real' cuando se contrate un PAC.
     pac: ${CFDI_PAC:simulated}
+  payments:
+    # Agregador de recargas/servicios: 'simulated' (sandbox) o 'real' cuando se contrate uno.
+    provider: ${PAYMENTS_PROVIDER:simulated}
   security:
     jwt:
       # En producción, DB_* y este secreto deben venir de variables de entorno / gestor de secretos.
