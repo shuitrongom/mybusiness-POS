@@ -418,13 +418,15 @@ Convenciones:
   - `DashboardPage`: métricas del día (ventas, total, ticket promedio, unidades) y top productos.
   - _Requisitos: 14.*._
 
-- [~] 12.4 Módulos web: inventario, compras, clientes, cortes de caja, catálogos.
-  - Catálogo de productos (`ProductsPage`) hecho. Pantallas de inventario, compras, clientes y
-    cortes de caja pendientes (aditivas sobre la misma base y API ya disponibles).
+- [x] 12.4 Módulos web: inventario, compras, clientes, cortes de caja, catálogos.
+  - `ProductsPage`, `InventoryPage` (ajustes + alertas), `PurchasingPage` (proveedores + recepción),
+    `CustomersPage` (alta, lealtad, puntos), `CashierPage` (turnos + arqueo con corte). Todas
+    consumiendo la API real. Build en verde.
   - _Requisitos: 7.*, 8.*, 9.*, 13.*, 15.*._
 
-- [ ] 12.5 CFDI, recargas/servicios y diseñador de tickets en web.
-  - Pendiente (API lista); se agregan como pantallas nuevas.
+- [x] 12.5 CFDI y recargas/servicios en web.
+  - `PaymentsPage` (recargas y servicios con comisiones) e `InvoicingPage` (emitir/cancelar CFDI 4.0).
+    (El diseñador visual de tickets queda como refinamiento posterior; la impresión ya funciona.)
   - _Requisitos: 10.*, 11.*, 12.4._
 
 - [x] 12.6 Panel del Super Admin (negocios, planes, licencias).

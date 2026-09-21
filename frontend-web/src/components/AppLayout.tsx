@@ -30,6 +30,12 @@ export function AppLayout() {
           <NavLink to="/" end className="nav-link">Panel</NavLink>
           <NavLink to="/pos" className="nav-link">Punto de venta</NavLink>
           <NavLink to="/products" className="nav-link">Productos</NavLink>
+          <NavLink to="/inventory" className="nav-link">Inventario</NavLink>
+          <NavLink to="/purchasing" className="nav-link">Compras</NavLink>
+          <NavLink to="/customers" className="nav-link">Clientes</NavLink>
+          <NavLink to="/cashier" className="nav-link">Cortes de caja</NavLink>
+          <NavLink to="/payments" className="nav-link">Recargas</NavLink>
+          <NavLink to="/invoicing" className="nav-link">Facturación</NavLink>
           <NavLink to="/admin" className="nav-link">Administración</NavLink>
         </nav>
 
