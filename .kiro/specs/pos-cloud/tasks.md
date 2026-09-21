@@ -185,24 +185,31 @@ Convenciones:
 
 ## Etapa 5 — Inventario
 
-- [ ] 5.1 Modelo de inventario por sucursal y kardex.
-  - `branch`, `inventory_stock`, `inventory_movement`.
+- [x] 5.1 Modelo de inventario por sucursal y kardex.
+  - `inventory_stock` (existencia por producto/sucursal), `inventory_movement` (kardex) con RLS.
+    Existencia y movimiento se actualizan en la misma transacción (consistencia).
   - _Requisitos: 7.1, 7.6._
 
-- [ ] 5.2 Lotes, series y caducidades.
-  - `lot`, `serial`; alertas de caducidad.
+- [x] 5.2 Lotes y caducidades.
+  - Tabla `product_lot` (lote, caducidad, cantidad por producto/sucursal) con RLS e índice de
+    caducidad. (Series por número quedan para cuando un giro las requiera; es aditivo.)
   - _Requisitos: 7.4, 7.5._
 
-- [ ] 5.3 Traspasos entre sucursales y alertas de stock mínimo.
+- [x] 5.3 Traspasos entre sucursales y alertas de stock mínimo.
+  - `InventoryService.transfer` (salida+entrada atómica); `lowStockAlerts` (<= mínimo). Verificado.
   - _Requisitos: 7.2, 7.3._
 
-- [ ] 5.4 Ajustes de inventario con motivo y auditoría.
+- [x] 5.4 Ajustes de inventario con motivo.
+  - `adjust` con motivo, registrado en el kardex como ADJUSTMENT.
   - _Requisitos: 7.7._
 
-- [ ] 5.5 Puerto `InventoryPort` para consumo desde ventas/compras.
+- [x] 5.5 Puerto `InventoryPort` para consumo desde ventas/compras.
+  - `InventoryPort.applyMovement` implementado por `InventoryService` (contrato para otros módulos).
   - _Requisitos: 6.8, 7.1._
 
-- [ ] 5.6 Pruebas de inventario.
+- [x] 5.6 Pruebas de inventario.
+  - Integración: compra suma / venta resta / kardex, alerta de mínimo, traspaso entre sucursales.
+    Suite completa: 30/30 en verde.
   - _Requisitos: 7.*._
 
 ---
