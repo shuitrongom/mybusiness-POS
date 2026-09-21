@@ -313,19 +313,30 @@ Convenciones:
 
 ## Etapa 9 — Compras/Proveedores y Clientes/CRM
 
-- [ ] 9.1 Proveedores, órdenes de compra, recepción y cuentas por pagar.
+- [x] 9.1 Proveedores, compras, recepción y cuentas por pagar.
+  - `PurchasingService`: alta de proveedor, recepción de compra (aumenta inventario vía
+    `InventoryPort`, genera cuenta por pagar si es a crédito), abono a cuentas por pagar.
+    Tablas supplier/purchase/purchase_line/account_payable por tenant con RLS. Verificado.
   - _Requisitos: 8.1–8.4._
 
-- [ ] 9.2 Sugerencia de compra por stock mínimo (base para BI).
+- [~] 9.2 Sugerencia de compra por stock mínimo (base para BI).
+  - Base lista: alertas de stock mínimo (Etapa 5) + costos de compra. La sugerencia automática
+    se completa en BI (Etapa 11).
   - _Requisitos: 8.5._
 
-- [ ] 9.3 Clientes, cuentas por cobrar y crédito con límite.
+- [x] 9.3 Clientes, cuentas por cobrar y crédito con límite.
+  - `CustomerService`: alta, cuenta por cobrar con validación de límite de crédito, abono que
+    libera crédito. Verificado (rechaza al exceder, abono libera). Tablas con RLS.
   - _Requisitos: 9.1, 9.2, 9.4, 9.5._
 
-- [ ] 9.4 Lealtad / monedero electrónico.
+- [x] 9.4 Lealtad / monedero electrónico.
+  - Acumular/canjear puntos con historial (`loyalty_account`/`loyalty_movement`); valida saldo.
+    Verificado (earn 50, redeem 30, rechaza canje sin saldo).
   - _Requisitos: 9.3._
 
-- [ ] 9.5 Pruebas de compras y clientes.
+- [x] 9.5 Pruebas de compras y clientes.
+  - Integración: compra→inventario+cuenta por pagar, crédito con límite, lealtad. 46/46 en verde.
+    (El módulo de clientes se desarrolló en paralelo por un sub-agente; integrado y verificado por mí.)
   - _Requisitos: 8.*, 9.*._
 
 ---
