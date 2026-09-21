@@ -26,9 +26,12 @@ class PosBackendApplicationTests extends AbstractIntegrationTest {
     void adminSchemaMigrationsApplied() {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
-        Integer planCount = jdbc.queryForObject(
-                "SELECT count(*) FROM admin.plan", Integer.class);
-        assertThat(planCount).isEqualTo(3);
+        // Se validan los 3 planes semilla por su código (el contador exacto no es estable
+        // porque otras pruebas pueden crear planes adicionales en el contenedor compartido).
+        Integer seedPlanCount = jdbc.queryForObject(
+                "SELECT count(*) FROM admin.plan WHERE code IN ('ESSENTIAL','PROFESSIONAL','ENTERPRISE')",
+                Integer.class);
+        assertThat(seedPlanCount).isEqualTo(3);
 
         Integer moduleCount = jdbc.queryForObject(
                 "SELECT count(*) FROM admin.module_catalog", Integer.class);

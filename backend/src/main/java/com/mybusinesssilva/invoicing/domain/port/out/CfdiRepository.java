@@ -31,4 +31,15 @@ public interface CfdiRepository {
     Optional<String> uuidOf(long cfdiId);
 
     Optional<Long> findIdByIdempotencyKey(String idempotencyKey);
+
+    /**
+     * Registra un complemento de pago asociado a un CFDI (factura a crédito) ya timbrado.
+     *
+     * @return id del complemento
+     */
+    long addPaymentComplement(long cfdiId, BigDecimal paidAmount, String paymentForm,
+                              String paymentDate, String uuid);
+
+    /** @return el CFDI asociado a una venta (para autofacturación), o vacío. */
+    Optional<Long> findIdBySaleId(long saleId);
 }

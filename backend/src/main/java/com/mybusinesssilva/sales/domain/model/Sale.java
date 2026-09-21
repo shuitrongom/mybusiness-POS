@@ -56,6 +56,20 @@ public class Sale {
         return sale;
     }
 
+    /**
+     * Crea una cotización o apartado: tiene renglones pero no exige pagos ni afecta inventario.
+     * Se guarda con estado QUOTE para consultarse o convertirse en venta después.
+     */
+    public static Sale quote(long branchId, String cashier, Long customerId,
+                             List<SaleLine> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new IllegalArgumentException("La cotización debe tener al menos un renglón");
+        }
+        Sale sale = new Sale(branchId, null, null, cashier, customerId, lines, List.of(), null);
+        sale.status = SaleStatus.QUOTE;
+        return sale;
+    }
+
     /** Subtotal: suma de los importes de los renglones sin descuentos de renglón restados aún. */
     public BigDecimal subtotal() {
         return lines.stream()

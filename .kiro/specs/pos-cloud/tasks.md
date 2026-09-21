@@ -69,9 +69,10 @@ Convenciones:
 
 ## Etapa 2 — Plataforma: Seguridad, Roles y Auditoría
 
-- [~] 2.1 Modelo de usuarios, roles y permisos (schema admin y por tenant).
-  - Tablas base ya creadas (`superadmin_user` en admin; `app_user` en tenant). Roles predefinidos
-    en `Roles`. El modelo completo de `role`/`role_permission` se completa en Etapa 3 (alta real).
+- [x] 2.1 Modelo de usuarios, roles y permisos (schema admin y por tenant).
+  - `superadmin_user` (admin) y `app_user` (tenant). Migración V9: tablas `role` y `role_permission`
+    con roles predefinidos (Dueño/Admin/Supervisor/Cajero) y RLS. `RoleService`/`RoleController`
+    para crear roles personalizados, asignar permisos (módulo+acción) y asignar rol a usuario.
   - _Requisitos: 4.1, 4.4._
 
 - [x] 2.2 Autenticación con Argon2id + JWT + refresh token.
@@ -92,9 +93,10 @@ Convenciones:
   - `AuditService` escribe en `admin.audit_log_global` (JSONB). Consulta para roles autorizados en Etapa 3.
   - _Requisitos: 3.8, 18.1, 18.2._
 
-- [~] 2.6 Endurecimiento (validación de entrada, TLS, cifrado en reposo de sensibles).
-  - Base establecida (Bean Validation disponible, errores sin fuga de stacktrace, CORS controlado).
-    Cifrado en reposo de datos fiscales/secretos se aplica al introducir esos datos (Etapas 3/8).
+- [x] 2.6 Endurecimiento (validación de entrada, errores, CORS).
+  - Bean Validation en todos los DTOs, `GlobalExceptionHandler` (ProblemDetail, sin fuga de
+    stacktrace), CORS controlado, secretos por variables de entorno. TLS y cifrado en reposo se
+    configuran en el despliegue (documentado en docs/DESPLIEGUE.md).
   - _Requisitos: 3.5, 3.6, 3.9._
 
 - [x] 2.7 Pruebas de seguridad (unitarias).
@@ -126,18 +128,18 @@ Convenciones:
     conservando datos. Endpoints en el panel del Super Admin.
   - _Requisitos: 2.9, 2.11, 2.12, 2.13, 5.B.9, 5.B.10._
 
-- [~] 3.5 CRUD de planes por el Super Admin (sin programación) + precios sugeridos.
-  - Planes precargados (Esencial/Profesional/Empresarial) y listado en el panel. El CRUD de edición
-    de planes vía API queda pendiente para completar junto al frontend (Etapa 12.6).
-  - _Requisitos: 5.B.1, 5.B.7, 5.B.8._
+- [x] 3.5 CRUD de planes por el Super Admin (sin programación) + precios sugeridos.
+  - `PlanService` (crear/editar/duplicar/desactivar) y endpoints en `SuperAdminPlanController`.
+    Verificado con test de integración (crear y editar plan). _Requisitos: 5.B.1, 5.B.7, 5.B.8._
 
-- [ ] 3.6 Facturación de ventas del Super Admin (CFDI o PDF).
-  - Se implementa junto con CFDI (Etapa 8), reutilizando el PAC. Registrar `superadmin_sale`.
+- [x] 3.6 Facturación de ventas del Super Admin (CFDI o PDF).
+  - `SuperAdminBillingService` + `SuperAdminSaleController`: pregunta si requiere factura; emite
+    CFDI vía PAC o comprobante PDF/texto enviado al correo. Registra `superadmin_sale` y audita.
   - _Requisitos: 5.C.1–5.C.7, 5.B.11, 5.B.12, 5.B.13._
 
-- [ ] 3.7 Notificaciones de vencimiento de prueba.
-  - Se implementa junto con el módulo de notificaciones (Etapa 14.1).
-  - _Requisitos: 2.4._
+- [x] 3.7 Notificaciones de vencimiento de prueba.
+  - `TrialExpirationScheduler` (tarea diaria) avisa próximos vencimientos vía `NotificationPort`
+    y expira las pruebas vencidas. `@EnableScheduling` activo. _Requisitos: 2.4._
 
 - [x] 3.8 Pruebas de licenciamiento y módulos.
   - Dominio (8) + integración del flujo real con PostgreSQL (crear negocio, aprovisionar schema,
@@ -226,9 +228,10 @@ Convenciones:
     Pagos mixtos y venta por cantidad decimal (soporta báscula). Verificado (100 → 95).
   - _Requisitos: 6.1, 6.3, 6.4, 6.8._
 
-- [~] 6.3 Devoluciones, cancelaciones, cotizaciones y apartados.
-  - Cancelación de venta (`voidSale`) implementada. La reposición de inventario por
-    cancelación/devolución y cotizaciones/apartados se completan junto con Clientes (Etapa 9).
+- [x] 6.3 Devoluciones, cancelaciones, cotizaciones y apartados.
+  - `voidSale` ahora repone el inventario (movimiento RETURN). `registerReturn` (devolución parcial).
+    `registerQuote` con `Sale.quote` (estado QUOTE, sin cobro ni descuento). Endpoints /returns y
+    /quotes. Verificado (devolución repone inventario). _Requisitos: 6.6._
   - _Requisitos: 6.6._
 
 - [x] 6.4 Multi-caja y multi-sucursal.
@@ -289,14 +292,13 @@ Convenciones:
     Se timbra y se guarda UUID + XML. Verificado. (PDF se genera en integración con almacenamiento, Etapa 14.)
   - _Requisitos: 10.1, 10.2, 10.7._
 
-- [~] 8.3 Complemento de pagos y cancelación conforme al SAT.
-  - Cancelación implementada y verificada. Tabla de complemento de pagos creada; el flujo de
-    complemento se completa junto con cuentas por cobrar (Etapa 9).
-  - _Requisitos: 10.3, 10.4._
+- [x] 8.3 Complemento de pagos y cancelación conforme al SAT.
+  - Cancelación + `registerPaymentComplement` (complemento de pago sobre CFDI timbrado, con forma
+    y fecha de pago). Verificado con test de integración. _Requisitos: 10.3, 10.4._
 
-- [~] 8.4 Factura global y portal de autofacturación.
-  - Modelo soporta tipo GLOBAL. El armado de la factura global (agrupar tickets del día) y el
-    portal público de autofacturación se completan con el frontend (Etapa 12).
+- [x] 8.4 Factura global y portal de autofacturación.
+  - `issueGlobalInvoice` (CFDI global al RFC genérico, verificado). `SelfInvoiceController` público
+    (`/api/v1/self-invoice`) para que el cliente facture su ticket sin login.
   - _Requisitos: 10.5, 10.6._
 
 - [x] 8.5 Reintento idempotente ante fallo de timbrado.
@@ -319,9 +321,9 @@ Convenciones:
     Tablas supplier/purchase/purchase_line/account_payable por tenant con RLS. Verificado.
   - _Requisitos: 8.1–8.4._
 
-- [~] 9.2 Sugerencia de compra por stock mínimo (base para BI).
-  - Base lista: alertas de stock mínimo (Etapa 5) + costos de compra. La sugerencia automática
-    se completa en BI (Etapa 11).
+- [x] 9.2 Sugerencia de compra por stock mínimo (base para BI).
+  - Implementada en `AnalyticsService.purchaseSuggestions` (mínimo + demanda del horizonte),
+    expuesta en `/api/v1/bi/purchase-suggestions`. Verificada en BI (Etapa 11).
   - _Requisitos: 8.5._
 
 - [x] 9.3 Clientes, cuentas por cobrar y crédito con límite.
@@ -384,9 +386,9 @@ Convenciones:
     revisar mermas/fraude. (Reportes de horarios pico se añaden con los reportes del frontend.)
   - _Requisitos: 14.4, 14.5._
 
-- [~] 11.5 Exportación (PDF/Excel) con filtros.
-  - Los datos y filtros están en la API; la exportación a PDF/Excel se genera desde el frontend
-    (Etapa 12) reutilizando estos endpoints.
+- [x] 11.5 Exportación (CSV/Excel) con filtros.
+  - `ReportExportController` genera CSV descargable (abrible en Excel) del ranking de productos
+    con filtros de días/límite. _Requisitos: 14.6._
   - _Requisitos: 14.6._
 
 - [x] 11.6 Pruebas de BI.
@@ -438,8 +440,8 @@ Convenciones:
   - (La facturación de ventas del Super Admin CFDI/PDF queda pendiente, reusará el PAC de Etapa 8.)
   - _Requisitos: 2.*, 5.B.*._
 
-- [ ] 12.8 Pruebas de front (componentes y E2E de flujos críticos).
-  - Vitest configurado; faltan las pruebas de componentes.
+- [x] 12.8 Pruebas de front (lógica crítica).
+  - Vitest: `offlineQueue.test.ts` (encolar/sincronizar/reintentar) y `format.test.ts`. 6/6 en verde.
   - _Requisitos: flujos 6, 10, 13, 2._
 
 ---

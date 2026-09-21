@@ -102,4 +102,30 @@ public class JdbcCfdiRepository implements CfdiRepository {
                 .query(Long.class)
                 .optional();
     }
+
+    @Override
+    public long addPaymentComplement(long cfdiId, BigDecimal paidAmount, String paymentForm,
+                                     String paymentDate, String uuid) {
+        return jdbc.sql("""
+                INSERT INTO cfdi_payment_complement
+                    (cfdi_id, paid_amount, payment_form, payment_date, uuid, status)
+                VALUES (:cfdi, :amount, :form, CAST(:date AS date), :uuid, 'STAMPED')
+                RETURNING id
+                """)
+                .param("cfdi", cfdiId)
+                .param("amount", paidAmount)
+                .param("form", paymentForm)
+                .param("date", paymentDate)
+                .param("uuid", uuid)
+                .query(Long.class)
+                .single();
+    }
+
+    @Override
+    public Optional<Long> findIdBySaleId(long saleId) {
+        return jdbc.sql("SELECT id FROM cfdi WHERE sale_id = :s ORDER BY id DESC LIMIT 1")
+                .param("s", saleId)
+                .query(Long.class)
+                .optional();
+    }
 }

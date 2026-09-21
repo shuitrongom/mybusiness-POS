@@ -49,6 +49,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/v1/auth/**",
+                                "/api/v1/self-invoice/**",
                                 "/actuator/health",
                                 "/actuator/info")
                         .permitAll()

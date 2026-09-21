@@ -100,4 +100,29 @@ public class JdbcSaleRepository implements SaleRepository {
                 .param("id", saleId)
                 .update();
     }
+
+    @Override
+    public java.util.Optional<String> statusOf(long saleId) {
+        return jdbc.sql("SELECT status FROM sale WHERE id = :id")
+                .param("id", saleId)
+                .query(String.class)
+                .optional();
+    }
+
+    @Override
+    public java.util.Optional<Long> branchOf(long saleId) {
+        return jdbc.sql("SELECT branch_id FROM sale WHERE id = :id")
+                .param("id", saleId)
+                .query(Long.class)
+                .optional();
+    }
+
+    @Override
+    public java.util.List<SaleLineRow> linesOf(long saleId) {
+        return jdbc.sql("SELECT product_id, quantity FROM sale_line WHERE sale_id = :id")
+                .param("id", saleId)
+                .query((rs, n) -> new SaleLineRow(
+                        rs.getLong("product_id"), rs.getBigDecimal("quantity")))
+                .list();
+    }
 }

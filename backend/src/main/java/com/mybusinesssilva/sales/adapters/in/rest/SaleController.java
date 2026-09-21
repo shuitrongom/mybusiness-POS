@@ -65,12 +65,52 @@ public class SaleController {
     }
 
     @PostMapping("/{id}/void")
-    public ResponseEntity<Void> voidSale(@PathVariable long id) {
-        saleService.voidSale(id);
+    public ResponseEntity<Void> voidSale(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable long id) {
+        saleService.voidSale(id, actor == null ? "unknown" : actor.subject());
         return ResponseEntity.noContent().build();
     }
 
+    /** Registra una devolución de productos (reingresa inventario). */
+    @PostMapping("/returns")
+    public ResponseEntity<Void> registerReturn(
+            @AuthenticationPrincipal AuthenticatedUser actor,
+            @Valid @RequestBody ReturnRequest request) {
+        List<SaleService.ReturnItem> items = request.items().stream()
+                .map(i -> new SaleService.ReturnItem(i.productId(), i.quantity()))
+                .toList();
+        saleService.registerReturn(request.branchId(), items,
+                actor == null ? "unknown" : actor.subject());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Registra una cotización o apartado (no cobra ni descuenta inventario). */
+    @PostMapping("/quotes")
+    public ResponseEntity<SaleService.SaleResult> registerQuote(
+            @AuthenticationPrincipal AuthenticatedUser actor,
+            @Valid @RequestBody CreateSaleRequest request) {
+        String cashier = actor == null ? "unknown" : actor.subject();
+        List<SaleLine> lines = request.lines().stream()
+                .map(l -> new SaleLine(l.productId(), l.description(), l.quantity(),
+                        l.unitPrice(), l.discount()))
+                .toList();
+        Sale quote = Sale.quote(request.branchId(), cashier, request.customerId(), lines);
+        return ResponseEntity.status(HttpStatus.CREATED).body(saleService.registerQuote(quote));
+    }
+
     // --- DTOs ---
+
+    /** Devolución de productos. */
+    public record ReturnRequest(
+            @NotNull Long branchId,
+            @NotEmpty List<ReturnItemRequest> items) {
+    }
+
+    /** Renglón de devolución. */
+    public record ReturnItemRequest(
+            @NotNull Long productId,
+            @NotNull BigDecimal quantity) {
+    }
 
     /** Alta de venta. */
     public record CreateSaleRequest(

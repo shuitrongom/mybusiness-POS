@@ -43,8 +43,18 @@ lib/
     └── dashboard_screen.dart # métricas del día + top productos (BI)
 ```
 
+## Notificaciones push (FCM)
+
+La app incluye `NotificationsService` (Firebase Cloud Messaging + notificaciones locales) para
+recibir avisos de cortes de caja, alertas de stock y ventas. Para activarlas:
+
+1. Crear un proyecto en Firebase y registrar la app Android/iOS.
+2. Colocar `google-services.json` (Android) y `GoogleService-Info.plist` (iOS) en el proyecto.
+3. En `main.dart`, inicializar Firebase y llamar `NotificationsService().init()`.
+4. Registrar el token del dispositivo (`deviceToken()`) en el backend para segmentar los envíos.
+
 ## Siguientes pasos (cuando se compile)
 
-- Notificaciones push (FCM) para cortes de caja y alertas de stock.
+- Conectar `NotificationsService` en el arranque y registrar el token en el backend.
 - Gráficas con fl_chart (ya incluida en dependencias).
 - Detalle por sucursal.

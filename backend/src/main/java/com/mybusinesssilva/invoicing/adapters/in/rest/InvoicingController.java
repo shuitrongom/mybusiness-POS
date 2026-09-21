@@ -50,6 +50,34 @@ public class InvoicingController {
         return canceled ? ResponseEntity.noContent().build() : ResponseEntity.unprocessableEntity().build();
     }
 
+    /** Registra un complemento de pago sobre una factura a crédito timbrada. */
+    @PostMapping("/invoices/{id}/payment-complement")
+    public ResponseEntity<java.util.Map<String, Long>> paymentComplement(
+            @PathVariable long id, @Valid @RequestBody PaymentComplementRequest request) {
+        long complementId = invoicingService.registerPaymentComplement(
+                id, request.paidAmount(), request.paymentForm(), request.paymentDate());
+        return ResponseEntity.ok(java.util.Map.of("complementId", complementId));
+    }
+
+    /** Emite la factura global (agrupado del público en general). */
+    @PostMapping("/global")
+    public InvoicingService.InvoiceResult global(@Valid @RequestBody GlobalRequest request) {
+        return invoicingService.issueGlobalInvoice(request.totalAmount(), request.description());
+    }
+
+    /** Complemento de pago. */
+    public record PaymentComplementRequest(
+            @NotNull BigDecimal paidAmount,
+            @NotNull String paymentForm,
+            @NotNull String paymentDate) {
+    }
+
+    /** Factura global. */
+    public record GlobalRequest(
+            @NotNull BigDecimal totalAmount,
+            String description) {
+    }
+
     /** Solicitud de emisión de factura. */
     public record IssueInvoiceRequest(
             Long saleId,

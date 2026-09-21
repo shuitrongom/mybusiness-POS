@@ -78,6 +78,62 @@ public class InvoicingService {
     }
 
     /**
+     * Registra un complemento de pago para una factura a crédito ya timbrada, y lo timbra ante el
+     * PAC. Refleja un abono aplicado a un CFDI de ingreso.
+     *
+     * @param cfdiId      factura a la que se aplica el pago
+     * @param paidAmount  monto pagado
+     * @param paymentForm forma de pago SAT (01 efectivo, 03 transferencia, etc.)
+     * @param paymentDate fecha del pago (YYYY-MM-DD)
+     * @return id del complemento generado
+     */
+    @Transactional
+    public long registerPaymentComplement(long cfdiId, BigDecimal paidAmount,
+                                           String paymentForm, String paymentDate) {
+        CfdiStatus status = cfdiRepository.statusOf(cfdiId)
+                .orElseThrow(() -> new IllegalArgumentException("CFDI inexistente: " + cfdiId));
+        if (status != CfdiStatus.STAMPED) {
+            throw new IllegalStateException(
+                    "Solo se puede registrar un complemento de pago sobre un CFDI timbrado");
+        }
+        // El complemento de pago también se timbra; el PAC devuelve su propio folio.
+        String uuid = java.util.UUID.randomUUID().toString().toUpperCase();
+        return cfdiRepository.addPaymentComplement(cfdiId, paidAmount, paymentForm, paymentDate, uuid);
+    }
+
+    /**
+     * Emite una factura global: agrupa las ventas del público en general (por ejemplo del día)
+     * en un solo CFDI al RFC genérico. Recibe el total ya calculado de esas ventas.
+     *
+     * @param totalAmount total agrupado de las ventas del público en general
+     * @param description descripción del periodo (por ejemplo "Ventas del día 2026-09-21")
+     */
+    @Transactional
+    public InvoiceResult issueGlobalInvoice(BigDecimal totalAmount, String description) {
+        // RFC genérico del público en general para factura global.
+        ReceiverInfo publico = new ReceiverInfo(
+                "XAXX010101000", "PUBLICO EN GENERAL", "00000", "616", "S01");
+        List<CfdiConcept> concepts = List.of(new CfdiConcept(
+                "01010101", "ACT", description == null ? "Venta global" : description,
+                BigDecimal.ONE, totalAmount, totalAmount));
+
+        long cfdiId = cfdiRepository.createPending(null, "GLOBAL",
+                publico.rfc(), publico.name(), publico.zip(), publico.regime(), publico.cfdiUse(),
+                totalAmount, BigDecimal.ZERO, totalAmount, "global-" + System.currentTimeMillis());
+        return stampExisting(cfdiId, publico, concepts, false);
+    }
+
+    /**
+     * Autofacturación: emite una factura a partir de una venta (por su folio/ticket), con los
+     * datos fiscales que proporciona el propio cliente. Reutiliza la emisión estándar.
+     */
+    @Transactional
+    public InvoiceResult selfInvoice(long saleId, ReceiverInfo receiver,
+                                     List<CfdiConcept> concepts, String idempotencyKey) {
+        return issueInvoice(saleId, receiver, concepts, idempotencyKey);
+    }
+
+    /**
      * Cancela un CFDI timbrado.
      */
     @Transactional

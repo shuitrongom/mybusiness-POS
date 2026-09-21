@@ -59,12 +59,64 @@ public class SaleService {
     }
 
     /**
-     * Cancela una venta y reingresa el inventario de sus renglones.
-     * (La reposición detallada de inventario por cancelación se completa junto con devoluciones.)
+     * Cancela una venta completada y reingresa al inventario la mercancía de todos sus renglones.
+     *
+     * @param saleId venta a cancelar
+     * @param actor  quién cancela (queda en el kardex)
      */
     @Transactional
-    public void voidSale(long saleId) {
+    public void voidSale(long saleId, String actor) {
+        String status = saleRepository.statusOf(saleId)
+                .orElseThrow(() -> new IllegalArgumentException("Venta inexistente: " + saleId));
+        if ("VOIDED".equals(status)) {
+            return; // Idempotente: ya está cancelada.
+        }
+        long branchId = saleRepository.branchOf(saleId).orElseThrow();
+
+        // Reingresa el inventario de cada renglón (movimiento de tipo RETURN).
+        for (SaleRepository.SaleLineRow line : saleRepository.linesOf(saleId)) {
+            inventoryPort.applyMovement(line.productId(), branchId, MovementType.RETURN,
+                    line.quantity(), "VOID:" + saleId, actor);
+        }
         saleRepository.markVoided(saleId);
+    }
+
+    /**
+     * Registra una devolución de productos: reingresa al inventario las cantidades devueltas.
+     * A diferencia de la cancelación total, permite devolver renglones o cantidades parciales.
+     *
+     * @param branchId sucursal donde se recibe la devolución
+     * @param returns  productos y cantidades devueltos
+     * @param actor    quién procesa la devolución
+     */
+    @Transactional
+    public void registerReturn(long branchId, java.util.List<ReturnItem> returns, String actor) {
+        if (returns == null || returns.isEmpty()) {
+            throw new IllegalArgumentException("La devolución debe tener al menos un producto");
+        }
+        for (ReturnItem item : returns) {
+            inventoryPort.applyMovement(item.productId(), branchId, MovementType.RETURN,
+                    item.quantity(), "RETURN", actor);
+        }
+    }
+
+    /**
+     * Registra una cotización o un apartado (no cobra ni descuenta inventario todavía).
+     * Se persiste con estado QUOTE para poder consultarla o convertirla en venta después.
+     */
+    @Transactional
+    public SaleResult registerQuote(Sale quote) {
+        Sale saved = saleRepository.insert(quote);
+        return new SaleResult(saved.getId(), saved.total(), java.math.BigDecimal.ZERO, false);
+    }
+
+    /**
+     * Producto y cantidad de una devolución.
+     *
+     * @param productId producto devuelto
+     * @param quantity  cantidad devuelta
+     */
+    public record ReturnItem(long productId, java.math.BigDecimal quantity) {
     }
 
     /**
