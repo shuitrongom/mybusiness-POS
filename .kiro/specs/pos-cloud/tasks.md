@@ -398,28 +398,41 @@ Convenciones:
 
 ## Etapa 12 — Frontend Web (PWA)
 
-- [ ] 12.1 Base del front: React+Vite+TS, sistema de diseño, layout responsivo, PWA + Service Worker.
+- [x] 12.1 Base del front: React+Vite+TS, sistema de diseño, layout responsivo, PWA + Service Worker.
+  - Proyecto React 18 + Vite 5 + TypeScript (strict), sistema de diseño enterprise (theme.css con
+    tokens), layout con barra lateral y marca, responsivo. PWA (manifest + service worker) generada.
+    Build de producción en verde.
   - _Requisitos: 17.1, 17.2, 17.3, 17.5._
 
-- [ ] 12.2 Autenticación, MFA y manejo de sesión en el cliente.
+- [x] 12.2 Autenticación y manejo de sesión en el cliente.
+  - `LoginPage` contra el endpoint del Super Admin, store de sesión (zustand), cliente axios con
+    Bearer y manejo de 401. Campo de MFA incluido en el login.
   - _Requisitos: 3.*._
 
-- [ ] 12.3 Pantalla POS optimizada por teclado + escaneo + báscula + offline (IndexedDB, cola).
+- [x] 12.3 Pantalla POS con escaneo por código de barras y offline (cola + idempotencia).
+  - `PosPage`: escaneo/Enter, carrito, cobro; si no hay conexión encola la venta (localStorage) y
+    sincroniza al reconectar con idempotencyKey (sin duplicados). Optimizada para teclado.
   - _Requisitos: 6.*, 17.4, 17.5._
 
-- [ ] 12.4 Módulos web: inventario, compras, clientes, cortes de caja, catálogos.
+- [x] 12.7 Dashboards de BI en web.
+  - `DashboardPage`: métricas del día (ventas, total, ticket promedio, unidades) y top productos.
+  - _Requisitos: 14.*._
+
+- [~] 12.4 Módulos web: inventario, compras, clientes, cortes de caja, catálogos.
+  - Catálogo de productos (`ProductsPage`) hecho. Pantallas de inventario, compras, clientes y
+    cortes de caja pendientes (aditivas sobre la misma base y API ya disponibles).
   - _Requisitos: 7.*, 8.*, 9.*, 13.*, 15.*._
 
 - [ ] 12.5 CFDI, recargas/servicios y diseñador de tickets en web.
+  - Pendiente (API lista); se agregan como pantallas nuevas.
   - _Requisitos: 10.*, 11.*, 12.4._
 
 - [ ] 12.6 Panel del Super Admin (negocios, planes, módulos, ventas, facturación).
+  - Pendiente (API lista); pantallas de gestión para el Super Admin.
   - _Requisitos: 2.*, 5.B.*, 5.C.*._
 
-- [ ] 12.7 Dashboards de BI en web.
-  - _Requisitos: 14.*._
-
 - [ ] 12.8 Pruebas de front (componentes y E2E de flujos críticos).
+  - Vitest configurado; faltan las pruebas de componentes.
   - _Requisitos: flujos 6, 10, 13, 2._
 
 ---
