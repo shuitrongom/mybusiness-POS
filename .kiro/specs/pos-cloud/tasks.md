@@ -216,31 +216,38 @@ Convenciones:
 
 ## Etapa 6 — Ventas (POS), Cortes de Caja y Offline
 
-- [ ] 6.1 Modelo de venta, líneas, pagos y promociones.
-  - `sale`, `sale_line`, `payment`, `promotion`.
+- [x] 6.1 Modelo de venta, líneas y pagos.
+  - Dominio `Sale`/`SaleLine`/`Payment` con cálculo de totales, cambio y validación de pagos.
+    Tablas `sale`/`sale_line`/`sale_payment` por tenant con RLS. (Promociones: Etapa 9/reglas, aditivo.)
   - _Requisitos: 6.3, 6.7._
 
-- [ ] 6.2 Registrar venta con código de barras y báscula (soporte de datos).
-  - Descuento de inventario transaccional; pagos mixtos.
+- [x] 6.2 Registrar venta y descuento de inventario.
+  - `SaleService.registerSale` descuenta inventario vía `InventoryPort` en la misma transacción.
+    Pagos mixtos y venta por cantidad decimal (soporta báscula). Verificado (100 → 95).
   - _Requisitos: 6.1, 6.3, 6.4, 6.8._
 
-- [ ] 6.3 Devoluciones, cancelaciones, cotizaciones y apartados.
-  - Cancelación con autorización de supervisor (usa autz Etapa 2).
+- [~] 6.3 Devoluciones, cancelaciones, cotizaciones y apartados.
+  - Cancelación de venta (`voidSale`) implementada. La reposición de inventario por
+    cancelación/devolución y cotizaciones/apartados se completan junto con Clientes (Etapa 9).
   - _Requisitos: 6.6._
 
-- [ ] 6.4 Multi-caja y multi-sucursal.
-  - `cash_register`; asociación a sucursal.
+- [x] 6.4 Multi-caja y multi-sucursal.
+  - `cash_register` por sucursal; venta asociada a sucursal/caja/turno. Verificado.
   - _Requisitos: 6.9._
 
-- [ ] 6.5 Cortes de caja, arqueo y turnos.
-  - `shift`; apertura con fondo, cierre con arqueo, corte Z, entradas/salidas de efectivo.
+- [x] 6.5 Cortes de caja, arqueo y turnos.
+  - `ShiftService`: abrir con fondo, movimientos de efectivo, cierre con arqueo y cálculo de
+    diferencia (esperado vs contado por método de pago). Verificado (esperado 600, dif -10).
   - _Requisitos: 13.1–13.5._
 
-- [ ] 6.6 Sincronización offline con idempotencia (backend).
-  - Aceptar ventas encoladas con idempotency key; deduplicar; validar stock al sincronizar.
+- [x] 6.6 Sincronización offline con idempotencia (backend).
+  - Clave de idempotencia única por venta; reenvío no duplica ni descuenta inventario doble.
+    Verificado (reenvío marca duplicated=true, stock 50 → 48, no 46).
   - _Requisitos: 6.2, 6.10._
 
-- [ ] 6.7 Pruebas de ventas, cortes y offline.
+- [x] 6.7 Pruebas de ventas, cortes y offline.
+  - Dominio (4) + integración (venta descuenta inventario, idempotencia, corte de caja).
+    Suite completa: 37/37 en verde.
   - _Requisitos: 6.*, 13.*._
 
 ---
