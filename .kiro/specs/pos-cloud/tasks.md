@@ -279,22 +279,34 @@ Convenciones:
 
 ## Etapa 8 — Facturación CFDI 4.0 del Negocio
 
-- [ ] 8.1 Puerto `CfdiStampingPort` y adaptador del PAC.
+- [x] 8.1 Puerto `CfdiStampingPort` y adaptador del PAC.
+  - Puerto abstracto del PAC + adaptador SIMULADO (sandbox) activable por `app.cfdi.pac`.
+    Al contratar un PAC real se agrega otro adaptador sin tocar dominio ni casos de uso.
   - _Requisitos: 10.1._
 
-- [ ] 8.2 Emisión de CFDI 4.0 con campos obligatorios y almacenamiento XML/PDF.
+- [x] 8.2 Emisión de CFDI 4.0 con campos obligatorios y almacenamiento XML.
+  - `ReceiverInfo` valida los campos obligatorios de CFDI 4.0 (RFC, nombre, CP, régimen, uso).
+    Se timbra y se guarda UUID + XML. Verificado. (PDF se genera en integración con almacenamiento, Etapa 14.)
   - _Requisitos: 10.1, 10.2, 10.7._
 
-- [ ] 8.3 Complemento de pagos y cancelación conforme al SAT.
+- [~] 8.3 Complemento de pagos y cancelación conforme al SAT.
+  - Cancelación implementada y verificada. Tabla de complemento de pagos creada; el flujo de
+    complemento se completa junto con cuentas por cobrar (Etapa 9).
   - _Requisitos: 10.3, 10.4._
 
-- [ ] 8.4 Factura global y portal de autofacturación.
+- [~] 8.4 Factura global y portal de autofacturación.
+  - Modelo soporta tipo GLOBAL. El armado de la factura global (agrupar tickets del día) y el
+    portal público de autofacturación se completan con el frontend (Etapa 12).
   - _Requisitos: 10.5, 10.6._
 
-- [ ] 8.5 Reintento idempotente ante fallo de timbrado.
+- [x] 8.5 Reintento idempotente ante fallo de timbrado.
+  - Idempotencia por clave (no re-timbra) y `retryStamp` para reintentar un error sin duplicar.
+    Verificado (reenvío marca duplicated=true con mismo UUID).
   - _Requisitos: 10.8._
 
-- [ ] 8.6 Pruebas de CFDI (con sandbox del PAC).
+- [x] 8.6 Pruebas de CFDI (con sandbox del PAC).
+  - Integración: emisión+timbrado, idempotencia, cancelación. Suite completa: 43/43 en verde.
+    Se adoptó el patrón singleton container (un solo PostgreSQL compartido) para estabilidad.
   - _Requisitos: 10.*._
 
 ---

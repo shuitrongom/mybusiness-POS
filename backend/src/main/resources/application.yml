@@ -34,6 +34,9 @@ spring:
     baseline-on-migrate: true
 
 app:
+  cfdi:
+    # Proveedor de timbrado: 'simulated' (sandbox, por defecto) o 'real' cuando se contrate un PAC.
+    pac: ${CFDI_PAC:simulated}
   security:
     jwt:
       # En producción, DB_* y este secreto deben venir de variables de entorno / gestor de secretos.
