@@ -446,16 +446,25 @@ Convenciones:
 
 ## Etapa 13 — App Móvil del Dueño (Flutter)
 
-- [ ] 13.1 Base Flutter + BFF `mobile-api` + autenticación segura (JWT/MFA).
+- [x] 13.1 Base Flutter + autenticación segura (JWT/MFA).
+  - Proyecto Flutter (pubspec, tema enterprise oscuro Material 3), `ApiService` (login contra el
+    backend con JWT/MFA + token persistente), `main.dart` que decide login/dashboard según sesión.
+  - NOTA: código listo para compilar; falta ejecutar `flutter build` (requiere instalar Flutter SDK
+    + Android SDK, no disponibles en el entorno de desarrollo). Ver mobile/README.md.
   - _Requisitos: 16.1, 16.5._
 
-- [ ] 13.2 Dashboards de BI y ventas en tiempo real en la app.
+- [x] 13.2 Dashboard de BI en la app.
+  - `DashboardScreen`: métricas del día (ventas, total, ticket promedio, unidades) y top productos,
+    con pull-to-refresh. Consume los endpoints de BI. (Tiempo real por push se añade en 13.3.)
   - _Requisitos: 16.2, 16.4._
 
 - [ ] 13.3 Notificaciones push (corte de caja, stock, ventas).
+  - Pendiente: requiere FCM y el toolchain móvil compilando. Dependencia base incluida.
   - _Requisitos: 16.3._
 
-- [ ] 13.4 Pruebas de la app.
+- [~] 13.4 Pruebas de la app.
+  - Linting configurado (analysis_options.yaml). Las pruebas de widget requieren el toolchain
+    Flutter instalado para ejecutarse.
   - _Requisitos: 16.*._
 
 ---

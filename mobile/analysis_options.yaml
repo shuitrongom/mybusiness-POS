@@ -1,0 +1,9 @@
+include: package:flutter_lints/flutter.yaml
+
+# Reglas de análisis estático para la app del dueño. Recomendadas por Flutter para
+# mantener un código limpio y consistente.
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_final_fields: true
+    avoid_print: true
