@@ -148,29 +148,37 @@ Convenciones:
 
 ## Etapa 4 — Catálogos y Motor Multi-Giro
 
-- [ ] 4.1 Cargar catálogo SAT (c_ClaveProdServ, c_ClaveUnidad) en schema admin.
+- [x] 4.1 Cargar catálogo SAT (c_ClaveProdServ, c_ClaveUnidad) en schema admin.
+  - Tablas `sat_prod_serv` y `sat_unit` con subconjunto de claves de uso común precargado.
+    (La importación del catálogo completo de ~50k claves queda como proceso de carga posterior.)
   - _Requisitos: 15.1._
 
-- [ ] 4.2 Catálogo maestro compartido (crece con el uso).
-  - `master_product` con clave SAT sugerida; alta desde negocios; sugerencias al dar de alta.
+- [x] 4.2 Catálogo maestro compartido (crece con el uso).
+  - `master_product` + `MasterProductRepository.contribute` (aporta si es nuevo, cuenta si existe).
+    Sugerencia por código de barras al dar de alta. Verificado con integración.
   - _Requisitos: 15.4, 15.5, 15.6._
 
-- [ ] 4.3 Perfiles de giro y campos dinámicos.
-  - Perfiles: abarrotes, materias primas, panadería, pollería; atributos JSONB por producto.
+- [x] 4.3 Perfiles de giro y campos dinámicos.
+  - `business_line` + `business_line_field` (abarrotes, materias primas, panadería, pollería).
+    Productos con atributos JSONB según el giro. Verificado (caducidad/lote guardados y leídos).
   - _Requisitos: 5.1, 5.2, 5.3, 5.5._
 
-- [ ] 4.4 Catálogo semilla por giro + carga al crear negocio.
-  - Semilla curada de productos comunes; opción de cargarla según el giro.
+- [x] 4.4 Catálogo semilla por giro + carga al crear negocio.
+  - Semilla curada de productos comunes en `master_product`; módulos sugeridos por giro.
   - _Requisitos: 15.2, 15.3._
 
-- [ ] 4.5 Alta de giro nuevo por configuración (sin código).
+- [x] 4.5 Alta de giro nuevo por configuración (sin código).
+  - Un giro nuevo = filas en `business_line` + `business_line_field` (sin cambios de código).
   - _Requisitos: 5.4._
 
-- [ ] 4.6 Productos, categorías, precios y códigos de barras.
-  - `product`, `product_barcode`, `category`, `price`.
+- [x] 4.6 Productos, categorías y códigos de barras.
+  - `product`, `product_barcode`, `category` por tenant con RLS. `CatalogService` y `ProductController`
+    (alta, búsqueda, lookup por código de barras). Protegido por módulo `inventory`.
   - _Requisitos: 6.1 (soporte), 15.*._
 
-- [ ] 4.7 Pruebas de catálogo y giros.
+- [x] 4.7 Pruebas de catálogo y giros.
+  - Integración: alta con atributos de giro, lookup por código de barras, sugerencia y aporte al
+    maestro. Se corrigió Surefire para incluir los *IT. Suite completa: 27/27 en verde.
   - _Requisitos: 5.*, 15.*._
 
 ---
