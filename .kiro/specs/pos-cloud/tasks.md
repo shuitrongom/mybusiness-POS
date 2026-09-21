@@ -106,37 +106,43 @@ Convenciones:
 
 ## Etapa 3 — Licenciamiento, Planes y Facturación del Super Admin
 
-- [ ] 3.1 Modelo de negocios, planes y módulos.
-  - `business`, `plan`, `plan_module`, `module_catalog`, `business_module`.
+- [x] 3.1 Modelo de negocios, planes y módulos.
+  - Dominio hexagonal: `Business` (reglas del ciclo de licencia), `Plan`, `BusinessModule`, estados.
+    Repositorios JDBC sobre schema `admin`. Login real del Super Admin (`AuthController`/`AuthService`).
   - _Requisitos: 2.9, 2.10, 5.B.1._
 
-- [ ] 3.2 Caso de uso: crear negocio con plan y periodo de prueba configurable.
-  - Selección de plan, meses de prueba (0..N), aprovisiona tenant (Etapa 1.4).
+- [x] 3.2 Caso de uso: crear negocio con plan y periodo de prueba configurable.
+  - `LicensingService.createBusiness`: registra datos (transaccional) y aprovisiona el schema del
+    tenant FUERA de esa transacción (se corrigió un interbloqueo DDL/transacción real).
   - _Requisitos: 2.1, 5.B.2, 5.B.4._
 
-- [ ] 3.3 Gestión del ciclo de licencia.
-  - Vencimiento de prueba → bloqueo + aviso; compra de licencia definitiva → acceso permanente.
-  - Suspender/reactivar; conservar datos.
+- [x] 3.3 Gestión del ciclo de licencia.
+  - Compra de licencia (→ ACTIVE, permanente), suspensión/reactivación (conserva datos),
+    expiración de pruebas vencidas. Verificado con reloj fijo y con integración real.
   - _Requisitos: 2.2, 2.3, 2.5, 2.6, 2.7, 5.B.5, 5.B.6._
 
-- [ ] 3.4 Habilitación comercial de módulos y venta de excedentes.
-  - Habilitar/deshabilitar módulos por negocio; vender módulo adicional (excedente) con precio sugerido.
+- [x] 3.4 Habilitación comercial de módulos y venta de excedentes.
+  - Habilitar módulos del plan; vender módulo adicional (excedente) con precio; deshabilitar
+    conservando datos. Endpoints en el panel del Super Admin.
   - _Requisitos: 2.9, 2.11, 2.12, 2.13, 5.B.9, 5.B.10._
 
-- [ ] 3.5 CRUD de planes por el Super Admin (sin programación) + precios sugeridos.
-  - Crear/editar/duplicar/desactivar planes; precargar planes Esencial/Profesional/Empresarial.
+- [~] 3.5 CRUD de planes por el Super Admin (sin programación) + precios sugeridos.
+  - Planes precargados (Esencial/Profesional/Empresarial) y listado en el panel. El CRUD de edición
+    de planes vía API queda pendiente para completar junto al frontend (Etapa 12.6).
   - _Requisitos: 5.B.1, 5.B.7, 5.B.8._
 
 - [ ] 3.6 Facturación de ventas del Super Admin (CFDI o PDF).
-  - Preguntar si requiere factura; CFDI vía PAC (usa Etapa 8) o comprobante PDF al correo capturado.
-  - Registrar `superadmin_sale`, historial y auditoría.
+  - Se implementa junto con CFDI (Etapa 8), reutilizando el PAC. Registrar `superadmin_sale`.
   - _Requisitos: 5.C.1–5.C.7, 5.B.11, 5.B.12, 5.B.13._
 
 - [ ] 3.7 Notificaciones de vencimiento de prueba.
+  - Se implementa junto con el módulo de notificaciones (Etapa 14.1).
   - _Requisitos: 2.4._
 
-- [ ] 3.8 Pruebas de licenciamiento, módulos y facturación del Super Admin.
-  - _Requisitos: 2.*, 5.B.*, 5.C.*._
+- [x] 3.8 Pruebas de licenciamiento y módulos.
+  - Dominio (8) + integración del flujo real con PostgreSQL (crear negocio, aprovisionar schema,
+    habilitar módulos, comprar licencia, vender excedente). Suite completa: 20/20 en verde.
+  - _Requisitos: 2.*, 5.B.*._
 
 ---
 
