@@ -30,6 +30,7 @@ export function AppLayout() {
           <NavLink to="/" end className="nav-link">Panel</NavLink>
           <NavLink to="/pos" className="nav-link">Punto de venta</NavLink>
           <NavLink to="/products" className="nav-link">Productos</NavLink>
+          <NavLink to="/admin" className="nav-link">Administración</NavLink>
         </nav>
 
         <button className="btn-ghost logout" onClick={handleLogout}>

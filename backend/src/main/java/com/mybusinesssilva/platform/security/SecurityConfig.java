@@ -66,6 +66,20 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
+    /**
+     * Evita que el contenedor de servlets registre por su cuenta el filtro JWT (por ser un
+     * {@code @Component}). El filtro debe ejecutarse ÚNICAMENTE dentro de la cadena de Spring
+     * Security (añadido con {@code addFilterBefore}); un doble registro haría que la autenticación
+     * establecida se pierda en la cadena general.
+     */
+    @Bean
+    public org.springframework.boot.web.servlet.FilterRegistrationBean<JwtAuthenticationFilter>
+            disableAutoRegistration(JwtAuthenticationFilter filter) {
+        var registration = new org.springframework.boot.web.servlet.FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();

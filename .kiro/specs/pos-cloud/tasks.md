@@ -427,9 +427,14 @@ Convenciones:
   - Pendiente (API lista); se agregan como pantallas nuevas.
   - _Requisitos: 10.*, 11.*, 12.4._
 
-- [ ] 12.6 Panel del Super Admin (negocios, planes, módulos, ventas, facturación).
-  - Pendiente (API lista); pantallas de gestión para el Super Admin.
-  - _Requisitos: 2.*, 5.B.*, 5.C.*._
+- [x] 12.6 Panel del Super Admin (negocios, planes, licencias).
+  - `SuperAdminPage`: lista de negocios con estado, alta con plan y meses de prueba (muestra precio
+    sugerido), y acciones (vender licencia, suspender, reactivar). Consume la API real.
+  - Se añadió `SuperAdminSeeder` (crea el Super Admin inicial al arrancar) para usabilidad día 1.
+  - Se corrigió un bug de doble registro del filtro JWT (los endpoints protegidos daban 401);
+    cubierto ahora por `AuthFlowIT` (login → 401 sin token → 200 con token). Verificado E2E real.
+  - (La facturación de ventas del Super Admin CFDI/PDF queda pendiente, reusará el PAC de Etapa 8.)
+  - _Requisitos: 2.*, 5.B.*._
 
 - [ ] 12.8 Pruebas de front (componentes y E2E de flujos críticos).
   - Vitest configurado; faltan las pruebas de componentes.
