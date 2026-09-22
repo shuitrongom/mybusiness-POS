@@ -54,6 +54,7 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
               <NavLink to="/purchasing" className="nav-link">Compras</NavLink>
               <NavLink to="/customers" className="nav-link">Clientes</NavLink>
               <NavLink to="/cashier" className="nav-link">Cortes de caja</NavLink>
+              <NavLink to="/branches" className="nav-link">Sucursales</NavLink>
               <NavLink to="/users" className="nav-link">Usuarios</NavLink>
               <NavLink to="/payments" className="nav-link">Recargas</NavLink>
               <NavLink to="/invoicing" className="nav-link">Facturación</NavLink>

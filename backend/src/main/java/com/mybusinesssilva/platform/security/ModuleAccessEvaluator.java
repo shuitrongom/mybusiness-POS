@@ -88,6 +88,34 @@ public class ModuleAccessEvaluator {
         return canUse("sales") || canUse("inventory");
     }
 
+    /**
+     * Acceso de LECTURA a las sucursales: cualquier usuario operativo autenticado del negocio,
+     * incluido el cajero, para poder elegir en qué sucursal cobra. No exige el módulo
+     * {@code multibranch} (leer la lista es siempre necesario, aunque solo haya una sucursal).
+     */
+    public boolean canReadBranches() {
+        AuthenticatedUser user = currentUser();
+        if (user == null) {
+            return false;
+        }
+        return user.isSuperAdmin() || !user.tenant().isBlank();
+    }
+
+    /**
+     * Gestión de sucursales (crear, editar, activar): solo Dueño/Administrador y el negocio debe
+     * tener habilitado el módulo comercial {@code multibranch}.
+     */
+    public boolean canManageBranches() {
+        AuthenticatedUser user = currentUser();
+        if (user == null) {
+            return false;
+        }
+        if (user.isSuperAdmin()) {
+            return true;
+        }
+        return user.hasModule("multibranch") && isOwnerOrAdmin(user);
+    }
+
     private boolean isOwnerOrAdmin(AuthenticatedUser user) {
         return user.hasRole(Roles.OWNER) || user.hasRole(Roles.ADMIN);
     }

@@ -1,12 +1,12 @@
 /* =====================================================================
-   Punto de venta — diseño profesional estilo POS moderno.
-   Catálogo con cuadrícula de productos a la izquierda; ticket (carrito)
-   fijo a la derecha; modal de cobro con método de pago y cambio.
+   Punto de venta — diseño profesional estilo POS moderno (Square/Loyverse).
+   Cabecera con sucursal y reloj; catálogo con cuadrícula de productos con
+   avatar de color; ticket lateral; modal de cobro con método y cambio.
    ===================================================================== */
 
 .pos {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 1fr 390px;
   gap: var(--space-4);
   height: calc(100vh - 2 * var(--space-5));
   min-height: 0;
@@ -21,40 +21,88 @@
   flex-direction: column;
   min-height: 0;
 }
+
+/* Cabecera con título, fecha/hora y selector de sucursal */
+.pos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.pos-header-left { display: flex; flex-direction: column; gap: 2px; }
+.pos-header-title { font-size: var(--fs-2xl); font-weight: 800; color: var(--brand-800); line-height: 1; }
+.pos-header-date { font-size: var(--fs-xs); color: var(--text-muted); text-transform: capitalize; }
+.pos-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 14px;
+  box-shadow: var(--shadow-sm);
+}
+.pos-branch-icon { font-size: 18px; }
+.pos-branch-name { font-weight: 700; color: var(--brand-800); font-size: var(--fs-sm); }
+.pos-branch-select {
+  border: none;
+  background: transparent;
+  font-weight: 700;
+  color: var(--brand-800);
+  font-size: var(--fs-sm);
+  width: auto;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.pos-branch-select:focus { outline: none; }
+
+/* Barra de búsqueda / escaneo con iconos */
 .pos-toolbar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr;
   gap: var(--space-3);
 }
 @media (max-width: 600px) { .pos-toolbar { grid-template-columns: 1fr; } }
-.pos-barcode,
-.pos-search {
-  padding: 13px 16px;
+.pos-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
   border-radius: 12px;
   border: 1.5px solid var(--border);
   background: var(--surface);
-  font-size: var(--fs-md);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.pos-barcode {
-  border-color: var(--brand-500);
-  box-shadow: 0 0 0 3px rgba(46, 110, 242, 0.1);
-}
-.pos-barcode:focus, .pos-search:focus {
-  outline: none;
+.pos-field-barcode { border-color: var(--brand-500); box-shadow: 0 0 0 3px rgba(46, 110, 242, 0.1); }
+.pos-field:focus-within {
   border-color: var(--brand-600);
   box-shadow: 0 0 0 4px rgba(46, 110, 242, 0.14);
 }
+.pos-field-icon { color: var(--text-muted); font-size: 15px; }
+.pos-field input {
+  border: none;
+  background: transparent;
+  padding: 13px 0;
+  font-size: var(--fs-md);
+  width: 100%;
+}
+.pos-field input:focus { outline: none; }
 
+/* Chips de categoría con punto de color */
 .pos-cats {
   display: flex;
   gap: var(--space-2);
   overflow-x: auto;
-  padding: var(--space-3) 2px;
+  padding: var(--space-4) 2px var(--space-3);
   scrollbar-width: thin;
 }
 .pos-cat {
   flex: 0 0 auto;
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 15px;
   border-radius: 999px;
   border: 1.5px solid var(--border);
   background: var(--surface);
@@ -64,11 +112,11 @@
   white-space: nowrap;
   transition: all 0.15s;
 }
+.pos-cat-dot { width: 9px; height: 9px; border-radius: 50%; }
 .pos-cat.is-active {
-  background: linear-gradient(135deg, var(--brand-600), var(--brand-500));
-  border-color: transparent;
+  background: var(--brand-800);
+  border-color: var(--brand-800);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(46, 110, 242, 0.3);
 }
 
 .pos-message {
@@ -81,12 +129,13 @@
   margin-bottom: var(--space-3);
 }
 
+/* Cuadrícula de productos */
 .pos-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--space-3);
   overflow-y: auto;
-  padding: 2px;
+  padding: 2px 2px 10px;
   align-content: start;
   flex: 1;
   min-height: 0;
@@ -94,24 +143,35 @@
 .pos-tile {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  gap: 10px;
   padding: 14px;
-  min-height: 96px;
-  border-radius: 14px;
+  min-height: 128px;
+  border-radius: 16px;
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
   text-align: left;
-  transition: transform 0.06s, box-shadow 0.15s, border-color 0.15s;
+  transition: transform 0.08s, box-shadow 0.15s, border-color 0.15s;
 }
 .pos-tile:hover {
-  border-color: var(--brand-400, #60a5fa);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-  transform: translateY(-2px);
+  border-color: transparent;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.16);
+  transform: translateY(-3px);
 }
-.pos-tile:active { transform: translateY(0); }
+.pos-tile:active { transform: translateY(-1px); }
+.pos-tile-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
+}
 .pos-tile-name {
   font-weight: 700;
   font-size: var(--fs-sm);
@@ -122,12 +182,8 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.pos-tile-price {
-  margin-top: auto;
-  font-weight: 800;
-  font-size: var(--fs-lg);
-  color: var(--brand-700);
-}
+.pos-tile-foot { margin-top: auto; display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.pos-tile-price { font-weight: 800; font-size: var(--fs-lg); color: var(--brand-700); }
 .pos-tile-unit { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
 .pos-grid-empty {
   grid-column: 1 / -1;
@@ -168,16 +224,27 @@
 .pos-lines {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-4);
   min-height: 0;
 }
 .pos-line {
   display: grid;
-  grid-template-columns: 1fr auto auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   align-items: center;
   gap: var(--space-3);
   padding: 10px 0;
   border-bottom: 1px solid var(--surface-2);
+}
+.pos-line-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .pos-line-name { font-weight: 600; font-size: var(--fs-sm); }
 .pos-line-price { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; }
@@ -199,7 +266,7 @@
   border-radius: 0;
 }
 .pos-qty input {
-  width: 38px;
+  width: 36px;
   height: 30px;
   border: none;
   text-align: center;
@@ -207,21 +274,12 @@
   padding: 0;
   background: var(--surface);
 }
-.pos-line-total { font-weight: 700; font-size: var(--fs-sm); min-width: 68px; text-align: right; }
-.pos-line-remove {
-  background: transparent;
-  color: var(--text-muted);
-  padding: 4px 6px;
-  font-size: 13px;
-}
+.pos-line-total { font-weight: 700; font-size: var(--fs-sm); min-width: 62px; text-align: right; }
+.pos-line-remove { background: transparent; color: var(--text-muted); padding: 4px 4px; font-size: 13px; }
 .pos-line-remove:hover { color: var(--danger); }
 
-.pos-empty {
-  text-align: center;
-  color: var(--text-muted);
-  padding: var(--space-6) var(--space-4);
-}
-.pos-empty-icon { font-size: 40px; opacity: 0.5; }
+.pos-empty { text-align: center; color: var(--text-muted); padding: var(--space-6) var(--space-4); }
+.pos-empty-icon { font-size: 44px; opacity: 0.5; }
 .pos-empty p { font-size: var(--fs-sm); margin-top: var(--space-2); }
 
 /* ---- Resumen y cobro ---- */
@@ -238,17 +296,17 @@
   margin-bottom: var(--space-3);
 }
 .pos-summary-row span { color: var(--text-muted); font-size: var(--fs-md); }
-.pos-summary-total { font-size: 28px; font-weight: 800; color: var(--brand-800); }
+.pos-summary-total { font-size: 30px; font-weight: 800; color: var(--brand-800); }
 .pos-pay {
   width: 100%;
   padding: 16px;
   font-size: var(--fs-lg);
   font-weight: 800;
   color: #fff;
-  border-radius: 12px;
+  border-radius: 14px;
   background: linear-gradient(135deg, var(--accent-600), var(--accent-500));
   box-shadow: 0 10px 24px rgba(18, 184, 134, 0.35);
-  transition: filter 0.15s, box-shadow 0.15s;
+  transition: filter 0.15s;
 }
 .pos-pay:hover:not(:disabled) { filter: brightness(1.05); }
 .pos-pay:disabled { opacity: 0.5; cursor: default; box-shadow: none; }

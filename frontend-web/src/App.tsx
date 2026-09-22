@@ -13,6 +13,7 @@ import { InventoryPage } from '@/pages/InventoryPage';
 import { PurchasingPage } from '@/pages/PurchasingPage';
 import { CashierPage } from '@/pages/CashierPage';
 import { UsersPage } from '@/pages/UsersPage';
+import { BranchesPage } from '@/pages/BranchesPage';
 import { SuperAdminPage } from '@/pages/SuperAdminPage';
 import { SuperAdminDashboardPage } from '@/pages/SuperAdminDashboardPage';
 
@@ -68,6 +69,7 @@ export function App() {
             <Route path="purchasing" element={<PurchasingPage />} />
             <Route path="customers" element={<CustomersPage />} />
             <Route path="cashier" element={<CashierPage />} />
+            <Route path="branches" element={<BranchesPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="invoicing" element={<InvoicingPage />} />
