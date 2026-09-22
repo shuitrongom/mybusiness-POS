@@ -43,31 +43,33 @@ class CatalogServiceIT extends AbstractIntegrationTest {
         Business business = newBusiness("abarrotes");
         TenantContext.setTenantId(business.getSchemaName());
 
+        // Se usa un código propio del negocio (no de la precarga por giro) para probar el alta
+        // con atributos dinámicos sin chocar con el catálogo sembrado.
         Product product = new Product(
-                null, "SKU-COCA", "Coca-Cola 600 ml", null, "pieza", false,
-                "50200000", "H87", new BigDecimal("18.00"), new BigDecimal("12.00"), true,
-                List.of("7501055300201"),
+                null, "SKU-AGUA", "Agua Natural 1 L", null, "pieza", false,
+                "50200000", "H87", new BigDecimal("15.00"), new BigDecimal("9.00"), true,
+                List.of("7500000123456"),
                 Map.of("expiration_date", "2027-01-01", "lot", "L123"));
 
         Product saved = catalogService.createProduct(product);
 
         assertThat(saved.id()).isNotNull();
         assertThat(saved.attributes()).containsEntry("lot", "L123");
-        assertThat(saved.barcodes()).containsExactly("7501055300201");
+        assertThat(saved.barcodes()).containsExactly("7500000123456");
 
         // Se puede recuperar por código de barras dentro del negocio.
-        CatalogService.BarcodeLookup lookup = catalogService.lookupByBarcode("7501055300201");
+        CatalogService.BarcodeLookup lookup = catalogService.lookupByBarcode("7500000123456");
         assertThat(lookup.foundInBusiness()).isTrue();
-        assertThat(lookup.product().name()).isEqualTo("Coca-Cola 600 ml");
+        assertThat(lookup.product().name()).isEqualTo("Agua Natural 1 L");
     }
 
     @Test
     void masterCatalogSuggestsSeededProductToNewBusiness() {
-        Business business = newBusiness("abarrotes");
+        // Una pollería NO recibe la Coca-Cola en su precarga (esa es de abarrotes), así que el
+        // catálogo maestro debe ofrecerla como sugerencia cuando se escanea su código.
+        Business business = newBusiness("polleria");
         TenantContext.setTenantId(business.getSchemaName());
 
-        // El código de la Coca-Cola viene precargado en el catálogo maestro (semilla).
-        // Como el negocio aún no lo tiene, debe ofrecerse como sugerencia.
         CatalogService.BarcodeLookup lookup = catalogService.lookupByBarcode("7501055300201");
 
         assertThat(lookup.foundInBusiness()).isFalse();

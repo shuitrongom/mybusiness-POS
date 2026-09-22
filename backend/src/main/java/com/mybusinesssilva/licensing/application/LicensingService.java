@@ -89,6 +89,9 @@ public class LicensingService {
         // Paso 2b: crea la sucursal principal para que el negocio pueda vender desde el inicio.
         ownerProvisioner.createDefaultBranch(business.getSchemaName());
 
+        // Paso 2c: precarga el catálogo con productos frecuentes del giro (precio a ajustar).
+        ownerProvisioner.seedCatalogFromMaster(business.getSchemaName(), businessLine);
+
         // Paso 3: crea el usuario dueño dentro del schema del tenant y obtiene sus credenciales.
         BusinessOwnerProvisioner.OwnerCredentials credentials = ownerProvisioner.createOwner(
                 business.getSchemaName(), ownerEmail, ownerName, ownerWhatsapp);
@@ -155,6 +158,7 @@ public class LicensingService {
         Business business = businessRegistrar.register(actor, name, rfc, businessLine, planId, trialMonths);
         provisioningService.provisionSchema(business.getSchemaName());
         ownerProvisioner.createDefaultBranch(business.getSchemaName());
+        ownerProvisioner.seedCatalogFromMaster(business.getSchemaName(), businessLine);
         ownerProvisioner.createOwner(business.getSchemaName(),
                 "owner@" + business.getSchemaName() + ".local", "Dueño", null);
         return business;

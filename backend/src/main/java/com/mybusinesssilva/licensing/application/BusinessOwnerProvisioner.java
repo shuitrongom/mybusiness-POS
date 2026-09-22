@@ -105,6 +105,109 @@ public class BusinessOwnerProvisioner {
         }
     }
 
+    /**
+     * Categorías del catálogo maestro que se siembran para cada giro. Así un negocio nuevo arranca
+     * con productos frecuentes precargados (el dueño solo ajusta precios), en vez de un catálogo
+     * vacío. Un giro sin mapeo recibe las categorías generales de abarrotes.
+     */
+    private static final java.util.Map<String, java.util.List<String>> LINE_CATEGORIES =
+            java.util.Map.of(
+                    "abarrotes", java.util.List.of("Bebidas", "Botanas", "Panadería", "Lácteos", "Abarrotes"),
+                    "materias_primas", java.util.List.of("Materias primas", "Abarrotes"),
+                    "panaderia", java.util.List.of("Panadería"),
+                    "polleria", java.util.List.of("Pollería"));
+
+    /**
+     * Siembra el catálogo del negocio con productos del catálogo maestro que correspondan a su
+     * giro. Crea las categorías necesarias en el tenant y los productos (precio 0, para ajustar),
+     * con su unidad, claves SAT y código de barras. Solo siembra si el catálogo está vacío.
+     *
+     * @param schema       schema del tenant
+     * @param businessLine giro del negocio
+     */
+    public void seedCatalogFromMaster(String schema, String businessLine) {
+        java.util.List<String> categories = LINE_CATEGORIES.getOrDefault(
+                businessLine == null ? "" : businessLine.toLowerCase(),
+                LINE_CATEGORIES.get("abarrotes"));
+
+        // Lee del catálogo maestro (schema admin) ANTES de fijar el tenant, para no cruzar contextos.
+        java.util.List<MasterRow> masterRows = jdbc.sql("""
+                SELECT name, category, unit, sat_prod_serv, sat_unit, barcode
+                FROM admin.master_product
+                WHERE category = ANY(:cats)
+                ORDER BY category, name
+                """)
+                .param("cats", categories.toArray(new String[0]))
+                .query((rs, n) -> new MasterRow(
+                        rs.getString("name"), rs.getString("category"), rs.getString("unit"),
+                        rs.getString("sat_prod_serv"), rs.getString("sat_unit"), rs.getString("barcode")))
+                .list();
+
+        if (masterRows.isEmpty()) {
+            return;
+        }
+
+        String previousTenant = TenantContext.getTenantId();
+        TenantContext.setTenantId(schema);
+        try {
+            long existing = jdbc.sql("SELECT count(*) FROM product").query(Long.class).single();
+            if (existing > 0) {
+                return; // No pisar un catálogo que ya tiene productos.
+            }
+
+            // Crea las categorías del tenant y guarda su id por nombre.
+            java.util.Map<String, Long> categoryIds = new java.util.HashMap<>();
+            for (String cat : categories) {
+                Long id = jdbc.sql("""
+                        INSERT INTO category (name) VALUES (:name)
+                        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                        RETURNING id
+                        """)
+                        .param("name", cat)
+                        .query(Long.class)
+                        .single();
+                categoryIds.put(cat, id);
+            }
+
+            for (MasterRow row : masterRows) {
+                boolean byWeight = "kg".equalsIgnoreCase(row.unit()) || "litro".equalsIgnoreCase(row.unit());
+                Long productId = jdbc.sql("""
+                        INSERT INTO product
+                            (name, category_id, unit, sold_by_weight, sat_prod_serv, sat_unit, price, cost, active)
+                        VALUES (:name, :cat, :unit, :byWeight, :prodServ, :unitSat, 0, 0, TRUE)
+                        RETURNING id
+                        """)
+                        .param("name", row.name())
+                        .param("cat", categoryIds.get(row.category()))
+                        .param("unit", row.unit())
+                        .param("byWeight", byWeight)
+                        .param("prodServ", row.satProdServ())
+                        .param("unitSat", row.satUnit())
+                        .query(Long.class)
+                        .single();
+
+                if (row.barcode() != null && !row.barcode().isBlank()) {
+                    jdbc.sql("INSERT INTO product_barcode (product_id, barcode) VALUES (:pid, :bc) "
+                            + "ON CONFLICT (barcode) DO NOTHING")
+                            .param("pid", productId)
+                            .param("bc", row.barcode())
+                            .update();
+                }
+            }
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.setTenantId(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
+    }
+
+    /** Fila del catálogo maestro usada al sembrar el catálogo de un negocio nuevo. */
+    private record MasterRow(String name, String category, String unit,
+                             String satProdServ, String satUnit, String barcode) {
+    }
+
     private String generatePassword() {
         StringBuilder sb = new StringBuilder(12);
         for (int i = 0; i < 12; i++) {
