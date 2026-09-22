@@ -67,4 +67,17 @@ public class TenantProvisioningService {
 
         return schema;
     }
+
+    /**
+     * Elimina por completo el schema de un tenant y todos sus datos (operación irreversible).
+     * Se usa al dar de baja definitivamente un negocio; conviene generar un respaldo antes.
+     *
+     * @param schema nombre de schema válido ({@code tenant_<id>})
+     */
+    @Transactional
+    public void dropSchema(String schema) {
+        TenantSchema.validate(schema);
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    }
 }

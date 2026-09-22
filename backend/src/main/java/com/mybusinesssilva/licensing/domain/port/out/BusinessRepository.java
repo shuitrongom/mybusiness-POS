@@ -15,6 +15,9 @@ public interface BusinessRepository {
     /** Actualiza un negocio existente. */
     void update(Business business);
 
+    /** Elimina el registro del negocio y sus módulos habilitados del schema {@code admin}. */
+    void delete(long businessId);
+
     Optional<Business> findById(long id);
 
     Optional<Business> findBySchemaName(String schemaName);

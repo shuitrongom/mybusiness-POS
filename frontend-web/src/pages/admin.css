@@ -1,19 +1,189 @@
-.admin-form {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto;
-  gap: var(--space-3);
-  align-items: end;
-  margin-top: var(--space-3);
+/* =====================================================================
+   Consola de administración del Super Admin — pestañas, formularios,
+   modales, credenciales y selector de módulos.
+   ===================================================================== */
+
+/* ---- Pestañas ---- */
+.admin-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px;
+  margin: var(--space-4) 0 var(--space-5);
 }
-@media (max-width: 1000px) {
-  .admin-form { grid-template-columns: 1fr 1fr; }
+.admin-tab {
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  padding: 9px 18px;
+  border-radius: 9px;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.admin-tab.is-active {
+  background: var(--surface);
+  color: var(--brand-700);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+/* ---- Formularios en rejilla ---- */
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+.admin-col-span { grid-column: 1 / -1; }
+@media (max-width: 900px) {
+  .admin-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  .admin-grid { grid-template-columns: 1fr; }
 }
 
 .admin-plan-hint {
   margin-top: var(--space-3);
   color: var(--text-muted);
   font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.admin-sub { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; }
+.admin-inline-error {
+  margin-left: var(--space-3);
+  color: var(--danger);
+  font-size: var(--fs-sm);
 }
 
 .admin-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .admin-actions button { padding: 6px 12px; font-size: var(--fs-sm); }
+
+/* ---- Botones peligrosos ---- */
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+}
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+.btn-danger:disabled { opacity: 0.6; cursor: default; }
+.btn-danger-ghost {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid #fecaca;
+}
+.btn-danger-ghost:hover { background: #fef2f2; }
+
+/* ---- Selector de módulos ---- */
+.module-picker { margin-top: var(--space-5); }
+.module-picker-title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: var(--space-3);
+}
+.module-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.module-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.module-chip input { width: auto; margin: 0; }
+.module-chip.is-on {
+  border-color: var(--brand-500);
+  background: #eaf1ff;
+  color: var(--brand-700);
+}
+
+/* ---- Modales ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+  animation: overlayIn 0.15s ease;
+}
+@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+.modal-card {
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 440px;
+  max-height: 88vh;
+  overflow: auto;
+  animation: authIn 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.modal-wide { max-width: 720px; }
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+.modal-close {
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0 6px;
+}
+.modal-body { padding: 20px 24px 24px; }
+.admin-modal-lead { color: var(--text); font-size: var(--fs-md); line-height: 1.6; margin: 0 0 var(--space-4); }
+.admin-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+/* ---- Caja de credenciales ---- */
+.cred-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.cred-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); }
+.cred-row span { color: var(--text-muted); font-size: var(--fs-sm); }
+.cred-row code {
+  font-family: "Consolas", "Courier New", monospace;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: var(--fs-sm);
+}
+.cred-pass { font-weight: 700; color: var(--brand-700); letter-spacing: 0.5px; }
+
+/* ---- Detalle ---- */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+@media (max-width: 600px) { .detail-grid { grid-template-columns: 1fr 1fr; } }
+.detail-info-label { font-size: var(--fs-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.detail-info-value { font-size: var(--fs-md); color: var(--text); font-weight: 600; margin-top: 3px; word-break: break-word; }
+.detail-section { margin: var(--space-5) 0 var(--space-3); color: var(--brand-800); }

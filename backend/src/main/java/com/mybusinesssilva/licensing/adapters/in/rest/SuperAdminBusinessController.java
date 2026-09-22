@@ -1,8 +1,14 @@
 package com.mybusinesssilva.licensing.adapters.in.rest;
 
+import com.mybusinesssilva.licensing.application.BusinessBackupService;
+import com.mybusinesssilva.licensing.application.BusinessBackupService.BusinessBackup;
 import com.mybusinesssilva.licensing.application.LicensingService;
+import com.mybusinesssilva.licensing.application.LicensingService.BusinessDetail;
+import com.mybusinesssilva.licensing.application.LicensingService.CreateBusinessResult;
 import com.mybusinesssilva.licensing.domain.model.Business;
+import com.mybusinesssilva.licensing.domain.model.BusinessModule;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -12,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,9 +37,12 @@ import com.mybusinesssilva.platform.security.AuthenticatedUser;
 public class SuperAdminBusinessController {
 
     private final LicensingService licensingService;
+    private final BusinessBackupService backupService;
 
-    public SuperAdminBusinessController(LicensingService licensingService) {
+    public SuperAdminBusinessController(LicensingService licensingService,
+                                        BusinessBackupService backupService) {
         this.licensingService = licensingService;
+        this.backupService = backupService;
     }
 
     @GetMapping
@@ -41,13 +51,38 @@ public class SuperAdminBusinessController {
     }
 
     @PostMapping
-    public ResponseEntity<BusinessView> create(
+    public ResponseEntity<CreatedBusinessView> create(
             @AuthenticationPrincipal AuthenticatedUser actor,
             @Valid @RequestBody CreateBusinessRequest request) {
-        Business business = licensingService.createBusiness(
+        CreateBusinessResult result = licensingService.createBusiness(
                 actorEmail(actor), request.name(), request.rfc(),
-                request.businessLine(), request.planId(), request.trialMonths());
-        return ResponseEntity.status(HttpStatus.CREATED).body(BusinessView.from(business));
+                request.businessLine(), request.planId(), request.trialMonths(),
+                request.ownerEmail(), request.ownerName());
+        return ResponseEntity.status(HttpStatus.CREATED).body(CreatedBusinessView.from(result));
+    }
+
+    @GetMapping("/{id}")
+    public BusinessDetailView detail(@PathVariable long id) {
+        return BusinessDetailView.from(licensingService.businessDetail(id));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable long id) {
+        licensingService.deleteBusiness(actorEmail(actor), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Genera y descarga un respaldo JSON con todos los datos del negocio. */
+    @GetMapping("/{id}/backup")
+    public ResponseEntity<BusinessBackup> backup(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable long id) {
+        BusinessBackup backup = backupService.export(actorEmail(actor), id);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + BusinessBackupService.suggestedFilename(backup) + "\"")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(backup);
     }
 
     @PostMapping("/{id}/purchase")
@@ -91,13 +126,15 @@ public class SuperAdminBusinessController {
 
     // --- DTOs ---
 
-    /** Alta de negocio. */
+    /** Alta de negocio, incluyendo los datos del usuario Dueño inicial. */
     public record CreateBusinessRequest(
             @NotBlank String name,
             String rfc,
             @NotBlank String businessLine,
             @NotNull Long planId,
-            @Min(0) int trialMonths) {
+            @Min(0) int trialMonths,
+            @NotBlank @Email String ownerEmail,
+            @NotBlank String ownerName) {
     }
 
     /** Venta de módulo adicional (excedente). */
@@ -124,6 +161,71 @@ public class SuperAdminBusinessController {
                     b.getSchemaName(), b.getStatus().name(), b.getTrialMonths(),
                     b.getTrialEndsAt() == null ? null : b.getTrialEndsAt().toString(),
                     b.getPlanId());
+        }
+    }
+
+    /**
+     * Respuesta del alta de negocio: incluye los datos del negocio y las credenciales del dueño,
+     * que se muestran una sola vez para entregarlas al cliente.
+     */
+    public record CreatedBusinessView(
+            BusinessView business,
+            OwnerCredentialsView owner) {
+
+        static CreatedBusinessView from(CreateBusinessResult r) {
+            return new CreatedBusinessView(
+                    BusinessView.from(r.business()),
+                    new OwnerCredentialsView(
+                            r.ownerCredentials().email(),
+                            r.ownerCredentials().password()));
+        }
+    }
+
+    /** Credenciales del dueño (contraseña visible solo al crear el negocio). */
+    public record OwnerCredentialsView(String email, String password) {
+    }
+
+    /** Detalle de un negocio: datos, módulos habilitados y fechas del ciclo de licencia. */
+    public record BusinessDetailView(
+            Long id,
+            String name,
+            String rfc,
+            String businessLine,
+            String schemaName,
+            String status,
+            int trialMonths,
+            String trialStartsAt,
+            String trialEndsAt,
+            String purchasedAt,
+            Long planId,
+            List<ModuleView> modules) {
+
+        static BusinessDetailView from(BusinessDetail d) {
+            Business b = d.business();
+            List<ModuleView> mods = d.modules().stream().map(ModuleView::from).toList();
+            return new BusinessDetailView(
+                    b.getId(), b.getName(), b.getRfc(), b.getBusinessLine(),
+                    b.getSchemaName(), b.getStatus().name(), b.getTrialMonths(),
+                    b.getTrialStartsAt() == null ? null : b.getTrialStartsAt().toString(),
+                    b.getTrialEndsAt() == null ? null : b.getTrialEndsAt().toString(),
+                    b.getPurchasedAt() == null ? null : b.getPurchasedAt().toString(),
+                    b.getPlanId(), mods);
+        }
+    }
+
+    /** Vista de un módulo habilitado para un negocio. */
+    public record ModuleView(
+            String moduleKey,
+            boolean enabled,
+            String origin,
+            BigDecimal soldPrice,
+            String soldAt) {
+
+        static ModuleView from(BusinessModule m) {
+            return new ModuleView(
+                    m.moduleKey(), m.enabled(), m.origin().name(),
+                    m.soldPrice(),
+                    m.soldAt() == null ? null : m.soldAt().toString());
         }
     }
 }

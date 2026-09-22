@@ -79,6 +79,20 @@ public class JdbcBusinessRepository implements BusinessRepository {
     }
 
     @Override
+    public void delete(long businessId) {
+        // Borra dependencias del schema admin antes del negocio (evita violación de FK).
+        jdbc.sql("DELETE FROM admin.business_module WHERE business_id = :id")
+                .param("id", businessId)
+                .update();
+        jdbc.sql("DELETE FROM admin.superadmin_sale WHERE business_id = :id")
+                .param("id", businessId)
+                .update();
+        jdbc.sql("DELETE FROM admin.business WHERE id = :id")
+                .param("id", businessId)
+                .update();
+    }
+
+    @Override
     public Optional<Business> findById(long id) {
         return jdbc.sql("SELECT * FROM admin.business WHERE id = :id")
                 .param("id", id)

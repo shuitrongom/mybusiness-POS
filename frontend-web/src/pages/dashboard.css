@@ -32,3 +32,51 @@
 }
 .table th { color: var(--text-muted); font-weight: 600; font-size: var(--fs-sm); }
 .table .empty { text-align: center; color: var(--text-muted); padding: var(--space-5); }
+
+/* ---- Panel del sistema (Super Admin) enriquecido ---- */
+.dash-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.dash-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--accent-600);
+  background: #e7f9f1;
+  border: 1px solid #b9ecd6;
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+.dash-section { margin-top: var(--space-5); color: var(--brand-800); }
+.dash-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
+}
+@media (max-width: 900px) { .dash-two-col { grid-template-columns: 1fr; } }
+
+.metric-hint { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 6px; }
+.metric-accent .metric-hint { color: #cfe0ff; }
+.metric-tone-success { border-left: 3px solid var(--success); }
+.metric-tone-warning { border-left: 3px solid var(--warning); }
+.metric-tone-danger { border-left: 3px solid var(--danger); }
+
+/* Barras de distribución por plan */
+.plan-bars { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+.plan-bar-row { display: grid; grid-template-columns: 120px 1fr 40px; align-items: center; gap: var(--space-3); }
+.plan-bar-label { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.plan-bar-track { background: var(--surface-2); border-radius: 999px; height: 12px; overflow: hidden; }
+.plan-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--brand-600), var(--brand-500));
+  transition: width 0.4s ease;
+  min-width: 4px;
+}
+.plan-bar-count { font-size: var(--fs-sm); font-weight: 700; color: var(--brand-700); text-align: right; }
