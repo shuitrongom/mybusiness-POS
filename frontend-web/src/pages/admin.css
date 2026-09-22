@@ -203,3 +203,14 @@
 }
 .cred-delivery-chip.is-ok { background: #dcfce7; color: #166534; }
 .cred-delivery-chip.is-off { background: var(--surface-2); color: var(--text-muted); }
+
+/* ---- Validación de campos ---- */
+.input-error {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12) !important;
+}
+.field-error {
+  color: var(--danger);
+  font-size: var(--fs-xs);
+  margin-top: 2px;
+}

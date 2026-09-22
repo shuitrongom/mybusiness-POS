@@ -86,6 +86,9 @@ public class LicensingService {
         // Paso 2 (fuera de la transacción anterior): aprovisiona el schema del tenant (DDL/Flyway).
         provisioningService.provisionSchema(business.getSchemaName());
 
+        // Paso 2b: crea la sucursal principal para que el negocio pueda vender desde el inicio.
+        ownerProvisioner.createDefaultBranch(business.getSchemaName());
+
         // Paso 3: crea el usuario dueño dentro del schema del tenant y obtiene sus credenciales.
         BusinessOwnerProvisioner.OwnerCredentials credentials = ownerProvisioner.createOwner(
                 business.getSchemaName(), ownerEmail, ownerName, ownerWhatsapp);
@@ -151,6 +154,7 @@ public class LicensingService {
                                    long planId, int trialMonths) {
         Business business = businessRegistrar.register(actor, name, rfc, businessLine, planId, trialMonths);
         provisioningService.provisionSchema(business.getSchemaName());
+        ownerProvisioner.createDefaultBranch(business.getSchemaName());
         ownerProvisioner.createOwner(business.getSchemaName(),
                 "owner@" + business.getSchemaName() + ".local", "Dueño", null);
         return business;

@@ -79,6 +79,32 @@ public class BusinessOwnerProvisioner {
         return new OwnerCredentials(email, password);
     }
 
+    /**
+     * Crea la sucursal principal ("Matriz") del negocio si aún no existe ninguna. Un negocio
+     * necesita al menos una sucursal para poder registrar ventas (el POS opera contra ella).
+     *
+     * @param schema schema del tenant
+     */
+    public void createDefaultBranch(String schema) {
+        String previousTenant = TenantContext.getTenantId();
+        TenantContext.setTenantId(schema);
+        try {
+            long branches = jdbc.sql("SELECT count(*) FROM branch")
+                    .query(Long.class)
+                    .single();
+            if (branches == 0) {
+                jdbc.sql("INSERT INTO branch (name, code, active) VALUES ('Matriz', 'MATRIZ', TRUE)")
+                        .update();
+            }
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.setTenantId(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
+    }
+
     private String generatePassword() {
         StringBuilder sb = new StringBuilder(12);
         for (int i = 0; i < 12; i++) {

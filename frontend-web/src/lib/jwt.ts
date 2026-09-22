@@ -40,3 +40,18 @@ export function decodeToken(token: string | null): TokenClaims | null {
 export function isSuperAdmin(claims: TokenClaims | null): boolean {
   return !!claims && claims.roles.includes('SUPER_ADMIN');
 }
+
+/** @returns true si el usuario es Dueño o Administrador del negocio. */
+export function isBusinessAdmin(claims: TokenClaims | null): boolean {
+  return !!claims && (claims.roles.includes('OWNER') || claims.roles.includes('ADMIN'));
+}
+
+/** @returns true si el usuario es cajero (rol CASHIER). */
+export function isCashier(claims: TokenClaims | null): boolean {
+  return !!claims && claims.roles.includes('CASHIER') && !isBusinessAdmin(claims);
+}
+
+/** @returns true si el negocio del usuario tiene habilitado el módulo dado. */
+export function hasModule(claims: TokenClaims | null, moduleKey: string): boolean {
+  return !!claims && claims.modules.includes(moduleKey);
+}

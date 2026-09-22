@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, getToken } from '@/lib/api';
+import { isValidEmail, isValidMxPhone, isValidRfc, normalizeMxPhone, normalizeRfc } from '@/lib/validation';
 import '@/pages/dashboard.css';
 import './admin.css';
 
@@ -156,14 +157,14 @@ function BusinessesTab() {
   const createBusiness = useMutation({
     mutationFn: async () =>
       (await api.post<CreatedBusiness>('/admin/businesses', {
-        name: form.name,
-        rfc: form.rfc || null,
+        name: form.name.trim(),
+        rfc: form.rfc ? normalizeRfc(form.rfc) : null,
         businessLine: form.businessLine,
         planId: Number(form.planId),
         trialMonths: Number(form.trialMonths),
-        ownerName: form.ownerName,
-        ownerEmail: form.ownerEmail,
-        ownerWhatsapp: form.ownerWhatsapp || null,
+        ownerName: form.ownerName.trim(),
+        ownerEmail: form.ownerEmail.trim(),
+        ownerWhatsapp: form.ownerWhatsapp ? normalizeMxPhone(form.ownerWhatsapp) : null,
       })).data,
     onSuccess: (data) => {
       setCredentials(data);
@@ -191,7 +192,17 @@ function BusinessesTab() {
 
   const selectedPlan = plans.data?.find((p) => String(p.id) === form.planId);
   const planName = (id: number | null) => plans.data?.find((p) => p.id === id)?.name ?? '—';
-  const canSubmit = form.name && form.planId && form.businessLine && form.ownerName && form.ownerEmail;
+
+  // Errores de validación en vivo (solo se muestran cuando el campo tiene contenido).
+  const rfcError = form.rfc && !isValidRfc(form.rfc) ? 'RFC inválido (12 o 13 caracteres).' : '';
+  const emailError = form.ownerEmail && !isValidEmail(form.ownerEmail) ? 'Correo inválido.' : '';
+  const whatsappError = form.ownerWhatsapp && !isValidMxPhone(form.ownerWhatsapp)
+    ? 'Debe tener 10 dígitos (lada de México).' : '';
+
+  const canSubmit =
+    form.name.trim() && form.planId && form.businessLine &&
+    form.ownerName.trim() && form.ownerEmail.trim() &&
+    !rfcError && !emailError && !whatsappError;
 
   const downloadBackup = async (b: Business) => {
     // Descarga autenticada del respaldo JSON del negocio.
@@ -224,8 +235,11 @@ function BusinessesTab() {
           </label>
           <label className="field">
             <span>RFC (opcional)</span>
-            <input value={form.rfc} onChange={(e) => setForm({ ...form, rfc: e.target.value })}
-              placeholder="XAXX010101000" />
+            <input value={form.rfc}
+              onChange={(e) => setForm({ ...form, rfc: e.target.value.toUpperCase() })}
+              placeholder="XAXX010101000" maxLength={13}
+              className={rfcError ? 'input-error' : ''} />
+            {rfcError && <small className="field-error">{rfcError}</small>}
           </label>
           <label className="field">
             <span>Giro</span>
@@ -257,13 +271,17 @@ function BusinessesTab() {
             <span>Correo del dueño (acceso)</span>
             <input type="email" value={form.ownerEmail}
               onChange={(e) => setForm({ ...form, ownerEmail: e.target.value })}
-              placeholder="dueno@negocio.com" />
+              placeholder="dueno@negocio.com"
+              className={emailError ? 'input-error' : ''} />
+            {emailError && <small className="field-error">{emailError}</small>}
           </label>
           <label className="field">
-            <span>WhatsApp del dueño</span>
+            <span>WhatsApp del dueño (10 dígitos)</span>
             <input type="tel" value={form.ownerWhatsapp}
               onChange={(e) => setForm({ ...form, ownerWhatsapp: e.target.value })}
-              placeholder="+52 55 1234 5678" />
+              placeholder="55 1234 5678"
+              className={whatsappError ? 'input-error' : ''} />
+            {whatsappError && <small className="field-error">{whatsappError}</small>}
           </label>
         </div>
 

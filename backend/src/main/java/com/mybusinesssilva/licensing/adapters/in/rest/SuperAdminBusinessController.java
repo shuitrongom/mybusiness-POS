@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -126,15 +127,29 @@ public class SuperAdminBusinessController {
 
     // --- DTOs ---
 
-    /** Alta de negocio, incluyendo los datos del usuario Dueño inicial. */
+    /**
+     * Alta de negocio, incluyendo los datos del usuario Dueño inicial.
+     *
+     * <p>Validaciones:
+     * <ul>
+     *   <li>RFC (opcional): formato SAT de persona moral (12) o física (13). Se acepta vacío.</li>
+     *   <li>Correo del dueño: formato de correo válido.</li>
+     *   <li>WhatsApp del dueño: 10 dígitos (número nacional de México), opcionalmente con +52.
+     *       El frontend lo normaliza; aquí se admite con o sin lada.</li>
+     * </ul>
+     */
     public record CreateBusinessRequest(
             @NotBlank String name,
+            @Pattern(regexp = "^$|^[A-ZÑ&]{3,4}[0-9]{6}[A-Z0-9]{3}$",
+                    message = "El RFC no tiene un formato válido")
             String rfc,
             @NotBlank String businessLine,
             @NotNull Long planId,
             @Min(0) int trialMonths,
-            @NotBlank @Email String ownerEmail,
+            @NotBlank @Email(message = "El correo del dueño no es válido") String ownerEmail,
             @NotBlank String ownerName,
+            @Pattern(regexp = "^$|^(\\+?52)?\\s*(\\d\\s*){10}$",
+                    message = "El WhatsApp debe tener 10 dígitos (lada de México)")
             String ownerWhatsapp) {
     }
 
