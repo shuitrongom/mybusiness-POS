@@ -460,13 +460,14 @@ Convenciones:
     con pull-to-refresh. Consume los endpoints de BI. (Tiempo real por push se añade en 13.3.)
   - _Requisitos: 16.2, 16.4._
 
-- [ ] 13.3 Notificaciones push (corte de caja, stock, ventas).
-  - Pendiente: requiere FCM y el toolchain móvil compilando. Dependencia base incluida.
-  - _Requisitos: 16.3._
+- [x] 13.3 Notificaciones push (corte de caja, stock, ventas).
+  - `NotificationsService` (Firebase Cloud Messaging + notificaciones locales): permisos, canal,
+    token del dispositivo y despliegue de avisos en primer plano. Requiere configurar Firebase
+    (google-services.json / plist) al desplegar. _Requisitos: 16.3._
 
-- [~] 13.4 Pruebas de la app.
-  - Linting configurado (analysis_options.yaml). Las pruebas de widget requieren el toolchain
-    Flutter instalado para ejecutarse.
+- [x] 13.4 Pruebas de la app.
+  - Flutter 3.24.5 instalado. `flutter analyze` sin issues, `flutter test` 1/1 (widget de login).
+    Se corrigió una incompatibilidad de API detectada por el análisis real. _Requisitos: 16.*._
   - _Requisitos: 16.*._
 
 ---
@@ -485,8 +486,9 @@ Convenciones:
   - _Requisitos: 19.3._
 
 - [~] 14.3 Observabilidad y respaldos.
-  - Logs estructurados y Actuator (health/info) listos. Métricas/trazas y respaldos automáticos
-    se configuran en el proveedor de despliegue (documentado en la guía).
+  - LISTO EN CÓDIGO: logs estructurados y Actuator (health/info). PENDIENTE DE PRODUCCIÓN: activar
+    métricas/trazas y respaldos automáticos en el proveedor de nube (documentado en docs/DESPLIEGUE.md).
+    No se puede completar sin un entorno de nube real.
   - _Requisitos: 19.*, 18.*._
 
 - [x] 14.4 Pruebas E2E completas multi-tenant y de seguridad.
@@ -496,6 +498,7 @@ Convenciones:
   - _Requisitos: 1.*, 2.*, 3.*._
 
 - [~] 14.5 Preparar el paquete inicial para los 4 negocios comprometidos.
-  - El sistema está listo para dar de alta negocios (probado). El alta concreta de los 4 negocios
-    con sus datos reales se hará al desplegar en producción.
+  - LISTO: el alta de negocios está implementada y verificada end-to-end. PENDIENTE DE PRODUCCIÓN:
+    dar de alta los 4 negocios con sus datos reales (nombre, RFC, giro, plan) tras el despliegue.
+    Es un paso operativo, no de desarrollo.
   - _Requisitos: objetivos de negocio._
