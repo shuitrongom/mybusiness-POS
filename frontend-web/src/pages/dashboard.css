@@ -80,3 +80,92 @@
   min-width: 4px;
 }
 .plan-bar-count { font-size: var(--fs-sm); font-weight: 700; color: var(--brand-700); text-align: right; }
+
+/* ---- Calendario de vencimientos ---- */
+.cal-card { margin-top: var(--space-3); }
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+.cal-title { font-size: var(--fs-lg); font-weight: 700; color: var(--brand-800); }
+.cal-nav {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  border-radius: 10px;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.cal-weekdays { margin-bottom: 6px; }
+.cal-weekday {
+  text-align: center;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 0;
+}
+.cal-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 7px 9px;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+.cal-empty { border: none; background: transparent; }
+.cal-day { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.cal-cell.is-today {
+  border-color: var(--brand-500);
+  box-shadow: inset 0 0 0 1px var(--brand-500);
+}
+.cal-cell.is-today .cal-day { color: var(--brand-700); font-weight: 800; }
+.cal-cell.has-event {
+  background: linear-gradient(180deg, #fff, #fff6ea);
+  border-color: #f4d29a;
+  cursor: default;
+}
+.cal-dot {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--warning), #f59e0b);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-legend {
+  display: flex;
+  gap: var(--space-5);
+  margin-top: var(--space-4);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.cal-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.cal-dot-legend { position: static; background: none; color: var(--warning); font-size: 18px; min-width: 0; height: auto; padding: 0; }
+.cal-today-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 2px var(--brand-500);
+  display: inline-block;
+}

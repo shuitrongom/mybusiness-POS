@@ -5,6 +5,7 @@ import com.mybusinesssilva.licensing.domain.model.BusinessModule;
 import com.mybusinesssilva.licensing.domain.port.out.BusinessModuleRepository;
 import com.mybusinesssilva.licensing.domain.port.out.BusinessRepository;
 import com.mybusinesssilva.platform.audit.AuditService;
+import com.mybusinesssilva.platform.notifications.NotificationPort;
 import com.mybusinesssilva.platform.tenancy.TenantProvisioningService;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -29,6 +30,7 @@ public class LicensingService {
     private final BusinessModuleRepository businessModuleRepository;
     private final TenantProvisioningService provisioningService;
     private final BusinessOwnerProvisioner ownerProvisioner;
+    private final NotificationPort notificationPort;
     private final AuditService auditService;
     private final Clock clock;
 
@@ -37,6 +39,7 @@ public class LicensingService {
                             BusinessModuleRepository businessModuleRepository,
                             TenantProvisioningService provisioningService,
                             BusinessOwnerProvisioner ownerProvisioner,
+                            NotificationPort notificationPort,
                             AuditService auditService,
                             Clock clock) {
         this.businessRegistrar = businessRegistrar;
@@ -44,6 +47,7 @@ public class LicensingService {
         this.businessModuleRepository = businessModuleRepository;
         this.provisioningService = provisioningService;
         this.ownerProvisioner = ownerProvisioner;
+        this.notificationPort = notificationPort;
         this.auditService = auditService;
         this.clock = clock;
     }
@@ -67,13 +71,15 @@ public class LicensingService {
      * @param businessLine giro
      * @param planId       plan seleccionado
      * @param trialMonths  meses de prueba (configurable, 0..N)
-     * @param ownerEmail   correo del dueño (acceso al negocio)
-     * @param ownerName    nombre del dueño
-     * @return el negocio creado junto con las credenciales del dueño
+     * @param ownerEmail    correo del dueño (acceso al negocio)
+     * @param ownerName     nombre del dueño
+     * @param ownerWhatsapp WhatsApp del dueño (para enviarle las credenciales; puede ser nulo)
+     * @return el negocio creado junto con las credenciales del dueño y el resultado del envío
      */
     public CreateBusinessResult createBusiness(String actor, String name, String rfc,
                                                String businessLine, long planId, int trialMonths,
-                                               String ownerEmail, String ownerName) {
+                                               String ownerEmail, String ownerName,
+                                               String ownerWhatsapp) {
         // Paso 1 (transaccional, en bean aparte): registra el negocio y habilita los módulos del plan.
         Business business = businessRegistrar.register(actor, name, rfc, businessLine, planId, trialMonths);
 
@@ -81,13 +87,58 @@ public class LicensingService {
         provisioningService.provisionSchema(business.getSchemaName());
 
         // Paso 3: crea el usuario dueño dentro del schema del tenant y obtiene sus credenciales.
-        BusinessOwnerProvisioner.OwnerCredentials credentials =
-                ownerProvisioner.createOwner(business.getSchemaName(), ownerEmail, ownerName);
+        BusinessOwnerProvisioner.OwnerCredentials credentials = ownerProvisioner.createOwner(
+                business.getSchemaName(), ownerEmail, ownerName, ownerWhatsapp);
 
         auditService.recordGlobal(actor, "BUSINESS_OWNER_CREATED", "business",
                 String.valueOf(business.getId()), Map.of("ownerEmail", ownerEmail));
 
-        return new CreateBusinessResult(business, credentials);
+        // Paso 4: envía las credenciales al cliente por correo y WhatsApp (adaptador simulado).
+        boolean emailSent = sendCredentialsEmail(business.getName(), credentials);
+        boolean whatsappSent = sendCredentialsWhatsApp(ownerWhatsapp, business.getName(), credentials);
+
+        return new CreateBusinessResult(business, credentials, ownerWhatsapp, emailSent, whatsappSent);
+    }
+
+    /** Envía las credenciales por correo. @return true si el intento de envío no falló. */
+    private boolean sendCredentialsEmail(String businessName,
+                                         BusinessOwnerProvisioner.OwnerCredentials cred) {
+        try {
+            String body = """
+                    ¡Bienvenido a MyBusiness Silva!
+
+                    Tu negocio "%s" ya está listo. Estos son tus datos de acceso:
+
+                    Usuario (correo): %s
+                    Contraseña temporal: %s
+
+                    Ingresa en la pestaña "Mi negocio" del inicio de sesión. Por seguridad, el
+                    sistema te pedirá cambiar la contraseña en tu primer ingreso.
+                    """.formatted(businessName, cred.email(), cred.password());
+            notificationPort.sendEmail(cred.email(),
+                    "Tus accesos a MyBusiness Silva", body, null, null);
+            return true;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    /** Envía las credenciales por WhatsApp si hay número. @return true si se intentó y no falló. */
+    private boolean sendCredentialsWhatsApp(String whatsapp, String businessName,
+                                            BusinessOwnerProvisioner.OwnerCredentials cred) {
+        if (whatsapp == null || whatsapp.isBlank()) {
+            return false;
+        }
+        try {
+            String message = ("Bienvenido a MyBusiness Silva. Tu negocio \"%s\" ya está activo. "
+                    + "Usuario: %s | Contraseña temporal: %s. Ingresa en la pestaña "
+                    + "\"Mi negocio\"; se te pedirá cambiarla en tu primer acceso.")
+                    .formatted(businessName, cred.email(), cred.password());
+            notificationPort.sendWhatsApp(whatsapp, message);
+            return true;
+        } catch (RuntimeException ex) {
+            return false;
+        }
     }
 
     /**
@@ -101,7 +152,7 @@ public class LicensingService {
         Business business = businessRegistrar.register(actor, name, rfc, businessLine, planId, trialMonths);
         provisioningService.provisionSchema(business.getSchemaName());
         ownerProvisioner.createOwner(business.getSchemaName(),
-                "owner@" + business.getSchemaName() + ".local", "Dueño");
+                "owner@" + business.getSchemaName() + ".local", "Dueño", null);
         return business;
     }
 
@@ -133,11 +184,20 @@ public class LicensingService {
     }
 
     /**
-     * Resultado del alta de un negocio: la entidad creada y las credenciales del dueño
-     * (contraseña en claro para mostrar una sola vez).
+     * Resultado del alta de un negocio: la entidad creada, las credenciales del dueño
+     * (contraseña en claro para mostrar una sola vez) y el resultado del envío al cliente.
+     *
+     * @param business       negocio creado
+     * @param ownerCredentials credenciales del dueño
+     * @param ownerWhatsapp  WhatsApp registrado del dueño (puede ser nulo)
+     * @param emailSent      true si se envió el correo con credenciales
+     * @param whatsappSent   true si se envió el WhatsApp con credenciales
      */
     public record CreateBusinessResult(Business business,
-                                       BusinessOwnerProvisioner.OwnerCredentials ownerCredentials) {
+                                       BusinessOwnerProvisioner.OwnerCredentials ownerCredentials,
+                                       String ownerWhatsapp,
+                                       boolean emailSent,
+                                       boolean whatsappSent) {
     }
 
     /** Detalle de un negocio: entidad y sus módulos habilitados. */

@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { money } from '@/lib/format';
@@ -30,6 +31,13 @@ interface SaleRow {
   date: string;
 }
 
+interface Business {
+  id: number;
+  name: string;
+  status: string;
+  trialEndsAt: string | null;
+}
+
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -50,6 +58,10 @@ export function SuperAdminDashboardPage() {
   const recent = useQuery({
     queryKey: ['saas', 'recent-sales'],
     queryFn: async () => (await api.get<SaleRow[]>('/admin/bi/recent-sales')).data,
+  });
+  const businesses = useQuery({
+    queryKey: ['admin', 'businesses'],
+    queryFn: async () => (await api.get<Business[]>('/admin/businesses')).data,
   });
 
   const s = summary.data;
@@ -141,6 +153,94 @@ export function SuperAdminDashboardPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Calendario de vencimientos de prueba */}
+      <h3 className="dash-section">Calendario de vencimientos</h3>
+      <p className="admin-plan-hint" style={{ marginTop: 4 }}>
+        Días con negocios cuya prueba termina. Da seguimiento para convertirlos a licencia.
+      </p>
+      <TrialCalendar businesses={businesses.data ?? []} />
+    </div>
+  );
+}
+
+const MONTHS = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+/**
+ * Calendario mensual que resalta los días en los que vence la prueba de uno o más negocios.
+ * Permite navegar entre meses. Al pasar el cursor por un día marcado se ven los negocios.
+ */
+function TrialCalendar({ businesses }: { businesses: Business[] }) {
+  const today = new Date();
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+
+  // Mapa "YYYY-M-D" -> lista de nombres de negocios que vencen ese día.
+  const byDay = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const b of businesses) {
+      if (!b.trialEndsAt || b.status !== 'TRIAL') continue;
+      const d = new Date(b.trialEndsAt);
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      map.set(key, [...(map.get(key) ?? []), b.name]);
+    }
+    return map;
+  }, [businesses]);
+
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const firstDay = new Date(year, month, 1);
+  // getDay(): 0=domingo. Convertimos a semana que empieza en lunes (0=lunes).
+  const leadingBlanks = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < leadingBlanks; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const isToday = (d: number) =>
+    d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+
+  const goPrev = () => setCursor(new Date(year, month - 1, 1));
+  const goNext = () => setCursor(new Date(year, month + 1, 1));
+
+  return (
+    <div className="card cal-card">
+      <div className="cal-head">
+        <button className="btn-ghost cal-nav" onClick={goPrev} aria-label="Mes anterior">‹</button>
+        <div className="cal-title">{MONTHS[month]} {year}</div>
+        <button className="btn-ghost cal-nav" onClick={goNext} aria-label="Mes siguiente">›</button>
+      </div>
+
+      <div className="cal-grid cal-weekdays">
+        {WEEKDAYS.map((w) => <div key={w} className="cal-weekday">{w}</div>)}
+      </div>
+
+      <div className="cal-grid">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={`b-${i}`} className="cal-cell cal-empty" />;
+          const key = `${year}-${month}-${d}`;
+          const list = byDay.get(key);
+          return (
+            <div
+              key={key}
+              className={`cal-cell ${isToday(d) ? 'is-today' : ''} ${list ? 'has-event' : ''}`}
+              title={list ? `Vence prueba: ${list.join(', ')}` : ''}
+            >
+              <span className="cal-day">{d}</span>
+              {list && <span className="cal-dot" aria-label={`${list.length} vencimiento(s)`}>{list.length}</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="cal-legend">
+        <span className="cal-legend-item"><span className="cal-dot cal-dot-legend">•</span> Vence prueba</span>
+        <span className="cal-legend-item"><span className="cal-today-dot" /> Hoy</span>
       </div>
     </div>
   );

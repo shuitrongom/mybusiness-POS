@@ -31,12 +31,16 @@ public class BusinessOwnerProvisioner {
     /**
      * Crea el usuario dueño en el schema del tenant indicado.
      *
+     * <p>El usuario queda marcado con {@code must_change_password = true} para forzar el cambio
+     * de la contraseña temporal en su primer ingreso, y se guarda su WhatsApp de contacto.
+     *
      * @param schema   schema del tenant (por ejemplo {@code tenant_12})
      * @param email    correo del dueño (identificador de acceso)
      * @param fullName nombre del dueño
+     * @param whatsapp WhatsApp de contacto del dueño (puede ser nulo)
      * @return las credenciales generadas (contraseña en claro, solo para mostrar una vez)
      */
-    public OwnerCredentials createOwner(String schema, String email, String fullName) {
+    public OwnerCredentials createOwner(String schema, String email, String fullName, String whatsapp) {
         String password = generatePassword();
 
         // Preserva el tenant que hubiera en curso para restaurarlo al terminar.
@@ -54,13 +58,15 @@ public class BusinessOwnerProvisioner {
                     .orElse(null);
 
             jdbc.sql("""
-                    INSERT INTO app_user (email, password_hash, full_name, role_id)
-                    VALUES (:email, :hash, :name, :role)
+                    INSERT INTO app_user
+                        (email, password_hash, full_name, role_id, whatsapp, must_change_password)
+                    VALUES (:email, :hash, :name, :role, :whatsapp, TRUE)
                     """)
                     .param("email", email)
                     .param("hash", passwordEncoder.encode(password))
                     .param("name", fullName)
                     .param("role", roleId)
+                    .param("whatsapp", whatsapp)
                     .update();
         } finally {
             if (previousTenant != null) {

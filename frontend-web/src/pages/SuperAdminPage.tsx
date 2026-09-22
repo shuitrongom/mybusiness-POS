@@ -59,11 +59,14 @@ interface BusinessDetail extends Business {
 interface OwnerCredentials {
   email: string;
   password: string;
+  whatsapp: string | null;
 }
 
 interface CreatedBusiness {
   business: Business;
   owner: OwnerCredentials;
+  emailSent: boolean;
+  whatsappSent: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +134,7 @@ function BusinessesTab() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     name: '', rfc: '', businessLine: '', planId: '', trialMonths: '1',
-    ownerName: '', ownerEmail: '',
+    ownerName: '', ownerEmail: '', ownerWhatsapp: '',
   });
   const [credentials, setCredentials] = useState<CreatedBusiness | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -160,10 +163,14 @@ function BusinessesTab() {
         trialMonths: Number(form.trialMonths),
         ownerName: form.ownerName,
         ownerEmail: form.ownerEmail,
+        ownerWhatsapp: form.ownerWhatsapp || null,
       })).data,
     onSuccess: (data) => {
       setCredentials(data);
-      setForm({ name: '', rfc: '', businessLine: '', planId: '', trialMonths: '1', ownerName: '', ownerEmail: '' });
+      setForm({
+        name: '', rfc: '', businessLine: '', planId: '', trialMonths: '1',
+        ownerName: '', ownerEmail: '', ownerWhatsapp: '',
+      });
       queryClient.invalidateQueries({ queryKey: ['admin', 'businesses'] });
     },
   });
@@ -252,6 +259,12 @@ function BusinessesTab() {
               onChange={(e) => setForm({ ...form, ownerEmail: e.target.value })}
               placeholder="dueno@negocio.com" />
           </label>
+          <label className="field">
+            <span>WhatsApp del dueño</span>
+            <input type="tel" value={form.ownerWhatsapp}
+              onChange={(e) => setForm({ ...form, ownerWhatsapp: e.target.value })}
+              placeholder="+52 55 1234 5678" />
+          </label>
         </div>
 
         {selectedPlan && (
@@ -339,7 +352,10 @@ function BusinessesTab() {
 
 function CredentialsModal({ data, onClose }: { data: CreatedBusiness; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
-  const text = `Negocio: ${data.business.name}\nAcceso: ${data.owner.email}\nContraseña: ${data.owner.password}`;
+  const text =
+    `Negocio: ${data.business.name}\n` +
+    `Acceso: ${data.owner.email}\n` +
+    `Contraseña temporal: ${data.owner.password}`;
   const copy = async () => {
     await navigator.clipboard.writeText(text);
     setCopied(true);
@@ -349,13 +365,31 @@ function CredentialsModal({ data, onClose }: { data: CreatedBusiness; onClose: (
     <ModalShell onClose={onClose} title="Negocio creado" wide={false}>
       <p className="admin-modal-lead">
         Guarda estas credenciales ahora. La contraseña <strong>no se volverá a mostrar</strong>.
-        El dueño ingresa desde la pestaña “Mi negocio” del inicio de sesión.
+        El dueño ingresa desde la pestaña “Mi negocio” del inicio de sesión y el sistema le
+        pedirá cambiarla en su primer acceso.
       </p>
       <div className="cred-box">
         <div className="cred-row"><span>Negocio</span><strong>{data.business.name}</strong></div>
         <div className="cred-row"><span>Correo de acceso</span><code>{data.owner.email}</code></div>
         <div className="cred-row"><span>Contraseña temporal</span><code className="cred-pass">{data.owner.password}</code></div>
+        {data.owner.whatsapp && (
+          <div className="cred-row"><span>WhatsApp</span><code>{data.owner.whatsapp}</code></div>
+        )}
       </div>
+
+      <div className="cred-delivery">
+        <span className={`cred-delivery-chip ${data.emailSent ? 'is-ok' : 'is-off'}`}>
+          {data.emailSent ? '✓ Enviado por correo' : '• Correo no enviado'}
+        </span>
+        <span className={`cred-delivery-chip ${data.whatsappSent ? 'is-ok' : 'is-off'}`}>
+          {data.whatsappSent ? '✓ Enviado por WhatsApp' : '• WhatsApp no enviado'}
+        </span>
+      </div>
+      <p className="admin-plan-hint" style={{ marginTop: 8 }}>
+        Si el cliente no recibe el mensaje, comparte tú estas credenciales. Quedan guardadas aquí
+        solo hasta que cierres esta ventana.
+      </p>
+
       <div className="admin-modal-actions">
         <button className="btn-ghost" onClick={copy}>{copied ? '¡Copiado!' : 'Copiar credenciales'}</button>
         <button className="btn-primary" onClick={onClose}>Entendido</button>

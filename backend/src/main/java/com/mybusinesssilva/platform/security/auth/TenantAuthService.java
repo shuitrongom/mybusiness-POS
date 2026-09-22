@@ -56,11 +56,11 @@ public class TenantAuthService {
      *
      * @param email    correo del usuario
      * @param password contraseña en claro
-     * @return tokens de acceso y refresh
+     * @return tokens de acceso y refresh, más si debe cambiar la contraseña en este ingreso
      * @throws AuthService.AuthException si las credenciales son inválidas, no hay negocio con acceso
      *                                   para ese usuario, o la cuenta está bloqueada por intentos
      */
-    public AuthService.AuthTokens authenticate(String email, String password) {
+    public TenantAuthResult authenticate(String email, String password) {
         String key = "tenant:" + email;
         if (rateLimiter.isBlocked(key)) {
             throw new AuthService.AuthException("Cuenta temporalmente bloqueada por intentos fallidos");
@@ -86,11 +86,52 @@ public class TenantAuthService {
             String access = jwtService.issueAccessToken(
                     user.email(), business.getSchemaName(), List.of(role), modules);
             String refresh = jwtService.issueRefreshToken(user.email(), business.getSchemaName());
-            return new AuthService.AuthTokens(access, refresh);
+            return new TenantAuthResult(access, refresh, user.mustChangePassword());
         }
 
         rateLimiter.recordFailure(key);
         throw new AuthService.AuthException("Credenciales inválidas");
+    }
+
+    /**
+     * Cambia la contraseña de un usuario de negocio y quita la marca de cambio obligatorio.
+     * Se valida la contraseña actual antes de aplicar la nueva.
+     *
+     * @param email       correo del usuario
+     * @param currentPassword contraseña actual (temporal o vigente)
+     * @param newPassword nueva contraseña
+     * @throws AuthService.AuthException si las credenciales actuales no son válidas
+     */
+    public void changePassword(String email, String currentPassword, String newPassword) {
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new AuthService.AuthException("La nueva contraseña debe tener al menos 8 caracteres");
+        }
+        for (Business business : businessRepository.findAll()) {
+            if (business.getSchemaName() == null) {
+                continue;
+            }
+            Optional<TenantUser> found = findUser(business.getSchemaName(), email);
+            if (found.isEmpty()) {
+                continue;
+            }
+            TenantUser user = found.get();
+            if (!passwordEncoder.matches(currentPassword, user.passwordHash())) {
+                throw new AuthService.AuthException("La contraseña actual no es correcta");
+            }
+            updatePassword(business.getSchemaName(), email, passwordEncoder.encode(newPassword));
+            return;
+        }
+        throw new AuthService.AuthException("Usuario no encontrado");
+    }
+
+    /** Actualiza el hash y limpia la marca de cambio obligatorio, con tabla calificada por schema. */
+    private void updatePassword(String schema, String email, String newHash) {
+        TenantSchema.validate(schema);
+        jdbc.sql(("UPDATE %s.app_user SET password_hash = :hash, must_change_password = FALSE "
+                + "WHERE email = :email").formatted(schema))
+                .param("hash", newHash)
+                .param("email", email)
+                .update();
     }
 
     /**
@@ -105,7 +146,7 @@ public class TenantAuthService {
         TenantSchema.validate(schema);
         try {
             return jdbc.sql("""
-                    SELECT u.email, u.password_hash, u.active, r.code AS role_code
+                    SELECT u.email, u.password_hash, u.active, u.must_change_password, r.code AS role_code
                     FROM %s.app_user u
                     LEFT JOIN %s.role r ON r.id = u.role_id
                     WHERE u.email = :email
@@ -115,6 +156,7 @@ public class TenantAuthService {
                             rs.getString("email"),
                             rs.getString("password_hash"),
                             rs.getBoolean("active"),
+                            rs.getBoolean("must_change_password"),
                             rs.getString("role_code")))
                     .optional();
         } catch (org.springframework.jdbc.BadSqlGrammarException ex) {
@@ -126,6 +168,18 @@ public class TenantAuthService {
         }
     }
 
-    private record TenantUser(String email, String passwordHash, boolean active, String roleCode) {
+    private record TenantUser(String email, String passwordHash, boolean active,
+                              boolean mustChangePassword, String roleCode) {
+    }
+
+    /**
+     * Resultado del inicio de sesión de un usuario de negocio.
+     *
+     * @param accessToken        token de acceso
+     * @param refreshToken       token de refresco
+     * @param mustChangePassword true si debe cambiar la contraseña temporal en este ingreso
+     */
+    public record TenantAuthResult(String accessToken, String refreshToken,
+                                   boolean mustChangePassword) {
     }
 }

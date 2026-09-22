@@ -24,8 +24,13 @@ public class LoggingNotificationAdapter implements NotificationPort {
     @Override
     public void sendEmail(String to, String subject, String body,
                           String attachmentName, byte[] attachment) {
-        log.info("[NOTIFICACIÓN] Para: {} | Asunto: {} | Adjunto: {} ({} bytes)",
+        log.info("[NOTIFICACIÓN CORREO] Para: {} | Asunto: {} | Adjunto: {} ({} bytes)",
                 to, subject, attachmentName,
                 attachment == null ? 0 : attachment.length);
+    }
+
+    @Override
+    public void sendWhatsApp(String toPhone, String message) {
+        log.info("[NOTIFICACIÓN WHATSAPP] Para: {} | Mensaje: {}", toPhone, message);
     }
 }

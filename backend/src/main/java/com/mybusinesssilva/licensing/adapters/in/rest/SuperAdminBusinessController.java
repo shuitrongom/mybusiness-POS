@@ -57,7 +57,7 @@ public class SuperAdminBusinessController {
         CreateBusinessResult result = licensingService.createBusiness(
                 actorEmail(actor), request.name(), request.rfc(),
                 request.businessLine(), request.planId(), request.trialMonths(),
-                request.ownerEmail(), request.ownerName());
+                request.ownerEmail(), request.ownerName(), request.ownerWhatsapp());
         return ResponseEntity.status(HttpStatus.CREATED).body(CreatedBusinessView.from(result));
     }
 
@@ -134,7 +134,8 @@ public class SuperAdminBusinessController {
             @NotNull Long planId,
             @Min(0) int trialMonths,
             @NotBlank @Email String ownerEmail,
-            @NotBlank String ownerName) {
+            @NotBlank String ownerName,
+            String ownerWhatsapp) {
     }
 
     /** Venta de módulo adicional (excedente). */
@@ -170,19 +171,24 @@ public class SuperAdminBusinessController {
      */
     public record CreatedBusinessView(
             BusinessView business,
-            OwnerCredentialsView owner) {
+            OwnerCredentialsView owner,
+            boolean emailSent,
+            boolean whatsappSent) {
 
         static CreatedBusinessView from(CreateBusinessResult r) {
             return new CreatedBusinessView(
                     BusinessView.from(r.business()),
                     new OwnerCredentialsView(
                             r.ownerCredentials().email(),
-                            r.ownerCredentials().password()));
+                            r.ownerCredentials().password(),
+                            r.ownerWhatsapp()),
+                    r.emailSent(),
+                    r.whatsappSent());
         }
     }
 
     /** Credenciales del dueño (contraseña visible solo al crear el negocio). */
-    public record OwnerCredentialsView(String email, String password) {
+    public record OwnerCredentialsView(String email, String password, String whatsapp) {
     }
 
     /** Detalle de un negocio: datos, módulos habilitados y fechas del ciclo de licencia. */
