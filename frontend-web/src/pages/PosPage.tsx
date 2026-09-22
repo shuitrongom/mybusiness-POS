@@ -10,6 +10,7 @@ interface Product {
   categoryId: number | null;
   unit: string;
   soldByWeight: boolean;
+  imageUrl: string | null;
 }
 
 interface Category {
@@ -286,9 +287,13 @@ export function PosPage() {
         <div className="pos-grid">
           {visibleProducts.map((p) => (
             <button key={p.id} className="pos-tile" onClick={() => addProduct(p)} title={p.name}>
-              <span className="pos-tile-avatar" style={{ background: colorFor(p.name) }}>
-                {initials(p.name)}
-              </span>
+              {p.imageUrl ? (
+                <img src={p.imageUrl} alt={p.name} className="pos-tile-img" />
+              ) : (
+                <span className="pos-tile-avatar" style={{ background: colorFor(p.name) }}>
+                  {initials(p.name)}
+                </span>
+              )}
               <span className="pos-tile-name">{p.name}</span>
               <span className="pos-tile-foot">
                 <span className="pos-tile-price">{money(p.price)}</span>

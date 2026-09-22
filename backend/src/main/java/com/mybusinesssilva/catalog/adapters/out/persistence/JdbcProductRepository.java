@@ -36,9 +36,9 @@ public class JdbcProductRepository implements ProductRepository {
         Long id = jdbc.sql("""
                 INSERT INTO product
                     (sku, name, category_id, unit, sold_by_weight, sat_prod_serv, sat_unit,
-                     price, cost, active, attributes)
+                     price, cost, active, attributes, image_url)
                 VALUES (:sku, :name, :categoryId, :unit, :weight, :satProd, :satUnit,
-                        :price, :cost, :active, CAST(:attrs AS jsonb))
+                        :price, :cost, :active, CAST(:attrs AS jsonb), :imageUrl)
                 RETURNING id
                 """)
                 .param("sku", p.sku())
@@ -52,6 +52,7 @@ public class JdbcProductRepository implements ProductRepository {
                 .param("cost", p.cost())
                 .param("active", p.active())
                 .param("attrs", toJson(p.attributes()))
+                .param("imageUrl", p.imageUrl())
                 .query(Long.class)
                 .single();
 
@@ -66,7 +67,7 @@ public class JdbcProductRepository implements ProductRepository {
                     sku = :sku, name = :name, category_id = :categoryId, unit = :unit,
                     sold_by_weight = :weight, sat_prod_serv = :satProd, sat_unit = :satUnit,
                     price = :price, cost = :cost, active = :active,
-                    attributes = CAST(:attrs AS jsonb), updated_at = now()
+                    attributes = CAST(:attrs AS jsonb), image_url = :imageUrl, updated_at = now()
                 WHERE id = :id
                 """)
                 .param("id", p.id())
@@ -81,6 +82,7 @@ public class JdbcProductRepository implements ProductRepository {
                 .param("cost", p.cost())
                 .param("active", p.active())
                 .param("attrs", toJson(p.attributes()))
+                .param("imageUrl", p.imageUrl())
                 .update();
 
         jdbc.sql("DELETE FROM product_barcode WHERE product_id = :id").param("id", p.id()).update();
@@ -151,7 +153,8 @@ public class JdbcProductRepository implements ProductRepository {
                 rs.getBigDecimal("cost"),
                 rs.getBoolean("active"),
                 barcodes,
-                fromJson(rs.getString("attributes")));
+                fromJson(rs.getString("attributes")),
+                rs.getString("image_url"));
     }
 
     private String toJson(Map<String, Object> attrs) {

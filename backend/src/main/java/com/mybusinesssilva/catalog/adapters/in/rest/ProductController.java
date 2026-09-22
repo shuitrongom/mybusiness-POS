@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -66,9 +67,23 @@ public class ProductController {
                 request.unit(), request.soldByWeight(), request.satProdServ(), request.satUnit(),
                 request.price(), request.cost(), true,
                 request.barcodes() == null ? List.of() : request.barcodes(),
-                request.attributes() == null ? Map.of() : request.attributes());
+                request.attributes() == null ? Map.of() : request.attributes(),
+                request.imageUrl());
         Product saved = catalogService.createProduct(product);
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Product> update(
+            @PathVariable long id, @Valid @RequestBody CreateProductRequest request) {
+        Product product = new Product(
+                id, request.sku(), request.name(), request.categoryId(),
+                request.unit(), request.soldByWeight(), request.satProdServ(), request.satUnit(),
+                request.price(), request.cost(), true,
+                request.barcodes() == null ? List.of() : request.barcodes(),
+                request.attributes() == null ? Map.of() : request.attributes(),
+                request.imageUrl());
+        return ResponseEntity.ok(catalogService.updateProduct(product));
     }
 
     @GetMapping("/{id}")
@@ -93,7 +108,7 @@ public class ProductController {
         return catalogService.lookupByBarcode(barcode);
     }
 
-    /** Alta de producto. Los campos del giro van en {@code attributes}. */
+    /** Alta/edición de producto. Los campos del giro van en {@code attributes}. */
     public record CreateProductRequest(
             String sku,
             @NotBlank String name,
@@ -105,6 +120,7 @@ public class ProductController {
             BigDecimal price,
             BigDecimal cost,
             List<String> barcodes,
-            Map<String, Object> attributes) {
+            Map<String, Object> attributes,
+            String imageUrl) {
     }
 }

@@ -89,11 +89,24 @@ public class BusinessOwnerProvisioner {
         String previousTenant = TenantContext.getTenantId();
         TenantContext.setTenantId(schema);
         try {
-            long branches = jdbc.sql("SELECT count(*) FROM branch")
+            Long branchId = jdbc.sql("SELECT id FROM branch ORDER BY id LIMIT 1")
+                    .query(Long.class)
+                    .optional()
+                    .orElse(null);
+            if (branchId == null) {
+                branchId = jdbc.sql(
+                        "INSERT INTO branch (name, code, active) VALUES ('Matriz', 'MATRIZ', TRUE) RETURNING id")
+                        .query(Long.class)
+                        .single();
+            }
+            // Crea la caja registradora inicial de la sucursal para poder abrir turnos y cobrar.
+            long registers = jdbc.sql("SELECT count(*) FROM cash_register WHERE branch_id = :b")
+                    .param("b", branchId)
                     .query(Long.class)
                     .single();
-            if (branches == 0) {
-                jdbc.sql("INSERT INTO branch (name, code, active) VALUES ('Matriz', 'MATRIZ', TRUE)")
+            if (registers == 0) {
+                jdbc.sql("INSERT INTO cash_register (branch_id, name, active) VALUES (:b, 'Caja 1', TRUE)")
+                        .param("b", branchId)
                         .update();
             }
         } finally {

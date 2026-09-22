@@ -102,6 +102,21 @@ public class ModuleAccessEvaluator {
     }
 
     /**
+     * Gestión de cajas registradoras (crear, activar): solo Dueño/Administrador, y el negocio
+     * debe tener habilitado el módulo {@code cash}.
+     */
+    public boolean canManageCashRegisters() {
+        AuthenticatedUser user = currentUser();
+        if (user == null) {
+            return false;
+        }
+        if (user.isSuperAdmin()) {
+            return true;
+        }
+        return user.hasModule("cash") && isOwnerOrAdmin(user);
+    }
+
+    /**
      * Gestión de sucursales (crear, editar, activar): solo Dueño/Administrador y el negocio debe
      * tener habilitado el módulo comercial {@code multibranch}.
      */
