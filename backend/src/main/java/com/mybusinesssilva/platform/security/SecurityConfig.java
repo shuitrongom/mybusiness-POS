@@ -55,7 +55,12 @@ public class SecurityConfig {
                         .permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                        // 401 cuando NO hay autenticación válida (token ausente/expirado/ inválido).
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                        // 403 cuando el usuario está autenticado pero NO tiene permiso para el recurso.
+                        // (No debe expulsar al usuario; solo denegar ese recurso.)
+                        .accessDeniedHandler((request, response, ex2) ->
+                                response.sendError(HttpStatus.FORBIDDEN.value(), "Acceso denegado")))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

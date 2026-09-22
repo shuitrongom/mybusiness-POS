@@ -5,8 +5,8 @@ import { useSession } from '@/store/session';
 import './login.css';
 
 /**
- * Pantalla de inicio de sesión. Autentica contra el endpoint del Super Admin y guarda el token.
- * Diseño centrado y limpio, con la marca.
+ * Pantalla de inicio de sesión premium: panel de marca (showcase) a la izquierda y formulario a
+ * la derecha. Diseño enterprise para transmitir confianza y ser una carta de presentación.
  */
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -41,56 +41,92 @@ export function LoginPage() {
   };
 
   return (
-    <div className="login-wrap">
-      <form className="login-card" onSubmit={handleSubmit}>
-        <div className="login-brand">
-          <div className="login-mark">MS</div>
+    <div className="login-shell">
+      {/* Panel de marca */}
+      <div className="login-hero">
+        <div className="hero-top">
+          <div className="hero-mark">MS</div>
           <div>
-            <div className="login-name">MyBusiness Silva</div>
-            <div className="login-tag">Punto de venta en la nube</div>
+            <div className="hero-brand-name">MyBusiness Silva</div>
+            <div className="hero-brand-tag">CLOUD POS</div>
           </div>
         </div>
 
-        <h2 className="login-title">Iniciar sesión</h2>
+        <div className="hero-center">
+          <h1 className="hero-headline">
+            El punto de venta en la nube <span>que hace crecer tu negocio</span>
+          </h1>
+          <p className="hero-sub">
+            Vende más rápido, controla tu inventario en tiempo real y factura con CFDI 4.0.
+            Todo desde un solo lugar, seguro y accesible desde donde estés.
+          </p>
+        </div>
 
-        <label className="field">
-          <span>Correo</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoFocus
-          />
-        </label>
+        <div className="hero-badges">
+          <span className="hero-badge">☁️ 100% en la nube</span>
+          <span className="hero-badge">🔒 Seguridad bancaria</span>
+          <span className="hero-badge">📊 Inteligencia de negocio</span>
+          <span className="hero-badge">🧾 CFDI 4.0</span>
+        </div>
+      </div>
 
-        <label className="field">
-          <span>Contraseña</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </label>
+      {/* Formulario */}
+      <div className="login-form-side">
+        <form className="login-card" onSubmit={handleSubmit}>
+          <div className="login-card-mark">
+            <div className="m">MS</div>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--brand-800)' }}>MyBusiness Silva</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Cloud POS</div>
+            </div>
+          </div>
 
-        <label className="field">
-          <span>Código de doble factor (si aplica)</span>
-          <input
-            type="text"
-            value={mfaCode}
-            onChange={(e) => setMfaCode(e.target.value)}
-            placeholder="Opcional"
-            inputMode="numeric"
-          />
-        </label>
+          <div className="login-welcome">Bienvenido</div>
+          <div className="login-hint">Ingresa tus credenciales para continuar</div>
 
-        {error && <div className="login-error">{error}</div>}
+          <label className="field">
+            <span>Correo electrónico</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="tu@correo.com"
+              required
+              autoFocus
+            />
+          </label>
 
-        <button type="submit" className="btn-primary login-submit" disabled={loading}>
-          {loading ? 'Ingresando…' : 'Entrar'}
-        </button>
-      </form>
+          <label className="field">
+            <span>Contraseña</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+            />
+          </label>
+
+          <label className="field">
+            <span>Código de doble factor (opcional)</span>
+            <input
+              type="text"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value)}
+              placeholder="Si tienes MFA activo"
+              inputMode="numeric"
+            />
+          </label>
+
+          {error && <div className="login-error">{error}</div>}
+
+          <button type="submit" className="btn-primary login-submit" disabled={loading}>
+            {loading ? 'Ingresando…' : 'Entrar al sistema'}
+          </button>
+
+          <div className="login-foot">Acceso seguro · MyBusiness Silva © 2026</div>
+        </form>
+      </div>
     </div>
   );
 }

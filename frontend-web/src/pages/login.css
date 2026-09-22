@@ -1,42 +1,146 @@
-.login-wrap {
+/* =====================================================================
+   Login premium — pantalla partida (showcase + formulario), estética
+   enterprise: degradados, malla luminosa, glassmorphism y microdetalles.
+   ===================================================================== */
+
+.login-shell {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(140deg, var(--brand-800) 0%, var(--brand-700) 55%, var(--brand-600) 100%);
-  padding: var(--space-4);
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  background: var(--brand-900);
+}
+@media (max-width: 900px) {
+  .login-shell { grid-template-columns: 1fr; }
+  .login-hero { display: none; }
 }
 
-.login-card {
-  width: 100%;
-  max-width: 400px;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-6);
+/* ---- Panel izquierdo: showcase de marca ---- */
+.login-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 56px 56px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  justify-content: space-between;
+  background:
+    radial-gradient(1000px 500px at 15% 10%, rgba(46,110,242,0.45), transparent 60%),
+    radial-gradient(900px 500px at 85% 90%, rgba(18,184,134,0.35), transparent 55%),
+    linear-gradient(160deg, #0f172a 0%, #16234a 50%, #1a2b5c 100%);
+  color: #fff;
+}
+/* Malla/blobs decorativos */
+.login-hero::before,
+.login-hero::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(10px);
+  opacity: 0.5;
+  animation: floaty 14s ease-in-out infinite;
+}
+.login-hero::before {
+  width: 320px; height: 320px; right: -80px; top: -60px;
+  background: radial-gradient(circle at 30% 30%, rgba(59,130,246,0.55), transparent 70%);
+}
+.login-hero::after {
+  width: 260px; height: 260px; left: -60px; bottom: -40px;
+  background: radial-gradient(circle at 30% 30%, rgba(18,184,134,0.5), transparent 70%);
+  animation-delay: -6s;
+}
+@keyframes floaty {
+  0%, 100% { transform: translateY(0) translateX(0); }
+  50% { transform: translateY(-24px) translateX(12px); }
 }
 
-.login-brand { display: flex; align-items: center; gap: var(--space-3); }
-.login-mark {
-  width: 48px; height: 48px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--brand-700), var(--brand-600));
-  color: #fff; font-weight: 800; font-size: 18px;
+.hero-top { position: relative; z-index: 2; display: flex; align-items: center; gap: 14px; }
+.hero-mark {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff, #cfe0ff);
+  color: var(--brand-800); font-weight: 800; font-size: 22px;
   display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
 }
-.login-name { font-weight: 700; color: var(--brand-800); font-size: var(--fs-lg); }
-.login-tag { font-size: var(--fs-xs); color: var(--text-muted); }
+.hero-brand-name { font-size: 20px; font-weight: 700; letter-spacing: 0.3px; }
+.hero-brand-tag { font-size: 11px; letter-spacing: 4px; color: #aec6f5; }
 
-.login-title { font-size: var(--fs-xl); margin-top: var(--space-2); }
+.hero-center { position: relative; z-index: 2; }
+.hero-headline {
+  font-size: 44px; line-height: 1.1; font-weight: 800; color: #fff;
+  max-width: 520px; margin: 0 0 18px;
+}
+.hero-headline span { color: #7fb0ff; }
+.hero-sub { font-size: 16px; color: #cbd8f5; max-width: 460px; line-height: 1.6; }
 
-.field { display: flex; flex-direction: column; gap: 6px; }
-.field > span { font-size: var(--fs-sm); color: var(--text-muted); font-weight: 600; }
+.hero-badges { position: relative; z-index: 2; display: flex; flex-wrap: wrap; gap: 10px; }
+.hero-badge {
+  backdrop-filter: blur(8px);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #e5edff;
+  padding: 8px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+}
+
+/* ---- Panel derecho: formulario ---- */
+.login-form-side {
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 32px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef3fb 100%);
+}
+.login-card {
+  width: 100%; max-width: 400px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 30px 60px rgba(15,23,42,0.16), 0 2px 8px rgba(15,23,42,0.06);
+  padding: 40px 36px;
+  display: flex; flex-direction: column; gap: 18px;
+  animation: cardIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.login-card-mark {
+  display: none; /* la marca ya se ve en el hero; en móvil se muestra */
+}
+@media (max-width: 900px) {
+  .login-card-mark {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 4px;
+  }
+  .login-card-mark .m {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--brand-700), var(--brand-600));
+    color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  }
+}
+
+.login-welcome { font-size: 24px; font-weight: 800; color: var(--brand-800); }
+.login-hint { font-size: 13.5px; color: var(--text-muted); margin-top: -12px; }
+
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field > span { font-size: 12.5px; color: #475569; font-weight: 700; letter-spacing: 0.2px; }
+.field input {
+  padding: 13px 14px; border-radius: 12px; border: 1.5px solid #e2e8f0;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field input:focus {
+  outline: none; border-color: var(--brand-600);
+  box-shadow: 0 0 0 4px rgba(46,110,242,0.12);
+}
 
 .login-error {
-  background: #fee2e2; color: #991b1b;
-  padding: 10px 12px; border-radius: var(--radius-sm); font-size: var(--fs-sm);
+  background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;
+  padding: 11px 14px; border-radius: 12px; font-size: 13px;
 }
 
-.login-submit { margin-top: var(--space-2); font-size: var(--fs-lg); padding: 12px; }
+.login-submit {
+  margin-top: 6px; padding: 14px; font-size: 15.5px; font-weight: 700;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--brand-700), var(--brand-600));
+  box-shadow: 0 10px 24px rgba(46,110,242,0.35);
+  transition: transform 0.06s, box-shadow 0.2s, filter 0.2s;
+}
+.login-submit:hover:not(:disabled) { filter: brightness(1.05); box-shadow: 0 12px 28px rgba(46,110,242,0.45); }
+.login-submit:disabled { opacity: 0.7; cursor: default; }
+
+.login-foot { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
