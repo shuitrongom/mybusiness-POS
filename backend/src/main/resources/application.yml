@@ -69,7 +69,11 @@ management:
         include: health,info
   endpoint:
     health:
-      show-details: when-authorized
+      # Público y sin detalles: la plataforma (Railway) consulta /actuator/health sin token
+      # para el health check. No expone estado interno de la BD ni de la infraestructura.
+      show-details: never
+      probes:
+        enabled: true
 
 logging:
   level:

@@ -47,11 +47,15 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Health/info del actuator abiertos: Railway/plataforma los consultan sin
+                        // token para el health check. Se cubre el endpoint y sus sub-rutas
+                        // (ej. /actuator/health/liveness) para no depender de la forma exacta.
                         .requestMatchers(
-                                "/api/v1/auth/**",
-                                "/api/v1/self-invoice/**",
                                 "/actuator/health",
-                                "/actuator/info")
+                                "/actuator/health/**",
+                                "/actuator/info",
+                                "/api/v1/auth/**",
+                                "/api/v1/self-invoice/**")
                         .permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
