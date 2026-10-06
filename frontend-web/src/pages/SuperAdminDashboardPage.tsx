@@ -1,7 +1,15 @@
-import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { motion } from 'motion/react';
 import { api } from '@/lib/api';
 import { money } from '@/lib/format';
+import { TrialCalendar } from '@/components/TrialCalendar';
+import {
+  PlanDistributionChart,
+  PortfolioDonut,
+  RevenueByTypeChart,
+  type PortfolioDatum,
+} from '@/components/SaasCharts';
+import { staggerContainer, staggerItem } from '@/lib/motion';
 import '@/pages/dashboard.css';
 import './admin.css';
 
@@ -70,7 +78,18 @@ export function SuperAdminDashboardPage() {
   const conversion = total > 0 ? Math.round((paying / total) * 100) : 0;
   const atRisk = (s?.expired ?? 0) + (s?.suspended ?? 0);
   const arpa = paying > 0 ? (s?.totalRevenue ?? 0) / paying : 0;
-  const maxPlan = Math.max(1, ...(byPlan.data ?? []).map((p) => p.businesses));
+
+  // Datos para las gráficas premium (Recharts).
+  const portfolioData: PortfolioDatum[] = [
+    { name: 'En prueba', value: s?.trial ?? 0, tone: 'trial' },
+    { name: 'Activos', value: s?.active ?? 0, tone: 'active' },
+    { name: 'Suspendidos', value: s?.suspended ?? 0, tone: 'suspended' },
+    { name: 'Prueba vencida', value: s?.expired ?? 0, tone: 'expired' },
+  ];
+  const revenueData = [
+    { concept: 'Licencias', amount: s?.licenseRevenue ?? 0 },
+    { concept: 'Módulos', amount: s?.surchargeRevenue ?? 0 },
+  ];
 
   return (
     <div>
@@ -85,7 +104,8 @@ export function SuperAdminDashboardPage() {
       </div>
 
       {/* Ingresos */}
-      <div className="metrics" style={{ marginTop: 'var(--space-5)' }}>
+      <motion.div className="metrics" style={{ marginTop: 'var(--space-5)' }}
+        variants={staggerContainer} initial="hidden" animate="visible">
         <MetricCard label="Ingresos totales" value={money(s?.totalRevenue ?? 0)}
           hint={`${s?.salesCount ?? 0} ventas registradas`} accent />
         <MetricCard label="Por licencias" value={money(s?.licenseRevenue ?? 0)}
@@ -94,11 +114,12 @@ export function SuperAdminDashboardPage() {
           hint="Excedentes vendidos a negocios" />
         <MetricCard label="Ingreso por cliente activo" value={money(arpa)}
           hint={`${paying} negocios con licencia`} />
-      </div>
+      </motion.div>
 
       {/* Cartera de negocios */}
       <h3 className="dash-section">Cartera de negocios</h3>
-      <div className="metrics" style={{ marginTop: 'var(--space-3)' }}>
+      <motion.div className="metrics" style={{ marginTop: 'var(--space-3)' }}
+        variants={staggerContainer} initial="hidden" animate="visible">
         <MetricCard label="Total de negocios" value={String(total)}
           hint={`Conversión a licencia: ${conversion}%`} />
         <MetricCard label="En prueba" value={String(s?.trial ?? 0)}
@@ -107,29 +128,32 @@ export function SuperAdminDashboardPage() {
           hint="Clientes de pago" tone="success" />
         <MetricCard label="En riesgo" value={String(atRisk)}
           hint="Vencidos o suspendidos" tone="danger" />
-      </div>
+      </motion.div>
 
-      <div className="dash-two-col">
-        {/* Mezcla de planes con barras */}
-        <div className="card">
+      {/* Gráficas premium: distribución por plan + cartera por estado */}
+      <motion.div className="dash-two-col" variants={staggerContainer} initial="hidden" animate="visible">
+        <motion.div className="card" variants={staggerItem}>
           <h3>Negocios por plan</h3>
           <p className="admin-plan-hint" style={{ marginTop: 4 }}>Distribución de la cartera por plan contratado</p>
-          <div className="plan-bars">
-            {(byPlan.data ?? []).map((p) => (
-              <div key={p.plan} className="plan-bar-row">
-                <span className="plan-bar-label">{p.plan}</span>
-                <div className="plan-bar-track">
-                  <div className="plan-bar-fill" style={{ width: `${(p.businesses / maxPlan) * 100}%` }} />
-                </div>
-                <span className="plan-bar-count">{p.businesses}</span>
-              </div>
-            ))}
-            {byPlan.data?.length === 0 && <p className="empty">Aún no hay negocios por plan.</p>}
-          </div>
-        </div>
+          <PlanDistributionChart data={byPlan.data ?? []} />
+        </motion.div>
 
-        {/* Ingresos recientes */}
-        <div className="card">
+        <motion.div className="card" variants={staggerItem}>
+          <h3>Cartera por estado</h3>
+          <p className="admin-plan-hint" style={{ marginTop: 4 }}>Proporción de negocios según su ciclo de licencia</p>
+          <PortfolioDonut data={portfolioData} />
+        </motion.div>
+      </motion.div>
+
+      {/* Ingresos por tipo + ingresos recientes */}
+      <motion.div className="dash-two-col" variants={staggerContainer} initial="hidden" animate="visible">
+        <motion.div className="card" variants={staggerItem}>
+          <h3>Ingresos por tipo</h3>
+          <p className="admin-plan-hint" style={{ marginTop: 4 }}>Licencias definitivas frente a módulos adicionales</p>
+          <RevenueByTypeChart data={revenueData} />
+        </motion.div>
+
+        <motion.div className="card" variants={staggerItem}>
           <h3>Ingresos recientes</h3>
           <p className="admin-plan-hint" style={{ marginTop: 4 }}>Últimas ventas de licencias y módulos</p>
           <table className="table">
@@ -152,8 +176,8 @@ export function SuperAdminDashboardPage() {
               )}
             </tbody>
           </table>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Calendario de vencimientos de prueba */}
       <h3 className="dash-section">Calendario de vencimientos</h3>
@@ -165,95 +189,15 @@ export function SuperAdminDashboardPage() {
   );
 }
 
-const MONTHS = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
-const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-
-/**
- * Calendario mensual que resalta los días en los que vence la prueba de uno o más negocios.
- * Permite navegar entre meses. Al pasar el cursor por un día marcado se ven los negocios.
- */
-function TrialCalendar({ businesses }: { businesses: Business[] }) {
-  const today = new Date();
-  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-
-  // Mapa "YYYY-M-D" -> lista de nombres de negocios que vencen ese día.
-  const byDay = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const b of businesses) {
-      if (!b.trialEndsAt || b.status !== 'TRIAL') continue;
-      const d = new Date(b.trialEndsAt);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      map.set(key, [...(map.get(key) ?? []), b.name]);
-    }
-    return map;
-  }, [businesses]);
-
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
-  const firstDay = new Date(year, month, 1);
-  // getDay(): 0=domingo. Convertimos a semana que empieza en lunes (0=lunes).
-  const leadingBlanks = (firstDay.getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < leadingBlanks; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-
-  const isToday = (d: number) =>
-    d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-
-  const goPrev = () => setCursor(new Date(year, month - 1, 1));
-  const goNext = () => setCursor(new Date(year, month + 1, 1));
-
-  return (
-    <div className="card cal-card">
-      <div className="cal-head">
-        <button className="btn-ghost cal-nav" onClick={goPrev} aria-label="Mes anterior">‹</button>
-        <div className="cal-title">{MONTHS[month]} {year}</div>
-        <button className="btn-ghost cal-nav" onClick={goNext} aria-label="Mes siguiente">›</button>
-      </div>
-
-      <div className="cal-grid cal-weekdays">
-        {WEEKDAYS.map((w) => <div key={w} className="cal-weekday">{w}</div>)}
-      </div>
-
-      <div className="cal-grid">
-        {cells.map((d, i) => {
-          if (d === null) return <div key={`b-${i}`} className="cal-cell cal-empty" />;
-          const key = `${year}-${month}-${d}`;
-          const list = byDay.get(key);
-          return (
-            <div
-              key={key}
-              className={`cal-cell ${isToday(d) ? 'is-today' : ''} ${list ? 'has-event' : ''}`}
-              title={list ? `Vence prueba: ${list.join(', ')}` : ''}
-            >
-              <span className="cal-day">{d}</span>
-              {list && <span className="cal-dot" aria-label={`${list.length} vencimiento(s)`}>{list.length}</span>}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="cal-legend">
-        <span className="cal-legend-item"><span className="cal-dot cal-dot-legend">•</span> Vence prueba</span>
-        <span className="cal-legend-item"><span className="cal-today-dot" /> Hoy</span>
-      </div>
-    </div>
-  );
-}
-
 function MetricCard({ label, value, hint, accent, tone }:
   { label: string; value: string; hint?: string; accent?: boolean;
     tone?: 'success' | 'warning' | 'danger' }) {
   return (
-    <div className={`metric-card ${accent ? 'metric-accent' : ''} ${tone ? `metric-tone-${tone}` : ''}`}>
+    <motion.div className={`metric-card ${accent ? 'metric-accent' : ''} ${tone ? `metric-tone-${tone}` : ''}`}
+      variants={staggerItem}>
       <div className="metric-label">{label}</div>
       <div className="metric-value">{value}</div>
       {hint && <div className="metric-hint">{hint}</div>}
-    </div>
+    </motion.div>
   );
 }

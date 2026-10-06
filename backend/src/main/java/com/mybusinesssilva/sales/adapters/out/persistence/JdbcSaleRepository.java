@@ -24,10 +24,12 @@ public class JdbcSaleRepository implements SaleRepository {
     public Sale insert(Sale sale) {
         Long saleId = jdbc.sql("""
                 INSERT INTO sale
-                    (folio, branch_id, cash_register_id, shift_id, cashier, customer_id,
-                     subtotal, discount, tax, total, status, idempotency_key)
-                VALUES (:folio, :branch, :reg, :shift, :cashier, :customer,
-                        :subtotal, :discount, 0, :total, :status, :idem)
+                    (folio, branch_id, cash_register_id, shift_id, cashier, salesperson,
+                     customer_id, price_list_id, subtotal, discount, global_discount, tax,
+                     total, amount_paid, on_credit, note, status, idempotency_key)
+                VALUES (:folio, :branch, :reg, :shift, :cashier, :salesperson,
+                        :customer, :priceList, :subtotal, :discount, :globalDiscount, 0,
+                        :total, :amountPaid, :onCredit, :note, :status, :idem)
                 RETURNING id
                 """)
                 .param("folio", sale.getFolio())
@@ -35,10 +37,16 @@ public class JdbcSaleRepository implements SaleRepository {
                 .param("reg", sale.getCashRegisterId())
                 .param("shift", sale.getShiftId())
                 .param("cashier", sale.getCashier())
+                .param("salesperson", sale.getSalesperson())
                 .param("customer", sale.getCustomerId())
+                .param("priceList", (int) sale.getPriceListId())
                 .param("subtotal", sale.subtotal())
                 .param("discount", sale.discount())
+                .param("globalDiscount", sale.getGlobalDiscount())
                 .param("total", sale.total())
+                .param("amountPaid", sale.totalPaid())
+                .param("onCredit", sale.isOnCredit())
+                .param("note", sale.getNote())
                 .param("status", sale.getStatus().name())
                 .param("idem", sale.getIdempotencyKey())
                 .query(Long.class)
@@ -118,11 +126,63 @@ public class JdbcSaleRepository implements SaleRepository {
     }
 
     @Override
+    public java.util.Optional<String> shiftStatus(long shiftId) {
+        return jdbc.sql("SELECT status FROM shift WHERE id = :id")
+                .param("id", shiftId)
+                .query(String.class)
+                .optional();
+    }
+
+    @Override
     public java.util.List<SaleLineRow> linesOf(long saleId) {
         return jdbc.sql("SELECT product_id, quantity FROM sale_line WHERE sale_id = :id")
                 .param("id", saleId)
                 .query((rs, n) -> new SaleLineRow(
                         rs.getLong("product_id"), rs.getBigDecimal("quantity")))
                 .list();
+    }
+
+    @Override
+    public java.util.Optional<SaleDetail> findDetail(long saleId) {
+        var header = jdbc.sql("""
+                SELECT id, folio, branch_id, customer_id, status, total
+                FROM sale WHERE id = :id
+                """)
+                .param("id", saleId)
+                .query((rs, n) -> new Object[] {
+                        rs.getLong("id"), rs.getString("folio"), rs.getLong("branch_id"),
+                        (Long) rs.getObject("customer_id"), rs.getString("status"),
+                        rs.getBigDecimal("total") })
+                .optional();
+        if (header.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        Object[] h = header.get();
+        var lines = jdbc.sql("""
+                SELECT product_id, description, quantity, unit_price
+                FROM sale_line WHERE sale_id = :id ORDER BY id
+                """)
+                .param("id", saleId)
+                .query((rs, n) -> new SaleDetailLine(
+                        rs.getLong("product_id"), rs.getString("description"),
+                        rs.getBigDecimal("quantity"), rs.getBigDecimal("unit_price")))
+                .list();
+        return java.util.Optional.of(new SaleDetail(
+                (Long) h[0], (String) h[1], (Long) h[2], (Long) h[3], (String) h[4],
+                (java.math.BigDecimal) h[5], lines));
+    }
+
+    @Override
+    public java.math.BigDecimal returnedQuantity(long saleId, long productId) {
+        return jdbc.sql("""
+                SELECT COALESCE(SUM(rl.quantity), 0)
+                FROM sales_return_line rl
+                JOIN sales_return r ON r.id = rl.return_id
+                WHERE r.sale_id = :sale AND rl.product_id = :product
+                """)
+                .param("sale", saleId)
+                .param("product", productId)
+                .query(java.math.BigDecimal.class)
+                .single();
     }
 }

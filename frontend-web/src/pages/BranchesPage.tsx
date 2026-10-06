@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { motion } from 'motion/react';
+import { Building2, Store } from 'lucide-react';
 import { api } from '@/lib/api';
+import { toast } from '@/store/toast';
+import { fadeInUp, pressable, staggerContainer, staggerItem } from '@/lib/motion';
 import '@/pages/dashboard.css';
 import './admin.css';
 
@@ -30,12 +34,22 @@ export function BranchesPage() {
     onSuccess: () => {
       setForm({ name: '', code: '' });
       queryClient.invalidateQueries({ queryKey: ['branches'] });
+      toast.success('Sucursal creada', 'Ya puedes operar con ella.');
+    },
+    onError: () => {
+      toast.error('No se pudo crear la sucursal', 'Revisa los datos e inténtalo de nuevo.');
     },
   });
 
   const toggleActive = useMutation({
     mutationFn: async (b: Branch) => api.post(`/branches/${b.id}/${b.active ? 'disable' : 'enable'}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['branches'] }),
+    onSuccess: (_data, b) => {
+      queryClient.invalidateQueries({ queryKey: ['branches'] });
+      toast.success(b.active ? 'Sucursal desactivada' : 'Sucursal activada');
+    },
+    onError: () => {
+      toast.error('No se pudo cambiar el estado', 'Debe quedar al menos una sucursal activa.');
+    },
   });
 
   return (
@@ -43,8 +57,8 @@ export function BranchesPage() {
       <h1 className="page-title">Sucursales</h1>
       <p className="page-sub">Administra las sucursales de tu negocio; cada una tiene su inventario y ventas</p>
 
-      <div className="card">
-        <h3>Agregar sucursal</h3>
+      <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
+        <h3 className="sec-title"><Building2 size={18} /> Agregar sucursal</h3>
         <div className="admin-grid">
           <label className="field">
             <span>Nombre</span>
@@ -58,25 +72,28 @@ export function BranchesPage() {
           </label>
         </div>
         <div style={{ marginTop: 'var(--space-4)' }}>
-          <button className="btn-accent" disabled={!form.name.trim() || createBranch.isPending}
-            onClick={() => createBranch.mutate()}>
+          <motion.button className="btn-accent" disabled={!form.name.trim() || createBranch.isPending}
+            onClick={() => createBranch.mutate()}
+            whileHover={!form.name.trim() || createBranch.isPending ? undefined : pressable.whileHover}
+            whileTap={!form.name.trim() || createBranch.isPending ? undefined : pressable.whileTap}
+            transition={pressable.transition}>
             {createBranch.isPending ? 'Creando…' : 'Agregar sucursal'}
-          </button>
+          </motion.button>
           {createBranch.isError && (
             <span className="admin-inline-error">No se pudo crear la sucursal.</span>
           )}
         </div>
-      </div>
+      </motion.div>
 
-      <div className="card" style={{ marginTop: 'var(--space-5)' }}>
-        <h3>Sucursales ({branches.data?.length ?? 0})</h3>
+      <motion.div className="card" style={{ marginTop: 'var(--space-5)' }} variants={fadeInUp} initial="hidden" animate="visible">
+        <h3 className="sec-title"><Store size={18} /> Sucursales ({branches.data?.length ?? 0})</h3>
         <table className="table">
           <thead>
             <tr><th>Sucursal</th><th>Código</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
-          <tbody>
+          <motion.tbody variants={staggerContainer} initial="hidden" animate="visible">
             {(branches.data ?? []).map((b) => (
-              <tr key={b.id}>
+              <motion.tr key={b.id} variants={staggerItem}>
                 <td><strong>{b.name}</strong></td>
                 <td>{b.code ?? '—'}</td>
                 <td>
@@ -90,17 +107,17 @@ export function BranchesPage() {
                     {b.active ? 'Desactivar' : 'Activar'}
                   </button>
                 </td>
-              </tr>
+              </motion.tr>
             ))}
             {branches.data?.length === 0 && (
               <tr><td colSpan={4} className="empty">Aún no hay sucursales.</td></tr>
             )}
-          </tbody>
+          </motion.tbody>
         </table>
         {toggleActive.isError && (
           <p className="admin-inline-error">No se pudo cambiar el estado (debe quedar al menos una activa).</p>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

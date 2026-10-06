@@ -66,3 +66,20 @@ export function formatMxPhoneDisplay(value: string): string {
   if (d.length !== 10) return value;
   return `${d.slice(0, 2)} ${d.slice(2, 6)} ${d.slice(6)}`;
 }
+
+/**
+ * Capitaliza la primera letra de cada palabra mientras el usuario escribe (Title Case).
+ * Respeta los espacios que el usuario teclea (incluido el espacio final) para no interrumpir la
+ * escritura. Pensado para nombres propios: negocio, dueño, cliente, proveedor, sucursal.
+ */
+export function titleCase(value: string): string {
+  return value.replace(/(^|\s)([\p{L}])/gu, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
+}
+
+/**
+ * Limita la entrada de un teléfono a 10 dígitos: descarta cualquier caracter no numérico y
+ * recorta a 10. Se usa como transformación en vivo del input de WhatsApp del formulario.
+ */
+export function limitToTenDigits(value: string): string {
+  return value.replace(/\D/g, '').slice(0, 10);
+}

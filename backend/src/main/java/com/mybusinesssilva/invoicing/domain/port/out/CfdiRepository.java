@@ -42,4 +42,7 @@ public interface CfdiRepository {
 
     /** @return el CFDI asociado a una venta (para autofacturación), o vacío. */
     Optional<Long> findIdBySaleId(long saleId);
+
+    /** Persiste los conceptos de un CFDI (para consulta/detalle posterior). */
+    void saveConcepts(long cfdiId, java.util.List<com.mybusinesssilva.invoicing.domain.model.CfdiConcept> concepts);
 }

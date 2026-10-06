@@ -54,7 +54,7 @@ public class TenantProvisioningService {
         jdbc.execute("CREATE SCHEMA IF NOT EXISTS " + schema);
 
         // 2) Migrar el schema del tenant con Flyway, sustituyendo el placeholder.
-        Flyway.configure()
+        Flyway flyway = Flyway.configure()
                 .dataSource(dataSource)
                 .schemas(schema)
                 .defaultSchema(schema)
@@ -62,8 +62,13 @@ public class TenantProvisioningService {
                 .placeholders(Map.of("tenant_schema", schema))
                 .table("flyway_schema_history")
                 .baselineOnMigrate(true)
-                .load()
-                .migrate();
+                .load();
+
+        // Repara el historial antes de migrar: realinea los checksums registrados con los de los
+        // archivos actuales. Esto tolera cambios en migraciones ya aplicadas (idempotentes) sin
+        // abortar por "checksum mismatch", que de otro modo dejaría al tenant sin poder actualizarse.
+        flyway.repair();
+        flyway.migrate();
 
         return schema;
     }

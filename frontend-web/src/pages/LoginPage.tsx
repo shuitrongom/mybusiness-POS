@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useSession } from '@/store/session';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import './login.css';
 
 type Mode = 'business' | 'system';
@@ -23,6 +25,11 @@ export function LoginPage() {
   const [mfaCode, setMfaCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Mostrar u ocultar contraseñas (el "ojito").
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Flujo de cambio de contraseña obligatorio en el primer ingreso del dueño.
   const [mustChange, setMustChange] = useState(false);
@@ -48,14 +55,25 @@ export function LoginPage() {
           // No inicia sesión aún: primero debe establecer una contraseña nueva.
           setMustChange(true);
         } else {
-          login(data.accessToken);
+          login(data.accessToken, data.refreshToken);
           navigate('/', { replace: true });
         }
       } else {
         setError('Credenciales incorrectas. Verifica tu correo y contraseña.');
       }
-    } catch {
-      setError('No se pudo iniciar sesión. Revisa tus datos e inténtalo de nuevo.');
+    } catch (err) {
+      // Distingue credenciales inválidas (401) de un problema de conexión con el servidor,
+      // para que el mensaje sea útil al diagnosticar.
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 401) {
+        setError('Correo o contraseña incorrectos.');
+      } else if (status === 400) {
+        setError('Revisa que el correo tenga un formato válido y la contraseña no esté vacía.');
+      } else if (status === undefined) {
+        setError('No se pudo conectar con el servidor. Verifica que el backend esté encendido.');
+      } else {
+        setError(`No se pudo iniciar sesión (error ${status}). Inténtalo de nuevo.`);
+      }
     } finally {
       setLoading(false);
     }
@@ -80,7 +98,7 @@ export function LoginPage() {
         newPassword,
       });
       if (data.accessToken) {
-        login(data.accessToken);
+        login(data.accessToken, data.refreshToken);
         navigate('/', { replace: true });
       } else {
         setError('No se pudo cambiar la contraseña. Inténtalo de nuevo.');
@@ -109,6 +127,7 @@ export function LoginPage() {
             <div className="auth-brand-tag">CLOUD POS · MÉXICO</div>
           </div>
         </div>
+        <ThemeToggle />
       </header>
 
       <main className="auth-main">
@@ -125,27 +144,51 @@ export function LoginPage() {
               <form className="auth-form" onSubmit={handleChangePassword}>
                 <label className="field">
                   <span>Nueva contraseña</span>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Mínimo 8 caracteres"
-                    autoComplete="new-password"
-                    required
-                    autoFocus
-                  />
+                  <div className="field-password">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Mínimo 8 caracteres"
+                      autoComplete="new-password"
+                      required
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="field-eye"
+                      onClick={() => setShowNewPassword((v) => !v)}
+                      aria-label={showNewPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      aria-pressed={showNewPassword}
+                      title={showNewPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    >
+                      {showNewPassword ? <EyeOff size={20} strokeWidth={1.75} /> : <Eye size={20} strokeWidth={1.75} />}
+                    </button>
+                  </div>
                 </label>
 
                 <label className="field">
                   <span>Confirma la contraseña</span>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Repite la contraseña"
-                    autoComplete="new-password"
-                    required
-                  />
+                  <div className="field-password">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repite la contraseña"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="field-eye"
+                      onClick={() => setShowConfirmPassword((v) => !v)}
+                      aria-label={showConfirmPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      aria-pressed={showConfirmPassword}
+                      title={showConfirmPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    >
+                      {showConfirmPassword ? <EyeOff size={20} strokeWidth={1.75} /> : <Eye size={20} strokeWidth={1.75} />}
+                    </button>
+                  </div>
                 </label>
 
                 {error && (
@@ -208,14 +251,26 @@ export function LoginPage() {
 
                 <label className="field">
                   <span>Contraseña</span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    autoComplete="current-password"
-                    required
-                  />
+                  <div className="field-password">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="field-eye"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      aria-pressed={showPassword}
+                      title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    >
+                      {showPassword ? <EyeOff size={20} strokeWidth={1.75} /> : <Eye size={20} strokeWidth={1.75} />}
+                    </button>
+                  </div>
                 </label>
 
                 {mode === 'system' && (

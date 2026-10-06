@@ -32,7 +32,27 @@ public class RoleController {
 
     @GetMapping
     public List<Map<String, Object>> list() {
-        return roleService.listRoles();
+        return roleService.listRolesWithLimits();
+    }
+
+    /** Catálogo de módulos y acciones para construir la matriz de permisos. */
+    @GetMapping("/catalog")
+    public Map<String, Object> catalog() {
+        return roleService.permissionCatalog();
+    }
+
+    /** Reemplaza toda la matriz de permisos de un rol de una vez. */
+    @PostMapping("/{id}/permissions/replace")
+    public ResponseEntity<Void> replace(@PathVariable long id, @RequestBody ReplaceRequest request) {
+        roleService.replacePermissions(id, request.permissions());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Actualiza los límites del rol (descuento máximo, capacidad de autorizar). */
+    @PostMapping("/{id}/limits")
+    public ResponseEntity<Void> limits(@PathVariable long id, @RequestBody LimitsRequest request) {
+        roleService.updateRoleLimits(id, request.maxDiscountPct(), request.canAuthorize());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping
@@ -72,5 +92,13 @@ public class RoleController {
 
     /** Permiso (módulo + acción). */
     public record PermissionRequest(@NotBlank String moduleKey, @NotBlank String action) {
+    }
+
+    /** Reemplazo completo de la matriz de permisos de un rol. */
+    public record ReplaceRequest(@NotNull List<Map<String, String>> permissions) {
+    }
+
+    /** Límites del rol. */
+    public record LimitsRequest(java.math.BigDecimal maxDiscountPct, boolean canAuthorize) {
     }
 }

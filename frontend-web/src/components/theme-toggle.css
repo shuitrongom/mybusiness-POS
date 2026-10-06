@@ -1,0 +1,33 @@
+/* Interruptor de tema claro/oscuro — estilo premium, compacto y accesible. */
+.theme-toggle {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, transform 0.05s ease;
+}
+.theme-toggle:hover {
+  color: var(--brand-600);
+  border-color: var(--brand-500);
+}
+.theme-toggle:active {
+  transform: scale(0.94);
+}
+.theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(46, 110, 242, 0.28);
+}
+.theme-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

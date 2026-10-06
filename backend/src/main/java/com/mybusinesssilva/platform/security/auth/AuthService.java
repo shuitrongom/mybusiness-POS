@@ -73,6 +73,37 @@ public class AuthService {
         return new AuthTokens(access, refresh);
     }
 
+    /**
+     * Renueva el token de acceso del Super Admin a partir de un refresh token válido.
+     *
+     * <p>Valida que el token sea un refresh legítimo (firma, emisor, vigencia) y que corresponda
+     * a un Super Admin (tenant vacío). Emite un nuevo access token con vida corta, conservando el
+     * mismo refresh. Así el panel no deja de funcionar cuando el access de 15 minutos expira.
+     *
+     * @param refreshToken refresh token emitido en el login
+     * @return nuevos tokens (access renovado + el mismo refresh)
+     * @throws AuthException si el token es inválido, no es de tipo refresh, o el usuario ya no existe/está inactivo
+     */
+    public AuthTokens refreshSuperAdmin(String refreshToken) {
+        io.jsonwebtoken.Claims claims;
+        try {
+            claims = jwtService.parse(refreshToken);
+        } catch (RuntimeException ex) {
+            throw new AuthException("Sesión expirada. Inicia sesión de nuevo.");
+        }
+        if (!jwtService.isRefreshToken(claims)) {
+            throw new AuthException("Token de renovación inválido");
+        }
+        String email = claims.getSubject();
+        SuperAdminUser user = userRepository.findByEmail(email).orElse(null);
+        if (user == null || !user.active()) {
+            throw new AuthException("Usuario no disponible");
+        }
+        String access = jwtService.issueAccessToken(
+                user.email(), "", List.of(Roles.SUPER_ADMIN), List.of());
+        return new AuthTokens(access, refreshToken);
+    }
+
     /** Tokens emitidos tras un inicio de sesión exitoso. */
     public record AuthTokens(String accessToken, String refreshToken) {
     }

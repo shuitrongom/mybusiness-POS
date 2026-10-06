@@ -13,6 +13,17 @@ public interface ProductRepository {
 
     void update(Product product);
 
+    /**
+     * Elimina un producto. Si el producto ya participó en ventas (existe en {@code sale_line}),
+     * no puede borrarse físicamente sin romper el histórico; en ese caso se desactiva (borrado
+     * lógico). Si no tiene ventas, se elimina físicamente junto con sus códigos de barras,
+     * existencias y movimientos de inventario.
+     *
+     * @param id id del producto
+     * @return true si se borró físicamente; false si solo se desactivó por tener ventas
+     */
+    boolean delete(long id);
+
     Optional<Product> findById(long id);
 
     Optional<Product> findByBarcode(String barcode);

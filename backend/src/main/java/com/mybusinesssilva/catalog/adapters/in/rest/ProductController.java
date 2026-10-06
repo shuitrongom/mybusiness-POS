@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -62,13 +63,7 @@ public class ProductController {
 
     @PostMapping
     public ResponseEntity<Product> create(@Valid @RequestBody CreateProductRequest request) {
-        Product product = new Product(
-                null, request.sku(), request.name(), request.categoryId(),
-                request.unit(), request.soldByWeight(), request.satProdServ(), request.satUnit(),
-                request.price(), request.cost(), true,
-                request.barcodes() == null ? List.of() : request.barcodes(),
-                request.attributes() == null ? Map.of() : request.attributes(),
-                request.imageUrl());
+        Product product = toProduct(null, request);
         Product saved = catalogService.createProduct(product);
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
@@ -76,14 +71,43 @@ public class ProductController {
     @PutMapping("/{id}")
     public ResponseEntity<Product> update(
             @PathVariable long id, @Valid @RequestBody CreateProductRequest request) {
-        Product product = new Product(
-                id, request.sku(), request.name(), request.categoryId(),
-                request.unit(), request.soldByWeight(), request.satProdServ(), request.satUnit(),
-                request.price(), request.cost(), true,
-                request.barcodes() == null ? List.of() : request.barcodes(),
-                request.attributes() == null ? Map.of() : request.attributes(),
-                request.imageUrl());
-        return ResponseEntity.ok(catalogService.updateProduct(product));
+        return ResponseEntity.ok(catalogService.updateProduct(toProduct(id, request)));
+    }
+
+    /** Construye el modelo de dominio a partir del request, incluyendo los campos profesionales. */
+    private Product toProduct(Long id, CreateProductRequest r) {
+        boolean active = r.active() == null ? true : r.active();
+        Product.ProductExtras extras = new Product.ProductExtras(
+                r.description(), r.brand(), r.supplierId(),
+                r.taxRate(), r.iepsRate(),
+                r.price2(), r.price3(), r.price4(), r.price5(),
+                r.lastCost(), r.avgCost(),
+                r.minStock(), r.maxStock(), r.reorderPoint(),
+                r.forSale() == null ? true : r.forSale(),
+                r.trackInventory() == null ? true : r.trackInventory(),
+                r.trackLots() != null && r.trackLots(),
+                r.allowBelowCost() != null && r.allowBelowCost(),
+                r.blocked() != null && r.blocked(),
+                r.isComposite() != null && r.isComposite(),
+                r.onSale() != null && r.onSale(),
+                r.loyaltyPoints());
+        return new Product(
+                id, r.sku(), r.name(), r.categoryId(),
+                r.unit(), r.soldByWeight(), r.satProdServ(), r.satUnit(),
+                r.price(), r.cost(), active,
+                r.barcodes() == null ? List.of() : r.barcodes(),
+                r.attributes() == null ? Map.of() : r.attributes(),
+                r.imageUrl(), extras);
+    }
+
+    /**
+     * Elimina un producto. Si tenía ventas se desactiva (borrado lógico) para no romper el
+     * histórico; si no, se borra físicamente. La respuesta indica cuál de los dos ocurrió.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> delete(@PathVariable long id) {
+        boolean hardDeleted = catalogService.deleteProduct(id);
+        return ResponseEntity.ok(Map.of("deleted", true, "hardDeleted", hardDeleted));
     }
 
     @GetMapping("/{id}")
@@ -108,7 +132,11 @@ public class ProductController {
         return catalogService.lookupByBarcode(barcode);
     }
 
-    /** Alta/edición de producto. Los campos del giro van en {@code attributes}. */
+    /**
+     * Alta/edición de producto. Los campos del giro van en {@code attributes}; los campos
+     * profesionales (multiprecio, inventario, banderas) son opcionales y toman valores por
+     * defecto sensatos si el cliente no los envía (compatibilidad con altas simples).
+     */
     public record CreateProductRequest(
             String sku,
             @NotBlank String name,
@@ -121,6 +149,30 @@ public class ProductController {
             BigDecimal cost,
             List<String> barcodes,
             Map<String, Object> attributes,
-            String imageUrl) {
+            String imageUrl,
+            // ---- Campos profesionales (todos opcionales) ----
+            Boolean active,
+            String description,
+            String brand,
+            Long supplierId,
+            BigDecimal taxRate,
+            BigDecimal iepsRate,
+            BigDecimal price2,
+            BigDecimal price3,
+            BigDecimal price4,
+            BigDecimal price5,
+            BigDecimal lastCost,
+            BigDecimal avgCost,
+            BigDecimal minStock,
+            BigDecimal maxStock,
+            BigDecimal reorderPoint,
+            Boolean forSale,
+            Boolean trackInventory,
+            Boolean trackLots,
+            Boolean allowBelowCost,
+            Boolean blocked,
+            Boolean isComposite,
+            Boolean onSale,
+            BigDecimal loyaltyPoints) {
     }
 }

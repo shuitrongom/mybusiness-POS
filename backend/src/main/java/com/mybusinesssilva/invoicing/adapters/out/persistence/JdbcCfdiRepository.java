@@ -128,4 +128,27 @@ public class JdbcCfdiRepository implements CfdiRepository {
                 .query(Long.class)
                 .optional();
     }
+
+    @Override
+    public void saveConcepts(long cfdiId,
+                             java.util.List<com.mybusinesssilva.invoicing.domain.model.CfdiConcept> concepts) {
+        if (concepts == null || concepts.isEmpty()) {
+            return;
+        }
+        for (var c : concepts) {
+            jdbc.sql("""
+                    INSERT INTO cfdi_concept
+                        (cfdi_id, sat_prod_serv, sat_unit, description, quantity, unit_price, amount)
+                    VALUES (:cfdi, :ps, :u, :desc, :qty, :price, :amount)
+                    """)
+                    .param("cfdi", cfdiId)
+                    .param("ps", c.satProdServ() == null ? "01010101" : c.satProdServ())
+                    .param("u", c.satUnit() == null ? "H87" : c.satUnit())
+                    .param("desc", c.description())
+                    .param("qty", c.quantity())
+                    .param("price", c.unitPrice())
+                    .param("amount", c.amount())
+                    .update();
+        }
+    }
 }

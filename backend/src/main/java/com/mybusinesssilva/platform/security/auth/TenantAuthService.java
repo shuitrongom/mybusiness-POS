@@ -5,6 +5,7 @@ import com.mybusinesssilva.licensing.domain.port.out.BusinessModuleRepository;
 import com.mybusinesssilva.licensing.domain.port.out.BusinessRepository;
 import com.mybusinesssilva.platform.security.JwtService;
 import com.mybusinesssilva.platform.security.LoginRateLimiter;
+import com.mybusinesssilva.platform.tenancy.TenantContext;
 import com.mybusinesssilva.platform.tenancy.TenantSchema;
 import java.util.List;
 import java.util.Optional;
@@ -83,14 +84,60 @@ public class TenantAuthService {
             rateLimiter.reset(key);
             String role = user.roleCode() == null ? "OWNER" : user.roleCode();
             List<String> modules = businessModuleRepository.findEnabledModuleKeys(business.getId());
+            List<String> permissions = loadPermissions(business.getSchemaName(), user.email());
             String access = jwtService.issueAccessToken(
-                    user.email(), business.getSchemaName(), List.of(role), modules);
+                    user.email(), business.getSchemaName(), List.of(role), modules, permissions);
             String refresh = jwtService.issueRefreshToken(user.email(), business.getSchemaName());
             return new TenantAuthResult(access, refresh, user.mustChangePassword());
         }
 
         rateLimiter.recordFailure(key);
         throw new AuthService.AuthException("Credenciales inválidas");
+    }
+
+    /**
+     * Renueva el token de acceso de un usuario de negocio a partir de su refresh token.
+     *
+     * <p>Valida el refresh (firma, emisor, vigencia y tipo), localiza el negocio por el tenant del
+     * token, recarga el rol del usuario y los módulos habilitados, y emite un nuevo access token.
+     *
+     * @param refreshToken refresh token emitido en el login del tenant
+     * @return nuevos tokens (access renovado + el mismo refresh)
+     * @throws AuthService.AuthException si el token es inválido o el usuario/negocio ya no permite acceso
+     */
+    public TenantAuthResult refresh(String refreshToken) {
+        io.jsonwebtoken.Claims claims;
+        try {
+            claims = jwtService.parse(refreshToken);
+        } catch (RuntimeException ex) {
+            throw new AuthService.AuthException("Sesión expirada. Inicia sesión de nuevo.");
+        }
+        if (!jwtService.isRefreshToken(claims)) {
+            throw new AuthService.AuthException("Token de renovación inválido");
+        }
+        String email = claims.getSubject();
+        String tenant = jwtService.tenantOf(claims);
+
+        for (Business business : businessRepository.findAll()) {
+            if (!business.getSchemaName().equals(tenant)) {
+                continue;
+            }
+            if (!business.allowsAccess()) {
+                throw new AuthService.AuthException("El negocio no tiene acceso vigente");
+            }
+            Optional<TenantUser> found = findUser(business.getSchemaName(), email);
+            if (found.isEmpty() || !found.get().active()) {
+                throw new AuthService.AuthException("Usuario no disponible");
+            }
+            TenantUser user = found.get();
+            String role = user.roleCode() == null ? "OWNER" : user.roleCode();
+            List<String> modules = businessModuleRepository.findEnabledModuleKeys(business.getId());
+            List<String> permissions = loadPermissions(business.getSchemaName(), user.email());
+            String access = jwtService.issueAccessToken(
+                    user.email(), business.getSchemaName(), List.of(role), modules, permissions);
+            return new TenantAuthResult(access, refreshToken, user.mustChangePassword());
+        }
+        throw new AuthService.AuthException("Sesión no válida");
     }
 
     /**
@@ -127,11 +174,22 @@ public class TenantAuthService {
     /** Actualiza el hash y limpia la marca de cambio obligatorio, con tabla calificada por schema. */
     private void updatePassword(String schema, String email, String newHash) {
         TenantSchema.validate(schema);
-        jdbc.sql(("UPDATE %s.app_user SET password_hash = :hash, must_change_password = FALSE "
-                + "WHERE email = :email").formatted(schema))
-                .param("hash", newHash)
-                .param("email", email)
-                .update();
+        // Igual que en findUser: se fija el tenant para que la RLS de app_user permita el UPDATE.
+        String previousTenant = TenantContext.getTenantId();
+        TenantContext.setTenantId(schema);
+        try {
+            jdbc.sql(("UPDATE %s.app_user SET password_hash = :hash, must_change_password = FALSE "
+                    + "WHERE email = :email").formatted(schema))
+                    .param("hash", newHash)
+                    .param("email", email)
+                    .update();
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.setTenantId(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
     }
 
     /**
@@ -144,6 +202,12 @@ public class TenantAuthService {
      */
     private Optional<TenantUser> findUser(String schema, String email) {
         TenantSchema.validate(schema);
+        // Fija el tenant en el contexto para que TenantAwareDataSource aplique el search_path y,
+        // sobre todo, la variable de sesión app.current_tenant que exige la política de RLS de
+        // app_user. Sin esto, la RLS oculta la fila del usuario durante el login (aún no hay
+        // sesión) y el inicio de sesión falla con "Credenciales inválidas" pese a ser correctas.
+        String previousTenant = TenantContext.getTenantId();
+        TenantContext.setTenantId(schema);
         try {
             return jdbc.sql("""
                     SELECT u.email, u.password_hash, u.active, u.must_change_password, r.code AS role_code
@@ -165,6 +229,42 @@ public class TenantAuthService {
             log.warn("Se omite el schema {} en el login: estructura incompatible ({})",
                     schema, ex.getMostSpecificCause().getMessage());
             return Optional.empty();
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.setTenantId(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
+    }
+
+    /**
+     * Carga los permisos efectivos del usuario (module:action) desde su rol, para embeberlos en el
+     * JWT. Fija el tenant en el contexto para satisfacer la RLS de las tablas de roles.
+     */
+    private List<String> loadPermissions(String schema, String email) {
+        TenantSchema.validate(schema);
+        String previousTenant = TenantContext.getTenantId();
+        TenantContext.setTenantId(schema);
+        try {
+            return jdbc.sql("""
+                    SELECT rp.module_key || ':' || rp.action AS perm
+                    FROM %s.app_user u
+                    JOIN %s.role_permission rp ON rp.role_id = u.role_id
+                    WHERE u.email = :email
+                    """.formatted(schema, schema))
+                    .param("email", email)
+                    .query(String.class)
+                    .list();
+        } catch (org.springframework.jdbc.BadSqlGrammarException ex) {
+            // Schemas en versión anterior (sin role_permission poblada): sin permisos granulares.
+            return List.of();
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.setTenantId(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
         }
     }
 

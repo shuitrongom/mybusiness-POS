@@ -86,11 +86,20 @@ public class SecurityConfig {
         return registration;
     }
 
+    /**
+     * Orígenes permitidos para CORS. En desarrollo, "*" (cualquiera). En producción se definen los
+     * dominios del front/portal con la variable de entorno CORS_ALLOWED_ORIGINS (lista separada por
+     * comas, ej. "https://app.tudominio.com,https://*.tudominio.com").
+     */
+    @org.springframework.beans.factory.annotation.Value("${CORS_ALLOWED_ORIGINS:*}")
+    private String corsAllowedOrigins;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // En producción, restringir a los dominios del front y del portal por configuración.
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        List<String> origins = java.util.Arrays.stream(corsAllowedOrigins.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).toList();
+        configuration.setAllowedOriginPatterns(origins.isEmpty() ? List.of("*") : origins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

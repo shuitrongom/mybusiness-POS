@@ -1,0 +1,302 @@
+/* =====================================================================
+   Inventario — nivel enterprise (KPIs, existencias, operaciones).
+   ===================================================================== */
+
+.inv-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.inv-branch-select {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* KPIs (reutiliza .kpi-* del dashboard). */
+.inv-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+@media (max-width: 900px) { .inv-kpis { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .inv-kpis { grid-template-columns: 1fr; } }
+
+/* Toolbar: buscador + filtros de estado. */
+.inv-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.inv-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 13px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 220px;
+}
+.inv-search input { border: none; background: transparent; color: var(--text); outline: none; width: 100%; }
+.inv-filters { display: flex; gap: 6px; }
+.inv-chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.inv-chip:hover { color: var(--text); }
+.inv-chip.is-active { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+
+/* Tabla. */
+.inv-table .inv-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.inv-stock {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+.inv-stock.is-ok { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.inv-stock.is-low { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+.inv-stock.is-out { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+
+/* Botones de operación por fila. */
+.inv-actions { display: flex; gap: 6px; }
+.inv-op {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 11px;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 12.5px;
+  white-space: nowrap;
+  transition: filter 0.15s, transform 0.05s;
+}
+.inv-op svg { color: #ffffff; stroke: #ffffff; flex-shrink: 0; }
+.inv-op:hover { filter: brightness(1.12); }
+.inv-op:active { transform: translateY(1px); }
+.inv-op-in { background: #16a34a; }   /* entrada: verde */
+.inv-op-out { background: #dc2626; }  /* salida: rojo */
+.inv-op-adj { background: #2e6ef2; }  /* ajuste: azul */
+.inv-op-tr { background: #7c5cff; }   /* traspaso: violeta */
+
+.inv-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-muted);
+}
+.inv-empty svg { color: var(--success); }
+.inv-empty p { margin: 0; font-size: var(--fs-sm); }
+
+/* Panel de operación. */
+.inv-modal {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+.inv-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.inv-modal-head h3 { color: var(--heading); margin: 0; }
+.inv-modal-body { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+.inv-prod-chip {
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.inv-prod-chip strong { color: var(--heading); }
+.inv-prod-chip span { font-size: var(--fs-sm); color: var(--text-muted); }
+.inv-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+/* Título de sección con icono (se conserva del diseño previo). */
+.inv-card-title { display: flex; align-items: center; gap: 8px; color: var(--heading); }
+.inv-card-title svg { color: var(--brand-600); }
+
+/* Botón de icono para cerrar el panel (autosuficiente en esta página). */
+.inv-modal .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.inv-modal .icon-btn svg { color: var(--heading); }
+.inv-modal .icon-btn:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.inv-modal .icon-btn:hover svg { color: var(--danger); }
+
+/* Paginación de la tabla de inventario. */
+.inv-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.inv-pager-info { color: var(--text-muted); font-size: var(--fs-sm); }
+.inv-pager-btns { display: flex; align-items: center; gap: var(--space-3); }
+.inv-pager-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.inv-pager-btn:hover:not(:disabled) { border-color: var(--brand-600); color: var(--brand-500); }
+.inv-pager-btn:disabled { opacity: 0.4; cursor: default; }
+.inv-pager-page { color: var(--heading); font-weight: 700; font-size: var(--fs-sm); }
+
+/* =====================================================================
+   Suite inventario enterprise — variantes, calidad ABC y etiquetas.
+   ===================================================================== */
+
+/* Tallas y colores */
+.var-grids { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-top: var(--space-4); }
+@media (max-width: 720px) { .var-grids { grid-template-columns: 1fr; } }
+.var-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--space-3); }
+.var-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+.var-chip:hover { border-color: var(--accent-600); }
+.var-chip.is-on { background: var(--accent-600); border-color: var(--accent-600); color: #fff; }
+.var-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); }
+.var-generate {
+  margin-top: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.var-generate .btn-accent { display: inline-flex; align-items: center; gap: 7px; }
+
+/* Calidad ABC */
+.q-table td:first-child { font-weight: 600; }
+.q-tag { display: inline-block; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.q-alto   { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.q-medio  { background: color-mix(in srgb, var(--brand-600) 16%, transparent); color: var(--brand-600); }
+.q-bajo   { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); }
+.q-lento  { background: color-mix(in srgb, #d97706 18%, transparent); color: #b45309; }
+.q-nuevo  { background: color-mix(in srgb, var(--accent-500) 18%, transparent); color: var(--accent-600); }
+.q-sinmov { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.q-sum td { border-top: 2px solid var(--border); background: var(--surface-2); }
+
+/* Etiquetas */
+.lbl-toolbar { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+.lbl-sheet {
+  display: grid;
+  gap: 6mm;
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: #fff;
+  border-radius: var(--radius);
+}
+.lbl {
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: #fff;
+  color: #000;
+}
+.lbl-name { font-size: 11px; font-weight: 600; text-align: center; line-height: 1.15; max-height: 2.4em; overflow: hidden; }
+.lbl-barcode svg { display: block; max-width: 100%; height: auto; }
+.lbl-price { font-size: 14px; font-weight: 800; }
+
+/* Impresión: solo la hoja de etiquetas. */
+@media print {
+  .no-print, .sidebar, .topbar, .page-title, .page-sub, .page-head-row { display: none !important; }
+  .lbl-sheet { padding: 0; gap: 4mm; }
+  .lbl { border: none; }
+}
+
+/* Alta rápida de tallas/colores dentro de la matriz de variantes. */
+.var-add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border);
+  flex-wrap: wrap;
+}
+.var-add input {
+  padding: 8px 11px;
+  border-radius: 9px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  font-size: var(--fs-sm);
+  min-width: 90px;
+}
+.var-add input[type="color"] { min-width: 44px; width: 44px; padding: 2px; height: 38px; }
+.var-add input:focus { outline: none; border-color: var(--accent-600); }
+.var-add .btn-ghost { padding: 8px 14px; white-space: nowrap; }

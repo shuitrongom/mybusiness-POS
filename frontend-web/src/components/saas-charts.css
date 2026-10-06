@@ -1,0 +1,19 @@
+/* Contenedores de las gráficas del panel del SaaS (Recharts). */
+.chart-wrap {
+  width: 100%;
+  margin-top: var(--space-3);
+}
+.chart-empty {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+  padding: var(--space-6) var(--space-4);
+}
+
+/* Ajustes finos para que Recharts respete el tema. */
+.chart-wrap .recharts-cartesian-axis-tick text,
+.chart-wrap .recharts-legend-item-text {
+  fill: var(--text-muted) !important;
+  color: var(--text-muted) !important;
+}
+.chart-wrap .recharts-surface { overflow: visible; }

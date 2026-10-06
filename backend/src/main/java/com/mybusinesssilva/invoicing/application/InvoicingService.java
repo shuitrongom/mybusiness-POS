@@ -60,6 +60,7 @@ public class InvoicingService {
         long cfdiId = cfdiRepository.createPending(saleId, "INVOICE",
                 receiver.rfc(), receiver.name(), receiver.zip(), receiver.regime(), receiver.cfdiUse(),
                 subtotal, tax, total, idempotencyKey);
+        cfdiRepository.saveConcepts(cfdiId, concepts);
 
         return stampExisting(cfdiId, receiver, concepts, false);
     }
@@ -120,6 +121,7 @@ public class InvoicingService {
         long cfdiId = cfdiRepository.createPending(null, "GLOBAL",
                 publico.rfc(), publico.name(), publico.zip(), publico.regime(), publico.cfdiUse(),
                 totalAmount, BigDecimal.ZERO, totalAmount, "global-" + System.currentTimeMillis());
+        cfdiRepository.saveConcepts(cfdiId, concepts);
         return stampExisting(cfdiId, publico, concepts, false);
     }
 

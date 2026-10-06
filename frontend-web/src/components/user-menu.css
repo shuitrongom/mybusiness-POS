@@ -1,0 +1,275 @@
+/* =====================================================================
+   Menú de usuario premium (avatar + desplegable perfil / contraseña / salir).
+   ===================================================================== */
+
+.usermenu { position: relative; }
+
+.usermenu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.usermenu-trigger:hover { background: var(--surface-2); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+.usermenu-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand-600), var(--brand-500));
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.usermenu-avatar-lg { width: 44px; height: 44px; font-size: 16px; }
+.usermenu-avatar-xl { width: 64px; height: 64px; font-size: 22px; }
+
+.usermenu-info { display: flex; flex-direction: column; line-height: 1.1; text-align: left; }
+.usermenu-name { font-weight: 700; color: var(--heading); font-size: var(--fs-sm); text-transform: capitalize; }
+.usermenu-role { font-size: 11px; color: var(--text-muted); }
+.usermenu-caret { color: var(--text-muted); }
+@media (max-width: 560px) { .usermenu-info { display: none; } }
+
+/* Desplegable */
+.usermenu-drop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 260px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.35);
+  padding: 8px;
+  z-index: 50;
+}
+.usermenu-drop-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+.usermenu-drop-name { font-weight: 700; color: var(--heading); font-size: var(--fs-sm); word-break: break-all; }
+.usermenu-drop-role { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.usermenu-drop-role svg { color: var(--success); }
+
+.usermenu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.usermenu-item svg { color: var(--text-muted); }
+.usermenu-item:hover { background: var(--surface-2); }
+.usermenu-item-danger { color: var(--danger); }
+.usermenu-item-danger svg { color: var(--danger); }
+.usermenu-item-danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.usermenu-sep { height: 1px; background: var(--border); margin: 6px 4px; }
+
+/* Modales de perfil / contraseña */
+.um-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, #000 55%, transparent);
+  backdrop-filter: blur(3px);
+  overflow-y: auto;
+}
+.um-modal {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+/* El modal de perfil NO recorta: el avatar hero sobresale del banner. */
+.um-modal-profile { overflow: visible; }
+.um-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.um-modal-head h3 { color: var(--heading); margin: 0; }
+.um-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 10px; border: none;
+  /* Fondo OSCURO sólido para que la X blanca contraste siempre (aun sobre el banner claro). */
+  background: rgba(15, 23, 42, 0.55);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.um-close svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px;
+  min-height: 18px;
+  position: relative;
+  z-index: 1;
+}
+.um-close:hover { background: rgba(15, 23, 42, 0.8); }
+
+.um-profile { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding: var(--space-5); }
+.um-field { width: 100%; display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--border); }
+.um-field span { color: var(--text-muted); font-size: var(--fs-sm); }
+.um-field strong { color: var(--heading); word-break: break-all; text-align: right; }
+
+.um-form { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
+.um-hint-err { color: var(--danger); font-size: 12px; }
+
+.um-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+/* =====================================================================
+   Modal de perfil premium (banner + avatar hero + tarjetas).
+   ===================================================================== */
+.um-modal-profile { max-width: 460px; }
+
+.um-banner {
+  position: relative;
+  height: 96px;
+  background: linear-gradient(135deg, var(--brand-700), var(--brand-600) 55%, var(--brand-500));
+  overflow: hidden;
+  border-radius: 16px 16px 0 0;
+}
+.um-banner-glow {
+  position: absolute;
+  right: -30px; top: -50px;
+  width: 180px; height: 180px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  filter: blur(16px);
+}
+.um-close-banner { position: absolute; top: 12px; right: 12px; z-index: 2; }
+
+.um-profile-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: -48px;
+  padding: 0 var(--space-5);
+  position: relative;
+  z-index: 2;
+}
+.um-avatar-wrap { position: relative; }
+.usermenu-avatar-hero {
+  width: 92px;
+  height: 92px;
+  font-size: 30px;
+  border: 4px solid var(--surface);
+  box-shadow: 0 10px 26px rgba(46, 110, 242, 0.4);
+  overflow: hidden;
+}
+.usermenu-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.um-avatar-cam {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid var(--surface);
+  background: var(--brand-600);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.um-avatar-cam svg { color: #fff !important; stroke: #fff !important; width: 15px !important; height: 15px !important; }
+.um-avatar-cam:hover { background: var(--brand-500); }
+.um-avatar-remove {
+  margin-top: 8px;
+  background: transparent;
+  border: none;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.um-profile-name {
+  margin-top: 10px;
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  color: var(--heading);
+  text-transform: capitalize;
+}
+.um-profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.um-profile-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+.um-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  text-align: left;
+  width: 100%;
+}
+.um-card-action { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.um-card-action:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.um-card-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+}
+.um-card-icon svg { color: #fff !important; stroke: #fff !important; position: relative; z-index: 1; }
+.um-card-blue { background: #2e6ef2; }
+.um-card-green { background: #12b886; }
+.um-card-amber { background: #f59e0b; }
+.um-card-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.um-card-label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.um-card-value { font-size: var(--fs-sm); font-weight: 700; color: var(--heading); word-break: break-all; }
+.um-card-caret { color: var(--text-muted); transform: rotate(-90deg); flex-shrink: 0; }

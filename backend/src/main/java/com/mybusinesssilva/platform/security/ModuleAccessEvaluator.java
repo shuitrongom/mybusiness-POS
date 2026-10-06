@@ -43,23 +43,44 @@ public class ModuleAccessEvaluator {
             return true;
         }
         // Capa comercial: el negocio debe tener el módulo habilitado.
-        if (!user.hasModule(moduleKey)) {
+        // Excepción: 'settings' no es un módulo comercial (es configuración interna), se rige solo
+        // por permisos/rol.
+        if (!"settings".equals(moduleKey) && !user.hasModule(moduleKey)) {
             return false;
         }
-        // Capa de rol: acota qué módulos habilitados puede usar cada rol del negocio.
+        // Capa de rol: Dueño y Administrador tienen acceso total a lo habilitado (atajo).
         if (isOwnerOrAdmin(user)) {
-            return true; // Dueño y Administrador: acceso total a lo habilitado.
+            return true;
         }
+        // RBAC configurable: si el usuario trae permisos granulares (matriz de su rol), la decisión
+        // se basa en ellos — puede usar el módulo si tiene cualquier permiso sobre él.
+        if (!user.permissions().isEmpty()) {
+            return user.hasAnyPermissionOnModule(moduleKey);
+        }
+        // Compatibilidad hacia atrás (tokens antiguos sin permisos): comportamiento por rol.
         if (user.hasRole(Roles.CASHIER)) {
             return CASHIER_MODULES.contains(moduleKey);
         }
         if (user.hasRole(Roles.SUPERVISOR)) {
-            // Supervisor: operación completa, salvo administración del negocio (usuarios/roles).
             return !ADMIN_ONLY_MODULES.contains(moduleKey);
         }
-        // Roles personalizados: por ahora permiten los módulos operativos habilitados,
-        // salvo la administración de usuarios/roles.
         return !ADMIN_ONLY_MODULES.contains(moduleKey);
+    }
+
+    /**
+     * @return true si el usuario puede ejecutar una acción concreta sobre un módulo (por ejemplo
+     *         {@code VOID} sobre {@code sales}). Dueño/Admin siempre pueden; el resto según su
+     *         matriz de permisos.
+     */
+    public boolean can(String moduleKey, String action) {
+        AuthenticatedUser user = currentUser();
+        if (user == null) {
+            return false;
+        }
+        if (user.isSuperAdmin() || isOwnerOrAdmin(user)) {
+            return true;
+        }
+        return user.hasPermission(moduleKey, action);
     }
 
     /**
@@ -86,6 +107,18 @@ public class ModuleAccessEvaluator {
      */
     public boolean canReadCatalog() {
         return canUse("sales") || canUse("inventory");
+    }
+
+    /**
+     * Acceso de LECTURA a la lista de clientes: lo necesita quien administra el CRM
+     * (módulo {@code customers}) y también el cajero para asignar el cliente en una venta
+     * (a crédito, con datos de facturación o para acumular lealtad). Por eso permite el
+     * acceso si el usuario puede usar {@code customers} o {@code sales}.
+     *
+     * @return true si el usuario puede consultar la lista de clientes
+     */
+    public boolean canReadCustomers() {
+        return canUse("customers") || canUse("sales");
     }
 
     /**
@@ -129,6 +162,18 @@ public class ModuleAccessEvaluator {
             return true;
         }
         return user.hasModule("multibranch") && isOwnerOrAdmin(user);
+    }
+
+    /**
+     * Configuración del negocio (ticket, datos de la empresa, etc.): solo Dueño/Administrador.
+     * No requiere un módulo comercial específico; basta con estar autenticado en un tenant.
+     */
+    public boolean canManageSettings() {
+        AuthenticatedUser user = currentUser();
+        if (user == null) {
+            return false;
+        }
+        return user.isSuperAdmin() || isOwnerOrAdmin(user);
     }
 
     private boolean isOwnerOrAdmin(AuthenticatedUser user) {

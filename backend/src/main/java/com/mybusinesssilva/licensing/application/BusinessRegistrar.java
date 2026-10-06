@@ -68,4 +68,33 @@ public class BusinessRegistrar {
 
         return business;
     }
+
+    /**
+     * Registra un negocio para una RESTAURACIÓN desde respaldo. Igual que {@link #register}, pero
+     * el plan es opcional: si el respaldo no trae {@code planId} (o el plan ya no existe), usa el
+     * primer plan activo disponible como respaldo. Queda con 1 mes de prueba (estado con acceso).
+     *
+     * @return el negocio persistido con su schema asignado
+     */
+    @Transactional
+    public Business registerForRestore(String actor, String name, String rfc,
+                                       String businessLine, Long planId) {
+        Plan plan = (planId == null ? java.util.Optional.<Plan>empty() : planRepository.findById(planId))
+                .or(() -> planRepository.findAllActive().stream().findFirst())
+                .orElseThrow(() -> new IllegalStateException("No hay planes disponibles para restaurar"));
+
+        Business business = Business.createInTrial(name, rfc, businessLine, plan.id(), 1, clock);
+        business = businessRepository.insert(business);
+
+        String schema = TenantSchema.forBusinessId(business.getId());
+        business.assignSchema(schema);
+        businessRepository.update(business);
+
+        businessModuleRepository.enableModulesFromPlan(business.getId(), plan.moduleKeys());
+
+        auditService.recordGlobal(actor, "BUSINESS_RESTORE_REGISTERED", "business",
+                String.valueOf(business.getId()), Map.of("name", name, "plan", plan.code()));
+
+        return business;
+    }
 }

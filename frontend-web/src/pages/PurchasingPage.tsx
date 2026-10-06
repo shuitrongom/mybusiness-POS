@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { motion } from 'motion/react';
+import { PackagePlus, Truck } from 'lucide-react';
 import { api } from '@/lib/api';
+import { toast } from '@/store/toast';
 import { money } from '@/lib/format';
+import { fadeInUp, pressable } from '@/lib/motion';
 import '@/pages/dashboard.css';
 
 /**
@@ -27,6 +31,10 @@ export function PurchasingPage() {
     onSuccess: (id) => {
       setSupplierId(id);
       setSupplier({ name: '', rfc: '', phone: '', email: '' });
+      toast.success('Proveedor creado', `Id asignado: ${id}.`);
+    },
+    onError: () => {
+      toast.error('No se pudo crear el proveedor', 'Revisa los datos e inténtalo de nuevo.');
     },
   });
 
@@ -46,6 +54,10 @@ export function PurchasingPage() {
     onSuccess: (id) => {
       setPurchaseMsg(`Compra #${id} recibida. Inventario actualizado.`);
       setPurchase({ ...purchase, invoiceRef: '', productId: '', quantity: '', unitCost: '' });
+      toast.success('Compra recibida', `Compra #${id}: se actualizó el inventario.`);
+    },
+    onError: () => {
+      toast.error('No se pudo recibir la compra', 'Revisa los datos e inténtalo de nuevo.');
     },
   });
 
@@ -56,8 +68,8 @@ export function PurchasingPage() {
       <h1 className="page-title">Compras</h1>
       <p className="page-sub">Proveedores y recepción de mercancía</p>
 
-      <div className="card">
-        <h3>Nuevo proveedor</h3>
+      <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
+        <h3 className="sec-title"><Truck size={18} /> Nuevo proveedor</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 'var(--space-3)', marginTop: 'var(--space-3)', alignItems: 'end' }}>
           <label className="field"><span>Nombre</span>
             <input value={supplier.name} onChange={(e) => setSupplier({ ...supplier, name: e.target.value })} /></label>
@@ -67,18 +79,21 @@ export function PurchasingPage() {
             <input value={supplier.phone} onChange={(e) => setSupplier({ ...supplier, phone: e.target.value })} /></label>
           <label className="field"><span>Email</span>
             <input value={supplier.email} onChange={(e) => setSupplier({ ...supplier, email: e.target.value })} /></label>
-          <button className="btn-accent" disabled={!supplier.name || createSupplier.isPending}
-                  onClick={() => createSupplier.mutate()}>Crear</button>
+          <motion.button className="btn-accent" disabled={!supplier.name || createSupplier.isPending}
+                  onClick={() => createSupplier.mutate()}
+                  whileHover={!supplier.name || createSupplier.isPending ? undefined : pressable.whileHover}
+                  whileTap={!supplier.name || createSupplier.isPending ? undefined : pressable.whileTap}
+                  transition={pressable.transition}>Crear</motion.button>
         </div>
         {supplierId !== null && (
           <p style={{ marginTop: 'var(--space-3)' }}>
             <span className="badge badge-success">Proveedor creado</span> Id: <strong>{supplierId}</strong>
           </p>
         )}
-      </div>
+      </motion.div>
 
-      <div className="card" style={{ marginTop: 'var(--space-5)' }}>
-        <h3>Recibir compra</h3>
+      <motion.div className="card" style={{ marginTop: 'var(--space-5)' }} variants={fadeInUp} initial="hidden" animate="visible">
+        <h3 className="sec-title"><PackagePlus size={18} /> Recibir compra</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
           <label className="field"><span>Proveedor (id)</span>
             <input value={purchase.supplierId} onChange={(e) => setPurchase({ ...purchase, supplierId: e.target.value })} /></label>
@@ -94,8 +109,11 @@ export function PurchasingPage() {
             <input type="number" step="0.001" value={purchase.quantity} onChange={(e) => setPurchase({ ...purchase, quantity: e.target.value })} /></label>
           <label className="field"><span>Costo unitario</span>
             <input type="number" step="0.01" value={purchase.unitCost} onChange={(e) => setPurchase({ ...purchase, unitCost: e.target.value })} /></label>
-          <button className="btn-accent" disabled={!purchase.supplierId || !purchase.productId || !purchase.quantity || receivePurchase.isPending}
-                  onClick={() => receivePurchase.mutate()}>Recibir</button>
+          <motion.button className="btn-accent" disabled={!purchase.supplierId || !purchase.productId || !purchase.quantity || receivePurchase.isPending}
+                  onClick={() => receivePurchase.mutate()}
+                  whileHover={!purchase.supplierId || !purchase.productId || !purchase.quantity || receivePurchase.isPending ? undefined : pressable.whileHover}
+                  whileTap={!purchase.supplierId || !purchase.productId || !purchase.quantity || receivePurchase.isPending ? undefined : pressable.whileTap}
+                  transition={pressable.transition}>Recibir</motion.button>
         </div>
         <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-3)', maxWidth: 260 }}>
           <input type="checkbox" style={{ width: 'auto' }} checked={purchase.onCredit}
@@ -110,7 +128,7 @@ export function PurchasingPage() {
             <span className="badge badge-success">Recibida</span> {purchaseMsg}
           </p>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

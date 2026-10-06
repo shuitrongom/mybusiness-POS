@@ -1,0 +1,8 @@
+# Configuración exclusiva de PRUEBAS.
+# La base de datos de test se recrea limpia al inicio de la suite (ver SharedPostgresContainer
+# en modo nativo, o el contenedor efímero de Testcontainers), por lo que Flyway siempre migra
+# sobre una base vacía. No se necesita limpieza adicional aquí.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate

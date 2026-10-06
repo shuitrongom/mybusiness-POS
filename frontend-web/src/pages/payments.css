@@ -1,0 +1,164 @@
+/* =====================================================================
+   Recargas y pago de servicios — catálogo + formulario de venta (premium).
+   ===================================================================== */
+
+.pay-page { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* Chip de saldo (también botón hacia consultar saldo). */
+.pay-balance-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent-500) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-500) 30%, transparent);
+  color: var(--accent-600);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.pay-balance-chip:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12); }
+.pay-balance-chip strong { color: var(--accent-600); font-size: var(--fs-md); }
+.pay-balance-chip.is-empty {
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border-color: color-mix(in srgb, #f59e0b 34%, transparent);
+  color: #b45309;
+}
+.pay-balance-chip.is-empty strong { color: #b45309; }
+
+/* Alerta de saldo cero: banner con CTA a reportar abono. */
+.pay-alert {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, #f59e0b 12%, var(--surface)) 0%, var(--surface) 70%);
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+  color: var(--text);
+}
+.pay-alert > svg { color: #d97706; flex: 0 0 auto; }
+.pay-alert div { flex: 1; font-size: var(--fs-sm); }
+.pay-alert div strong { color: var(--heading); }
+.pay-alert div span { color: var(--text-muted); }
+.pay-alert-cta { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 10px 16px; }
+
+.pay-sell { display: grid; grid-template-columns: 380px 1fr; gap: var(--space-4); align-items: start; }
+@media (max-width: 900px) { .pay-sell { grid-template-columns: 1fr; } }
+
+/* ---- Catálogo ---- */
+.pay-catalog { max-height: 72vh; display: flex; flex-direction: column; padding: var(--space-4); }
+.pay-catalog-head { display: flex; align-items: center; gap: 10px; }
+.pay-catalog-head .cust-search { flex: 1; }
+.pay-count { font-size: 11px; color: var(--text-muted); white-space: nowrap; font-weight: 600; }
+.pay-catalog-list { overflow-y: auto; margin-top: var(--space-3); padding-right: 4px; }
+.pay-catalog-list::-webkit-scrollbar { width: 8px; }
+.pay-catalog-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+
+.pay-cat { margin-bottom: var(--space-3); }
+.pay-cat-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--text-muted); margin-bottom: 8px;
+}
+.pay-cat-title span {
+  background: var(--surface-2); color: var(--text-muted);
+  border-radius: 999px; padding: 1px 7px; font-size: 10px; letter-spacing: 0;
+}
+
+.pay-providers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pay-provider {
+  display: flex; align-items: center; gap: 11px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.pay-provider:hover { border-color: color-mix(in srgb, var(--brand-600) 60%, var(--border)); transform: translateY(-2px); box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1); }
+.pay-provider.is-on { border-color: var(--brand-600); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-600) 32%, transparent); }
+.pay-provider-name { line-height: 1.15; }
+
+/* ---- BrandLogo ---- */
+.brand-logo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  overflow: hidden;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.22);
+}
+.brand-logo-mono-tile { box-shadow: 0 3px 8px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.brand-logo-art svg, .brand-logo-img img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.brand-logo-mono { position: relative; z-index: 1; }
+.brand-logo-gloss {
+  position: absolute; inset: 0;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 42%, rgba(0, 0, 0, 0.08) 100%);
+  pointer-events: none;
+}
+
+/* ---- Formulario de venta ---- */
+.pay-form { min-height: 360px; padding: var(--space-5); }
+.pay-form-head { display: flex; align-items: center; gap: 14px; padding-bottom: var(--space-4); border-bottom: 1px solid var(--border); margin-bottom: var(--space-4); }
+.pay-form-title { margin: 0; font-size: var(--fs-lg); font-weight: 700; color: var(--heading); }
+.pay-form-cat { font-size: var(--fs-sm); color: var(--text-muted); }
+
+.pay-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; height: 300px; text-align: center;
+}
+.pay-empty-icon {
+  width: 76px; height: 76px; border-radius: 20px;
+  display: grid; place-items: center; margin-bottom: 6px;
+  background: color-mix(in srgb, var(--brand-600) 10%, var(--surface-2));
+  color: var(--brand-600);
+}
+.pay-empty-title { font-weight: 700; color: var(--heading); font-size: var(--fs-md); }
+.pay-empty-sub { color: var(--text-muted); font-size: var(--fs-sm); }
+
+.pay-field { display: block; margin-bottom: var(--space-3); }
+.pay-field input.is-invalid { border-color: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 25%, transparent); }
+.pay-hint { display: block; margin-top: 4px; font-size: 11px; color: var(--text-muted); }
+.pay-hint.is-error { color: var(--danger); font-weight: 600; }
+
+.pay-amounts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 var(--space-3); }
+.pay-amount {
+  padding: 10px 15px; border-radius: 11px;
+  border: 1.5px solid var(--border); background: var(--surface-2);
+  font-weight: 700; color: var(--brand-600);
+  transition: transform 0.1s ease;
+}
+.pay-amount:hover { transform: translateY(-1px); }
+.pay-amount.is-on { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+
+.pay-breakdown { margin: var(--space-4) 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.pay-breakdown > div { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid var(--surface-2); font-size: var(--fs-sm); }
+.pay-breakdown > div:last-child { border-bottom: none; }
+.pay-breakdown span { color: var(--text-muted); }
+.pay-breakdown strong { color: var(--heading); font-size: var(--fs-md); }
+.pay-breakdown-total { background: var(--surface-2); }
+.pay-breakdown-total strong { font-size: var(--fs-lg); }
+.pay-commission { color: var(--success) !important; }
+
+.pay-inline-alert {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; margin-bottom: var(--space-3);
+  border-radius: 12px; font-size: var(--fs-sm); font-weight: 600;
+  color: #b45309; background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+}
+
+.pay-sell-btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 15px; font-size: var(--fs-md); }
+
+/* Ticket de éxito */
+.pay-ticket-body { padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: 10px; }
+.pay-ticket-body p { display: flex; align-items: center; justify-content: space-between; margin: 0; font-size: var(--fs-sm); }
+.pay-ticket-body p span { color: var(--text-muted); }
+.pay-ticket-body p strong { color: var(--heading); }
+.pos-modal-head h3 { display: inline-flex; align-items: center; gap: 8px; }

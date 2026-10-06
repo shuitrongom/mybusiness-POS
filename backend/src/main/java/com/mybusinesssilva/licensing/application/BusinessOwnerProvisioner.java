@@ -125,10 +125,14 @@ public class BusinessOwnerProvisioner {
      */
     private static final java.util.Map<String, java.util.List<String>> LINE_CATEGORIES =
             java.util.Map.of(
-                    "abarrotes", java.util.List.of("Bebidas", "Botanas", "Panadería", "Lácteos", "Abarrotes"),
+                    "abarrotes", java.util.List.of(
+                            "Bebidas", "Botanas", "Abarrotes", "Enlatados", "Lácteos",
+                            "Dulces y confitería", "Higiene personal", "Limpieza", "Panadería"),
                     "materias_primas", java.util.List.of("Materias primas", "Abarrotes"),
-                    "panaderia", java.util.List.of("Panadería"),
-                    "polleria", java.util.List.of("Pollería"));
+                    "panaderia", java.util.List.of(
+                            "Pan dulce", "Pan salado / bolillería", "Repostería", "Temporada", "Panadería"),
+                    "polleria", java.util.List.of(
+                            "Pollo en corte", "Menudencias", "Pollo procesado", "Otras aves y derivados", "Pollería"));
 
     /**
      * Siembra el catálogo del negocio con productos del catálogo maestro que correspondan a su
@@ -221,6 +225,59 @@ public class BusinessOwnerProvisioner {
                              String satProdServ, String satUnit, String barcode) {
     }
 
+    /**
+     * Restablece la contraseña del usuario Dueño (rol OWNER) de un negocio: genera una nueva
+     * contraseña temporal, la guarda con hash Argon2id y marca {@code must_change_password = TRUE}
+     * para que el dueño la cambie en su próximo ingreso.
+     *
+     * <p>Fija el {@code TenantContext} al schema del negocio para que la política de RLS de
+     * {@code app_user} permita leer/actualizar la fila (igual que en el login y la creación).
+     *
+     * @param schema schema del tenant (por ejemplo {@code tenant_12})
+     * @return las credenciales del dueño (correo, nueva contraseña en claro y WhatsApp), o
+     *         {@code null} si el negocio no tiene un usuario Dueño registrado
+     */
+    public ResetResult resetOwnerPassword(String schema) {
+        String password = generatePassword();
+        String previousTenant = TenantContext.getTenantId();
+        TenantContext.setTenantId(schema);
+        try {
+            // Localiza al dueño (rol OWNER). Si no existe, no hay nada que restablecer.
+            OwnerRow owner = jdbc.sql("""
+                    SELECT u.email, u.whatsapp
+                    FROM app_user u
+                    JOIN role r ON r.id = u.role_id
+                    WHERE r.code = 'OWNER'
+                    ORDER BY u.id
+                    LIMIT 1
+                    """)
+                    .query((rs, rowNum) -> new OwnerRow(rs.getString("email"), rs.getString("whatsapp")))
+                    .optional()
+                    .orElse(null);
+            if (owner == null) {
+                return null;
+            }
+            jdbc.sql("""
+                    UPDATE app_user SET password_hash = :hash, must_change_password = TRUE
+                    WHERE email = :email
+                    """)
+                    .param("hash", passwordEncoder.encode(password))
+                    .param("email", owner.email())
+                    .update();
+            return new ResetResult(owner.email(), password, owner.whatsapp());
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.setTenantId(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
+    }
+
+    /** Fila auxiliar con los datos del dueño para el restablecimiento de contraseña. */
+    private record OwnerRow(String email, String whatsapp) {
+    }
+
     private String generatePassword() {
         StringBuilder sb = new StringBuilder(12);
         for (int i = 0; i < 12; i++) {
@@ -236,5 +293,15 @@ public class BusinessOwnerProvisioner {
      * @param password contraseña en claro (mostrar una sola vez; luego solo queda el hash)
      */
     public record OwnerCredentials(String email, String password) {
+    }
+
+    /**
+     * Resultado del restablecimiento de contraseña del dueño.
+     *
+     * @param email    correo de acceso del dueño
+     * @param password nueva contraseña temporal en claro (mostrar una sola vez)
+     * @param whatsapp WhatsApp del dueño (para reenviar la contraseña; puede ser nulo)
+     */
+    public record ResetResult(String email, String password, String whatsapp) {
     }
 }

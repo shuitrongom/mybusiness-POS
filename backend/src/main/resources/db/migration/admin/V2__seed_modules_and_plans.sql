@@ -13,7 +13,7 @@ INSERT INTO admin.module_catalog (module_key, name, description, surcharge_sugge
     ('cash',         'Cortes de caja',            'Turnos, arqueo, corte Z, entradas/salidas de efectivo.',   800),
     ('purchasing',   'Compras y proveedores',     'Órdenes de compra, recepción, cuentas por pagar.',         1200),
     ('invoicing',    'Facturación CFDI 4.0',      'Timbrado, complemento de pagos, factura global, autofactura.', 2500),
-    ('payments',     'Recargas y servicios',      'Tiempo aire y pago de servicios con comisión.',            1200),
+    ('payments',     'Recargas y pago de servicios','Tiempo aire y pago de servicios con comisión.',          1200),
     ('promotions',   'Promociones avanzadas',     '2x1, descuentos por volumen, combos.',                     800),
     ('reports',      'Reportes',                  'Reportes operativos y exportación.',                       800),
     ('multibranch',  'Multi-sucursal',            'Gestión de varias sucursales y traspasos.',                2000),

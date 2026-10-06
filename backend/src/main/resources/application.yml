@@ -32,6 +32,11 @@ spring:
     create-schemas: true
     locations: classpath:db/migration/admin
     baseline-on-migrate: true
+    placeholders:
+      # Rol de aplicación al que se le otorgan permisos sobre el schema admin. Por defecto
+      # 'pos_app' (dev/prod). En pruebas se sobreescribe con el rol de test
+      # (spring.flyway.placeholders.app_user) desde AbstractIntegrationTest.
+      app_user: pos_app
 
 app:
   cfdi:
@@ -50,7 +55,8 @@ app:
       issuer: ${JWT_ISSUER:mybusiness-silva}
 
 server:
-  port: ${SERVER_PORT:8080}
+  # Railway/▶ nube inyectan el puerto en PORT; en local cae a SERVER_PORT o 8080.
+  port: ${PORT:${SERVER_PORT:8080}}
   error:
     include-message: never
     include-stacktrace: never

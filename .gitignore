@@ -49,3 +49,14 @@ secrets/
 
 # ===== Sistema =====
 Thumbs.db
+
+/net-commander
+
+# ===== Archivos temporales / sensibles que NO deben subirse =====
+token.json
+nc.txt
+nc2.txt
+port82.txt
+resp.txt
+tid.txt
+_check_import.bat

@@ -1,0 +1,51 @@
+/* =====================================================================
+   Cobranza — KPIs de cartera, tabs de estado y tabla de cuentas por cobrar.
+   ===================================================================== */
+
+.coll-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+.coll-kpi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+}
+.coll-kpi-icon {
+  width: 46px; height: 46px;
+  flex: 0 0 46px;
+  border-radius: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--brand-600) 14%, transparent);
+  color: var(--brand-600);
+}
+.coll-kpi-icon svg { color: inherit; }
+.coll-kpi-value { font-size: 24px; font-weight: 800; color: var(--heading); line-height: 1; }
+.coll-kpi-label { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 3px; }
+.coll-kpi-accent .coll-kpi-icon { background: color-mix(in srgb, var(--accent-500) 16%, transparent); color: var(--accent-600); }
+.coll-kpi-danger .coll-kpi-icon { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+
+.coll-tabs { display: inline-flex; gap: 4px; margin-bottom: var(--space-3); background: var(--surface-2); border-radius: 12px; padding: 4px; }
+.coll-tab {
+  padding: 8px 16px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+.coll-tab.is-active { background: var(--surface); color: var(--brand-600); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12); }
+
+.coll-row-overdue { background: color-mix(in srgb, var(--danger) 5%, transparent); }
+.coll-due-over { color: var(--danger); font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.coll-due-over svg { color: var(--danger); }
+.ret-table .coll-due-over svg,
+.ret-table td span svg { vertical-align: middle; }

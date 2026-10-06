@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence, motion } from 'motion/react';
+import { Check, Users, UserPlus, X } from 'lucide-react';
 import { api } from '@/lib/api';
-import { isValidEmail, isValidMxPhone, normalizeMxPhone } from '@/lib/validation';
+import { toast } from '@/store/toast';
+import { isValidEmail, isValidMxPhone, normalizeMxPhone, titleCase, limitToTenDigits } from '@/lib/validation';
+import { fadeInUp, popIn, pressable, quick, staggerContainer, staggerItem } from '@/lib/motion';
 import '@/pages/dashboard.css';
 import './admin.css';
 
@@ -68,13 +72,23 @@ export function UsersPage() {
       setCredentials(data);
       setForm({ fullName: '', email: '', whatsapp: '', roleCode: 'CASHIER' });
       queryClient.invalidateQueries({ queryKey: ['tenant', 'users'] });
+      toast.success('Usuario creado', 'Guarda la contraseña temporal que se muestra.');
+    },
+    onError: () => {
+      toast.error('No se pudo crear el usuario', 'Verifica que el correo no esté repetido.');
     },
   });
 
   const toggleActive = useMutation({
     mutationFn: async ({ id, active }: { id: number; active: boolean }) =>
       api.post(`/users/${id}/${active ? 'disable' : 'enable'}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tenant', 'users'] }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['tenant', 'users'] });
+      toast.success(vars.active ? 'Usuario desactivado' : 'Usuario activado');
+    },
+    onError: () => {
+      toast.error('No se pudo cambiar el estado del usuario', 'Inténtalo de nuevo.');
+    },
   });
 
   const resetPassword = useMutation({
@@ -83,6 +97,10 @@ export function UsersPage() {
     onSuccess: ({ name, data }) => {
       setResetInfo({ name, password: data.password });
       queryClient.invalidateQueries({ queryKey: ['tenant', 'users'] });
+      toast.success('Contraseña restablecida', 'Comparte la nueva contraseña temporal con el usuario.');
+    },
+    onError: () => {
+      toast.error('No se pudo restablecer la contraseña', 'Inténtalo de nuevo.');
     },
   });
 
@@ -99,8 +117,8 @@ export function UsersPage() {
       <h1 className="page-title">Usuarios</h1>
       <p className="page-sub">Da de alta cajeros y personal, y controla su acceso</p>
 
-      <div className="card">
-        <h3>Agregar usuario</h3>
+      <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
+        <h3 className="sec-title"><UserPlus size={18} /> Agregar usuario</h3>
         <p className="admin-plan-hint" style={{ marginTop: 4 }}>
           Se genera una contraseña temporal que verás una sola vez y, si capturas WhatsApp, se le
           envía. El usuario deberá cambiarla en su primer ingreso.
@@ -108,7 +126,7 @@ export function UsersPage() {
         <div className="admin-grid">
           <label className="field">
             <span>Nombre completo</span>
-            <input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+            <input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: titleCase(e.target.value) })}
               placeholder="María López" />
           </label>
           <label className="field">
@@ -121,9 +139,9 @@ export function UsersPage() {
           </label>
           <label className="field">
             <span>WhatsApp (10 dígitos)</span>
-            <input type="tel" value={form.whatsapp}
-              onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
-              placeholder="55 1234 5678"
+            <input type="tel" value={form.whatsapp} inputMode="numeric" maxLength={10}
+              onChange={(e) => setForm({ ...form, whatsapp: limitToTenDigits(e.target.value) })}
+              placeholder="5512345678"
               className={whatsappError ? 'input-error' : ''} />
             {whatsappError && <small className="field-error">{whatsappError}</small>}
           </label>
@@ -137,25 +155,28 @@ export function UsersPage() {
           </label>
         </div>
         <div style={{ marginTop: 'var(--space-4)' }}>
-          <button className="btn-accent" disabled={!canSubmit || createUser.isPending}
-            onClick={() => createUser.mutate()}>
+          <motion.button className="btn-accent" disabled={!canSubmit || createUser.isPending}
+            onClick={() => createUser.mutate()}
+            whileHover={!canSubmit || createUser.isPending ? undefined : pressable.whileHover}
+            whileTap={!canSubmit || createUser.isPending ? undefined : pressable.whileTap}
+            transition={pressable.transition}>
             {createUser.isPending ? 'Creando…' : 'Agregar usuario'}
-          </button>
+          </motion.button>
           {createUser.isError && (
             <span className="admin-inline-error">No se pudo crear (¿correo repetido?).</span>
           )}
         </div>
-      </div>
+      </motion.div>
 
-      <div className="card" style={{ marginTop: 'var(--space-5)' }}>
-        <h3>Usuarios ({users.data?.length ?? 0})</h3>
+      <motion.div className="card" style={{ marginTop: 'var(--space-5)' }} variants={fadeInUp} initial="hidden" animate="visible">
+        <h3 className="sec-title"><Users size={18} /> Usuarios ({users.data?.length ?? 0})</h3>
         <table className="table">
           <thead>
             <tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
-          <tbody>
+          <motion.tbody variants={staggerContainer} initial="hidden" animate="visible">
             {(users.data ?? []).map((u) => (
-              <tr key={u.id}>
+              <motion.tr key={u.id} variants={staggerItem}>
                 <td><strong>{u.fullName}</strong></td>
                 <td>{u.email}{u.whatsapp && <div className="admin-sub">{u.whatsapp}</div>}</td>
                 <td>{u.roleCode ? (ROLE_LABEL[u.roleCode] ?? u.roleName) : '—'}</td>
@@ -178,31 +199,34 @@ export function UsersPage() {
                     </button>
                   )}
                 </td>
-              </tr>
+              </motion.tr>
             ))}
             {users.data?.length === 0 && (
               <tr><td colSpan={5} className="empty">Aún no hay usuarios. Agrega el primero arriba.</td></tr>
             )}
-          </tbody>
+          </motion.tbody>
         </table>
-      </div>
+      </motion.div>
 
-      {credentials && (
-        <CredentialsModal
-          title="Usuario creado"
-          email={credentials.email}
-          password={credentials.password}
-          whatsappSent={credentials.whatsappSent}
-          onClose={() => setCredentials(null)}
-        />
-      )}
-      {resetInfo && (
-        <CredentialsModal
-          title={`Contraseña restablecida — ${resetInfo.name}`}
-          password={resetInfo.password}
-          onClose={() => setResetInfo(null)}
-        />
-      )}
+      {/* Modales de credenciales animados (fade en overlay + popIn en la tarjeta). */}
+      <AnimatePresence>
+        {credentials && (
+          <CredentialsModal
+            title="Usuario creado"
+            email={credentials.email}
+            password={credentials.password}
+            whatsappSent={credentials.whatsappSent}
+            onClose={() => setCredentials(null)}
+          />
+        )}
+        {resetInfo && (
+          <CredentialsModal
+            title={`Contraseña restablecida — ${resetInfo.name}`}
+            password={resetInfo.password}
+            onClose={() => setResetInfo(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -219,8 +243,10 @@ function CredentialsModal({ title, email, password, whatsappSent, onClose }:
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+    <motion.div className="modal-overlay" onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={quick}>
+      <motion.div className="modal-card" onClick={(e) => e.stopPropagation()}
+        variants={popIn} initial="hidden" animate="visible" exit="exit">
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button>
@@ -237,7 +263,10 @@ function CredentialsModal({ title, email, password, whatsappSent, onClose }:
           {whatsappSent !== undefined && (
             <div className="cred-delivery">
               <span className={`cred-delivery-chip ${whatsappSent ? 'is-ok' : 'is-off'}`}>
-                {whatsappSent ? '✓ Enviada por WhatsApp' : '• No se envió por WhatsApp'}
+                {/* Emojis reemplazados por iconos lucide para consistencia visual. */}
+                {whatsappSent
+                  ? <><Check size={14} /> Enviada por WhatsApp</>
+                  : <><X size={14} /> No se envió por WhatsApp</>}
               </span>
             </div>
           )}
@@ -246,7 +275,7 @@ function CredentialsModal({ title, email, password, whatsappSent, onClose }:
             <button className="btn-primary" onClick={onClose}>Entendido</button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

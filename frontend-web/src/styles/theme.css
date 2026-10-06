@@ -5,7 +5,7 @@
    ===================================================================== */
 
 :root {
-  /* Marca */
+  /* Marca (constante en ambos temas) */
   --brand-900: #0f172a;
   --brand-800: #1a2b5c;
   --brand-700: #24408c;
@@ -13,14 +13,19 @@
   --brand-500: #3b82f6;
   --accent-500: #12b886;
   --accent-600: #0ca678;
+  /* Alias corto del acento, usado por componentes (botones de icono, pestañas, etc.). */
+  --accent: #12b886;
 
-  /* Neutros (tema claro) */
+  /* Neutros (TEMA CLARO por defecto) */
   --bg: #f6f8fc;
   --surface: #ffffff;
   --surface-2: #f1f5fb;
   --border: #e2e8f0;
   --text: #1f2937;
   --text-muted: #64748b;
+
+  /* Título de marca legible en claro */
+  --heading: #1a2b5c;
 
   /* Estado */
   --success: #16a34a;
@@ -51,9 +56,42 @@
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
+
+  color-scheme: light;
+}
+
+/* =====================================================================
+   TEMA OSCURO. Se activa con [data-theme="dark"] en <html>. Redefine solo
+   los tokens neutros/superficie; la marca y los acentos se mantienen para
+   conservar la identidad visual.
+   ===================================================================== */
+:root[data-theme="dark"] {
+  --bg: #0b1120;
+  --surface: #131c2e;
+  --surface-2: #1b2740;
+  --border: #2a3854;
+  --text: #e8eefc;
+  --text-muted: #94a7c4;
+  --heading: #e8eefc;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
+
+/* Regla global de raíz: todo SVG dentro de un botón se apila por encima del fondo del botón.
+   Evita que los iconos (lucide) queden ocultos tras el fondo cuando el botón está dentro de un
+   contexto de apilamiento creado por animaciones (Motion aplica transform). */
+button svg { position: relative; z-index: 1; }
+
+html {
+  /* Transición suave al alternar de tema (evita parpadeos bruscos). */
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
 
 html, body, #root {
   height: 100%;
@@ -68,7 +106,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3 { color: var(--brand-800); margin: 0; }
+h1, h2, h3 { color: var(--heading); margin: 0; }
 
 button {
   font-family: inherit;

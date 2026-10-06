@@ -55,6 +55,7 @@
   z-index: 2;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 22px 34px;
 }
 .auth-brand {
@@ -105,8 +106,8 @@
 .auth-card {
   width: 100%;
   max-width: 424px;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 20px;
   box-shadow:
     0 30px 70px rgba(4, 10, 30, 0.45),
@@ -148,7 +149,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
-  background: #eef3fb;
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 13px;
   padding: 4px;
@@ -181,7 +182,7 @@
 }
 .field > span {
   font-size: 12.5px;
-  color: #475569;
+  color: var(--text-muted);
   font-weight: 700;
   letter-spacing: 0.2px;
 }
@@ -189,14 +190,62 @@
   padding: 12px 14px;
   border-radius: 12px;
   border: 1.5px solid var(--border);
-  background: #f8fafd;
+  background: var(--surface-2);
+  color: var(--text);
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 .field input:focus {
   outline: none;
-  background: #fff;
+  background: var(--surface);
   border-color: var(--brand-600);
   box-shadow: 0 0 0 4px rgba(46, 110, 242, 0.14);
+}
+
+/* Campo de contraseña con botón "ojito" para mostrar u ocultar. */
+.field-password {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.field-password input {
+  flex: 1;
+  /* Deja espacio a la derecha para el botón del ojo. */
+  padding-right: 46px;
+  width: 100%;
+}
+.field-eye {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, transform 0.05s ease;
+}
+.field-eye:hover {
+  color: var(--brand-600);
+  background: rgba(46, 110, 242, 0.08);
+}
+.field-eye:active {
+  transform: translateY(-50%) scale(0.92);
+}
+.field-eye:focus-visible {
+  outline: none;
+  color: var(--brand-600);
+  box-shadow: 0 0 0 3px rgba(46, 110, 242, 0.22);
+}
+/* El SVG de Lucide hereda el color y anima suave al alternar. */
+.field-eye svg {
+  transition: opacity 0.18s ease;
 }
 
 .auth-error {

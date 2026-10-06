@@ -69,7 +69,10 @@ CREATE TABLE admin.master_product (
     times_seen     INTEGER       NOT NULL DEFAULT 1,
     created_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
-    CONSTRAINT chk_master_source CHECK (source IN ('SEED','USER'))
+    CONSTRAINT chk_master_source CHECK (source IN (
+        'SEED', 'USER',
+        'SEED_BAKERY', 'SEED_POLLERIA', 'SEED_ABARROTES', 'SEED_MATERIAS_PRIMAS'
+    ))
 );
 COMMENT ON TABLE admin.master_product IS 'Catálogo maestro compartido de productos; crece con el uso.';
 
@@ -77,11 +80,12 @@ CREATE INDEX idx_master_product_name ON admin.master_product (lower(name));
 CREATE INDEX idx_master_product_barcode ON admin.master_product (barcode);
 
 -- Permisos para el rol de aplicación sobre las nuevas tablas del schema admin.
+-- El nombre del rol viene del placeholder de Flyway ${app_user} (ver V1).
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pos_app') THEN
-        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA admin TO pos_app';
-        EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA admin TO pos_app';
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${app_user}') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA admin TO ${app_user}';
+        EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA admin TO ${app_user}';
     END IF;
 END
 $$;

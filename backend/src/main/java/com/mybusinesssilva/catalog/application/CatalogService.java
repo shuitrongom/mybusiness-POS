@@ -52,6 +52,15 @@ public class CatalogService {
     }
 
     /**
+     * Elimina un producto del negocio. Devuelve true si se borró físicamente, o false si tenía
+     * ventas y por eso solo se desactivó (borrado lógico para preservar el histórico).
+     */
+    @Transactional
+    public boolean deleteProduct(long id) {
+        return productRepository.delete(id);
+    }
+
+    /**
      * Busca un producto del negocio por código de barras. Si no existe en el negocio, ofrece la
      * sugerencia del catálogo maestro compartido (si la hay) para agilizar el alta.
      */

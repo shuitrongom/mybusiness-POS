@@ -70,9 +70,9 @@
 .btn-danger-ghost {
   background: transparent;
   color: var(--danger);
-  border: 1px solid #fecaca;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
 }
-.btn-danger-ghost:hover { background: #fef2f2; }
+.btn-danger-ghost:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
 /* ---- Selector de módulos ---- */
 .module-picker { margin-top: var(--space-5); }
@@ -80,7 +80,7 @@
   display: block;
   font-size: 12.5px;
   font-weight: 700;
-  color: #475569;
+  color: var(--text-muted);
   margin-bottom: var(--space-3);
 }
 .module-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
@@ -100,8 +100,8 @@
 .module-chip input { width: auto; margin: 0; }
 .module-chip.is-on {
   border-color: var(--brand-500);
-  background: #eaf1ff;
-  color: var(--brand-700);
+  background: color-mix(in srgb, var(--brand-500) 15%, transparent);
+  color: var(--brand-600);
 }
 
 /* ---- Modales ---- */
@@ -201,7 +201,10 @@
   padding: 5px 11px;
   border-radius: 999px;
 }
-.cred-delivery-chip.is-ok { background: #dcfce7; color: #166534; }
+.cred-delivery-chip.is-ok {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
 .cred-delivery-chip.is-off { background: var(--surface-2); color: var(--text-muted); }
 
 /* ---- Validación de campos ---- */
@@ -214,3 +217,201 @@
   font-size: var(--fs-xs);
   margin-top: 2px;
 }
+
+/* =====================================================================
+   Mejoras PREMIUM del Super Admin — métricas, tarjetas de negocio,
+   estados vacíos y credenciales destacadas.
+   ===================================================================== */
+
+/* ---- Métricas rápidas de negocios ---- */
+.admin-metrics { margin-top: var(--space-5); }
+
+/* ---- Rejilla de tarjetas de negocio ---- */
+.biz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+.biz-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transition: box-shadow 0.18s, border-color 0.18s;
+}
+.biz-card:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--brand-500);
+}
+.biz-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+/* Avatar con las iniciales del negocio */
+.biz-avatar {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: var(--fs-md);
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand-700), var(--brand-500));
+  letter-spacing: 0.5px;
+}
+.biz-card-titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.biz-name {
+  font-size: var(--fs-md);
+  color: var(--text);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.biz-rfc { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; }
+
+/* Meta datos del negocio (giro, plan, prueba) */
+.biz-meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+}
+.biz-meta div { min-width: 0; }
+.biz-meta dt {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.biz-meta dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.biz-actions {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  margin-top: auto;
+}
+.biz-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ---- Estado vacío con gracia ---- */
+.admin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+.admin-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.admin-empty-text { color: var(--text-muted); font-size: var(--fs-md); margin: 0; }
+
+/* ---- Contraseña temporal destacada (modal de credenciales) ---- */
+.cred-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: linear-gradient(135deg, var(--brand-700), var(--brand-600));
+  color: #fff;
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  box-shadow: var(--shadow);
+}
+.cred-hero-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.18);
+}
+.cred-hero-body { display: flex; flex-direction: column; min-width: 0; }
+.cred-hero-label {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #cfe0ff;
+  font-weight: 700;
+}
+.cred-hero-value {
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+/* Iconos dentro de chips de envío de credenciales */
+.cred-delivery-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ---- Restaurar empresa desde respaldo ---- */
+.restore-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.restore-info { display: flex; align-items: flex-start; gap: var(--space-3); }
+.restore-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--brand-500) 14%, transparent);
+  color: var(--brand-600);
+}
+.restore-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.restore-btn input { display: none; }

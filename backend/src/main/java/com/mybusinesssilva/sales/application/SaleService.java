@@ -4,7 +4,9 @@ import com.mybusinesssilva.inventory.domain.model.MovementType;
 import com.mybusinesssilva.inventory.domain.port.in.InventoryPort;
 import com.mybusinesssilva.sales.domain.model.Sale;
 import com.mybusinesssilva.sales.domain.model.SaleLine;
+import com.mybusinesssilva.sales.domain.port.out.CustomerCreditPort;
 import com.mybusinesssilva.sales.domain.port.out.SaleRepository;
+import java.math.BigDecimal;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,10 +27,13 @@ public class SaleService {
 
     private final SaleRepository saleRepository;
     private final InventoryPort inventoryPort;
+    private final CustomerCreditPort customerCreditPort;
 
-    public SaleService(SaleRepository saleRepository, InventoryPort inventoryPort) {
+    public SaleService(SaleRepository saleRepository, InventoryPort inventoryPort,
+                       CustomerCreditPort customerCreditPort) {
         this.saleRepository = saleRepository;
         this.inventoryPort = inventoryPort;
+        this.customerCreditPort = customerCreditPort;
     }
 
     /**
@@ -46,6 +51,20 @@ public class SaleService {
             }
         }
 
+        // Si la venta viene ligada a un turno, este debe estar ABIERTO: una vez cerrada la caja
+        // (corte Z) no se puede seguir vendiendo en ese turno.
+        if (sale.getShiftId() != null) {
+            String shiftStatus = saleRepository.shiftStatus(sale.getShiftId()).orElse(null);
+            if (shiftStatus == null) {
+                throw new IllegalStateException("El turno de caja indicado no existe.");
+            }
+            if (!"OPEN".equals(shiftStatus)) {
+                throw new IllegalStateException(
+                        "Tu caja ya está cerrada. No puedes registrar más ventas en este turno; "
+                        + "abre una nueva caja para continuar.");
+            }
+        }
+
         Sale saved = saleRepository.insert(sale);
 
         // Descuenta inventario por cada renglón.
@@ -53,6 +72,17 @@ public class SaleService {
             inventoryPort.applyMovement(
                     line.productId(), saved.getBranchId(), MovementType.SALE,
                     line.quantity(), "SALE:" + saved.getId(), saved.getCashier());
+        }
+
+        // Venta a crédito: el saldo no pagado genera una cuenta por cobrar del cliente. La
+        // misma transacción valida el límite de crédito y actualiza el crédito utilizado.
+        if (saved.isOnCredit()) {
+            BigDecimal balanceDue = saved.balanceDue();
+            if (balanceDue.signum() > 0) {
+                customerCreditPort.registerReceivable(
+                        saved.getCustomerId(), saved.getId(), balanceDue,
+                        saved.getBranchId(), null);
+            }
         }
 
         return new SaleResult(saved.getId(), saved.total(), saved.change(), false);

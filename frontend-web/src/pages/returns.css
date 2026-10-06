@@ -1,0 +1,96 @@
+/* =====================================================================
+   Devoluciones — búsqueda de ticket, tabla de renglones con cantidades a
+   devolver y resumen de reembolso.
+   ===================================================================== */
+
+.ret-search { display: flex; gap: var(--space-3); margin-top: var(--space-3); }
+.ret-search input {
+  flex: 1;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  font-size: var(--fs-md);
+}
+.ret-search input:focus { outline: none; border-color: var(--brand-600); box-shadow: 0 0 0 4px rgba(46, 110, 242, 0.12); }
+.ret-search .btn-primary { padding: 0 24px; }
+
+.ret-sale-head { display: flex; align-items: flex-start; justify-content: space-between; }
+.ret-sale-sub { font-size: var(--fs-sm); color: var(--text-muted); }
+
+.ret-table { width: 100%; border-collapse: collapse; margin-top: var(--space-3); }
+.ret-table thead th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  padding: 9px 12px;
+  border-bottom: 2px solid var(--border);
+}
+.ret-table tbody td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--surface-2);
+  font-size: var(--fs-sm);
+  vertical-align: middle;
+}
+.ta-right { text-align: right; }
+.ta-center { text-align: center; }
+.muted { color: var(--text-muted); }
+
+.ret-qty {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.ret-qty button {
+  width: 30px; height: 32px;
+  background: var(--surface-2);
+  color: var(--brand-600);
+  font-weight: 800;
+  font-size: 16px;
+  padding: 0;
+}
+.ret-qty input {
+  width: 46px; height: 32px;
+  border: none;
+  text-align: center;
+  font-weight: 700;
+  background: var(--surface);
+}
+.ret-qty input:focus { outline: none; }
+
+.ret-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.ret-foot-fields { display: flex; gap: var(--space-3); flex: 1; min-width: 260px; }
+.ret-foot-fields .field { flex: 1; }
+.ret-foot-fields select {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  font-size: var(--fs-md);
+}
+.ret-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.ret-total span { font-size: var(--fs-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.ret-total strong { font-size: 26px; font-weight: 800; color: var(--heading); }
+.ret-total .btn-accent { display: inline-flex; align-items: center; gap: 7px; margin-top: 4px; }
+
+.ret-empty { text-align: center; color: var(--text-muted); padding: var(--space-5); }
+.ret-empty svg { vertical-align: middle; margin-right: 6px; }

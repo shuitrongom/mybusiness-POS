@@ -1,0 +1,114 @@
+/* =====================================================================
+   Facturación Electrónica CFDI 4.0 — estilos de la suite.
+   ===================================================================== */
+
+.inv-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.inv-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-3); }
+.inv-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+@media (max-width: 800px) { .inv-grid2, .inv-grid3, .inv-grid4 { grid-template-columns: 1fr 1fr; } }
+
+.inv-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); margin-bottom: var(--space-4); }
+.inv-toolbar .field { margin: 0; }
+
+.inv-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.inv-table th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
+.inv-table td { padding: 11px 12px; border-bottom: 1px solid var(--surface-2); }
+.inv-table tr:hover td { background: var(--surface-2); }
+.inv-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.inv-table-wrap { overflow-x: auto; }
+
+.inv-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.inv-badge-stamped { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.inv-badge-pending { background: color-mix(in srgb, #f59e0b 16%, transparent); color: #b45309; }
+.inv-badge-canceled { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.inv-badge-error    { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+
+.inv-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 12px; font-weight: 600; font-size: var(--fs-sm);
+  background: color-mix(in srgb, var(--accent-500) 12%, transparent); color: var(--accent-600); border: 1px solid color-mix(in srgb, var(--accent-500) 26%, transparent); }
+
+/* Buscador de claves SAT con dropdown de resultados. */
+.sat-picker { position: relative; }
+.sat-picker-results {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 260px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+.sat-picker-item { display: flex; gap: 10px; padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--surface-2); font-size: var(--fs-sm); }
+.sat-picker-item:hover { background: var(--surface-2); }
+.sat-picker-item .clave { font-weight: 700; color: var(--brand-600); white-space: nowrap; }
+.sat-picker-item .desc { color: var(--text); }
+
+.inv-selrow { background: color-mix(in srgb, var(--brand-600) 8%, transparent) !important; }
+
+.inv-empty { text-align: center; color: var(--text-muted); padding: var(--space-6) var(--space-4); }
+
+.inv-test-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-radius: 12px; margin-bottom: var(--space-4);
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+  color: #b45309; font-size: var(--fs-sm); font-weight: 600;
+}
+
+.inv-cat-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: var(--space-4); }
+.inv-cat-tab { padding: 9px 16px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface-2); font-weight: 600; font-size: var(--fs-sm); color: var(--text); }
+.inv-cat-tab.is-on { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+
+.inv-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* =====================================================================
+   Roles: panel de acciones sensibles (toggles) + matriz avanzada.
+   ===================================================================== */
+.role-sensitive {
+  margin-top: var(--space-4); padding: var(--space-4);
+  border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2);
+}
+.role-sensitive-title { font-weight: 700; color: var(--heading); margin-bottom: var(--space-3); font-size: var(--fs-sm); }
+.role-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 640px) { .role-toggles { grid-template-columns: 1fr; } }
+.role-toggle {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  padding: 12px 14px; border-radius: 12px;
+  border: 1.5px solid var(--border); background: var(--surface); color: var(--text);
+}
+.role-toggle.is-on { border-color: var(--success); box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 22%, transparent); }
+.role-toggle-switch {
+  flex: 0 0 40px; width: 40px; height: 24px; border-radius: 999px;
+  background: var(--border); position: relative; transition: background 0.15s ease;
+}
+.role-toggle.is-on .role-toggle-switch { background: var(--success); }
+.role-toggle-dot {
+  position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; transition: transform 0.15s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+.role-toggle.is-on .role-toggle-dot { transform: translateX(16px); }
+.role-toggle-text { display: flex; flex-direction: column; }
+.role-toggle-label { font-weight: 700; color: var(--heading); font-size: var(--fs-sm); }
+.role-toggle-hint { font-size: 11px; color: var(--text-muted); }
+
+.role-advanced { margin-top: var(--space-4); }
+.role-advanced summary {
+  cursor: pointer; font-weight: 600; color: var(--brand-600); font-size: var(--fs-sm);
+  padding: 8px 0; list-style: none;
+}
+.role-advanced summary::-webkit-details-marker { display: none; }
+.role-advanced summary::before { content: '▸ '; }
+.role-advanced[open] summary::before { content: '▾ '; }
+
+/* =====================================================================
+   Comprobantes y cortes (panel del dueño).
+   ===================================================================== */
+.doc-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: var(--space-3); }
+.doc-summary-card {
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 12px 14px; border-radius: 14px;
+  border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text);
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+.doc-summary-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand-600) 50%, var(--border)); }
+.doc-summary-card.is-on { border-color: var(--brand-600); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-600) 26%, transparent); }
+.doc-summary-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); }
+.doc-summary-count { font-size: 22px; font-weight: 800; color: var(--heading); }
+.doc-summary-total { font-size: var(--fs-sm); color: var(--brand-600); font-weight: 600; }
+.doc-reprint { font-size: 11px; color: var(--text-muted); }

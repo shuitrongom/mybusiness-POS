@@ -25,6 +25,7 @@ public class JwtService {
     private static final String CLAIM_TENANT = "tenant";
     private static final String CLAIM_ROLES = "roles";
     private static final String CLAIM_MODULES = "modules";
+    private static final String CLAIM_PERMISSIONS = "perms";
     private static final String CLAIM_TYPE = "typ";
     private static final String TYPE_ACCESS = "access";
     private static final String TYPE_REFRESH = "refresh";
@@ -47,6 +48,16 @@ public class JwtService {
      */
     public String issueAccessToken(String subject, String tenant,
                                    List<String> roles, List<String> modules) {
+        return issueAccessToken(subject, tenant, roles, modules, List.of());
+    }
+
+    /**
+     * Emite un token de acceso incluyendo los permisos efectivos del usuario (module:action).
+     *
+     * @param permissions permisos granulares del rol del usuario
+     */
+    public String issueAccessToken(String subject, String tenant,
+                                   List<String> roles, List<String> modules, List<String> permissions) {
         Instant now = Instant.now();
         Instant exp = now.plus(jwtProps.accessTtlMinutes(), ChronoUnit.MINUTES);
         return Jwts.builder()
@@ -58,7 +69,8 @@ public class JwtService {
                         CLAIM_TYPE, TYPE_ACCESS,
                         CLAIM_TENANT, tenant == null ? "" : tenant,
                         CLAIM_ROLES, roles,
-                        CLAIM_MODULES, modules))
+                        CLAIM_MODULES, modules,
+                        CLAIM_PERMISSIONS, permissions == null ? List.of() : permissions))
                 .signWith(key)
                 .compact();
     }
@@ -115,5 +127,11 @@ public class JwtService {
     public List<String> modulesOf(Claims claims) {
         Object modules = claims.get(CLAIM_MODULES);
         return modules instanceof List<?> list ? (List<String>) list : List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<String> permissionsOf(Claims claims) {
+        Object perms = claims.get(CLAIM_PERMISSIONS);
+        return perms instanceof List<?> list ? (List<String>) list : List.of();
     }
 }

@@ -47,12 +47,12 @@
   font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--accent-600);
-  background: #e7f9f1;
-  border: 1px solid #b9ecd6;
+  background: color-mix(in srgb, var(--accent-500) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-500) 30%, transparent);
   border-radius: 999px;
   padding: 5px 12px;
 }
-.dash-section { margin-top: var(--space-5); color: var(--brand-800); }
+.dash-section { margin-top: var(--space-5); color: var(--heading); }
 .dash-two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -67,105 +67,201 @@
 .metric-tone-warning { border-left: 3px solid var(--warning); }
 .metric-tone-danger { border-left: 3px solid var(--danger); }
 
-/* Barras de distribución por plan */
-.plan-bars { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
-.plan-bar-row { display: grid; grid-template-columns: 120px 1fr 40px; align-items: center; gap: var(--space-3); }
-.plan-bar-label { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
-.plan-bar-track { background: var(--surface-2); border-radius: 999px; height: 12px; overflow: hidden; }
-.plan-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--brand-600), var(--brand-500));
-  transition: width 0.4s ease;
-  min-width: 4px;
-}
-.plan-bar-count { font-size: var(--fs-sm); font-weight: 700; color: var(--brand-700); text-align: right; }
+/* La distribución por plan ahora es una gráfica premium (Recharts);
+   sus estilos viven en components/saas-charts.css. */
 
-/* ---- Calendario de vencimientos ---- */
-.cal-card { margin-top: var(--space-3); }
-.cal-head {
+/* El calendario de vencimientos ahora es un componente premium (react-big-calendar);
+   sus estilos viven en components/trial-calendar.css. */
+
+/* Contenedor de gráficas Recharts en el panel del dueño (mismas clases que saas-charts). */
+.chart-wrap { width: 100%; margin-top: var(--space-3); }
+.chart-empty {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+  padding: var(--space-6) var(--space-4);
+}
+
+/* Título de sección con icono (patrón premium reutilizado en las páginas del dueño). */
+.sec-title { display: flex; align-items: center; gap: 8px; color: var(--heading); }
+.sec-title svg { color: var(--brand-600); }
+/* Fila de título de sección con una acción a la derecha (p.ej. botón de corte X). */
+.sec-title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.sec-title-row .btn-ghost { display: inline-flex; align-items: center; gap: 6px; }
+
+/* =====================================================================
+   Panel del dueño — versión premium (métrica héroe + KPIs + ranking).
+   ===================================================================== */
+
+.dash-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.dash-date {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-transform: capitalize;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+
+.dash-hero-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+@media (max-width: 900px) { .dash-hero-grid { grid-template-columns: 1fr; } }
+
+/* ---- Métrica héroe ---- */
+.hero-metric {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  background: linear-gradient(135deg, var(--brand-700), var(--brand-600) 60%, var(--brand-500));
+  color: #fff;
+  box-shadow: 0 16px 40px rgba(46, 110, 242, 0.35);
+  min-height: 168px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hero-metric-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-4);
 }
-.cal-title { font-size: var(--fs-lg); font-weight: 700; color: var(--brand-800); }
-.cal-nav {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  font-size: 20px;
-  line-height: 1;
-  border-radius: 10px;
-}
-.cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-}
-.cal-weekdays { margin-bottom: 6px; }
-.cal-weekday {
-  text-align: center;
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 4px 0;
-}
-.cal-cell {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-  padding: 7px 9px;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.05s;
-}
-.cal-empty { border: none; background: transparent; }
-.cal-day { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
-.cal-cell.is-today {
-  border-color: var(--brand-500);
-  box-shadow: inset 0 0 0 1px var(--brand-500);
-}
-.cal-cell.is-today .cal-day { color: var(--brand-700); font-weight: 800; }
-.cal-cell.has-event {
-  background: linear-gradient(180deg, #fff, #fff6ea);
-  border-color: #f4d29a;
-  cursor: default;
-}
-.cal-dot {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
+.hero-metric-label { font-size: var(--fs-md); color: #dce8ff; }
+.hero-metric-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--warning), #f59e0b);
-  color: #fff;
-  font-size: 11px;
+  padding: 4px 10px;
+}
+.hero-metric-value {
+  font-size: 44px;
   font-weight: 800;
+  letter-spacing: -0.5px;
+  margin: 10px 0 6px;
+}
+.hero-metric-foot { color: #dce8ff; font-size: var(--fs-sm); }
+.hero-glow {
+  position: absolute;
+  right: -60px;
+  bottom: -80px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
+/* ---- KPIs de apoyo ---- */
+.kpi-column { display: grid; grid-template-rows: repeat(4, 1fr); gap: var(--space-3); }
+@media (max-width: 520px) { .kpi-column { grid-template-columns: 1fr 1fr; grid-template-rows: none; } }
+.kpi-card {
   display: flex;
   align-items: center;
+  gap: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+}
+.kpi-icon {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  flex-shrink: 0;
 }
-.cal-legend {
-  display: flex;
-  gap: var(--space-5);
-  margin-top: var(--space-4);
-  font-size: var(--fs-xs);
+.kpi-icon svg { color: #fff; }
+.kpi-blue { background: #2e6ef2; }
+.kpi-green { background: #12b886; }
+.kpi-amber { background: #f59e0b; }
+.kpi-violet { background: #7c5cff; }
+.kpi-body { display: flex; flex-direction: column; min-width: 0; }
+.kpi-label { font-size: var(--fs-sm); color: var(--text-muted); }
+.kpi-value { font-size: var(--fs-xl); font-weight: 700; color: var(--heading); line-height: 1.2; }
+.kpi-hint { font-size: 11px; color: var(--text-muted); }
+
+/* ---- Ranking con barra de participación ---- */
+.rank-list { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
+.rank-row { display: flex; align-items: flex-start; gap: var(--space-3); }
+.rank-pos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--surface-2);
   color: var(--text-muted);
+  flex-shrink: 0;
 }
-.cal-legend-item { display: inline-flex; align-items: center; gap: 6px; }
-.cal-dot-legend { position: static; background: none; color: var(--warning); font-size: 18px; min-width: 0; height: auto; padding: 0; }
-.cal-today-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 2px var(--brand-500);
-  display: inline-block;
+.rank-pos-1 { background: #f59e0b; color: #fff; }
+.rank-pos-2 { background: #94a3b8; color: #fff; }
+.rank-pos-3 { background: #b45309; color: #fff; }
+.rank-main { flex: 1; min-width: 0; }
+.rank-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rank-name { font-weight: 600; color: var(--heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-rev { font-weight: 700; color: var(--heading); white-space: nowrap; }
+.rank-bar-track {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  margin: 6px 0 4px;
+  overflow: hidden;
 }
+.rank-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--brand-600), var(--brand-500));
+  transition: width 0.5s ease;
+}
+.rank-qty { font-size: 12px; color: var(--text-muted); }
+
+/* =====================================================================
+   Panel del cajero (resumen de su turno en vivo).
+   ===================================================================== */
+.cash-dash-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 10px; padding: var(--space-6) var(--space-4);
+}
+.cash-dash-empty svg { color: var(--text-muted); }
+.cash-dash-empty h3 { margin: 0; color: var(--heading); }
+.cash-dash-empty p { color: var(--text-muted); max-width: 420px; margin: 0 0 8px; }
+
+.cash-methods { display: flex; flex-direction: column; gap: 8px; margin-top: var(--space-3); }
+.cash-method {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.cash-method-label { color: var(--text); font-weight: 600; }
+.cash-method-value { margin-left: auto; color: var(--heading); font-size: var(--fs-md); font-weight: 800; }
+
+.cash-moves { display: flex; gap: 10px; margin-top: var(--space-3); flex-wrap: wrap; }
+.cash-move {
+  flex: 1; min-width: 160px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-radius: 12px; border: 1px dashed var(--border);
+  font-size: var(--fs-sm);
+}
+.cash-move span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); }
+.cash-move strong { color: var(--heading); }

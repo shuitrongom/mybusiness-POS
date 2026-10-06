@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
+import { motion } from 'motion/react';
+import { FileMinus, FileText, Receipt } from 'lucide-react';
 import { api } from '@/lib/api';
+import { toast } from '@/store/toast';
 import { money } from '@/lib/format';
+import { fadeInUp, pressable } from '@/lib/motion';
 import '@/pages/dashboard.css';
 
 interface InvoiceResult {
@@ -71,10 +75,18 @@ export function InvoicingPage() {
     onSuccess: (data) => {
       setResult(data);
       setEmitError(null);
+      if (data.duplicated) {
+        toast.info('Factura ya emitida', 'Esta factura ya existía; se reutilizó la anterior.');
+      } else if (data.status === 'STAMPED') {
+        toast.success('Factura timbrada', `UUID: ${data.uuid ?? '—'}.`);
+      } else {
+        toast.success('Factura emitida', `Estado: ${data.status}.`);
+      }
     },
     onError: (err) => {
       setResult(null);
       setEmitError(errorMessage(err));
+      toast.error('No se pudo emitir la factura', errorMessage(err));
     },
   });
 
@@ -83,10 +95,12 @@ export function InvoicingPage() {
     onSuccess: () => {
       setCancelMsg(`CFDI ${cancelId} cancelado correctamente.`);
       setCancelError(null);
+      toast.success('Factura cancelada', `CFDI ${cancelId} cancelado ante el SAT.`);
     },
     onError: (err) => {
       setCancelMsg(null);
       setCancelError(errorMessage(err));
+      toast.error('No se pudo cancelar la factura', errorMessage(err));
     },
   });
 
@@ -95,8 +109,8 @@ export function InvoicingPage() {
       <h1 className="page-title">Facturación</h1>
       <p className="page-sub">Emisión y cancelación de CFDI 4.0</p>
 
-      <div className="card">
-        <h3>Emitir factura</h3>
+      <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
+        <h3 className="sec-title"><FileText size={18} /> Emitir factura</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-3)', alignItems: 'end' }}>
           <label className="field"><span>RFC receptor</span>
             <input value={form.receiverRfc} onChange={(e) => setForm({ ...form, receiverRfc: e.target.value })} /></label>
@@ -110,7 +124,7 @@ export function InvoicingPage() {
             <input value={form.cfdiUse} onChange={(e) => setForm({ ...form, cfdiUse: e.target.value })} placeholder="G03" /></label>
         </div>
 
-        <h3 style={{ marginTop: 'var(--space-4)' }}>Concepto</h3>
+        <h3 className="sec-title" style={{ marginTop: 'var(--space-4)' }}><Receipt size={18} /> Concepto</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: 'var(--space-3)', marginTop: 'var(--space-3)', alignItems: 'end' }}>
           <label className="field"><span>Descripción</span>
             <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
@@ -122,10 +136,13 @@ export function InvoicingPage() {
             <input type="number" step="0.01" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /></label>
           <label className="field"><span>Precio unitario</span>
             <input type="number" step="0.01" value={form.unitPrice} onChange={(e) => setForm({ ...form, unitPrice: e.target.value })} /></label>
-          <button className="btn-accent" disabled={!form.receiverRfc || !form.description || !form.unitPrice || emit.isPending}
-                  onClick={() => emit.mutate()}>
+          <motion.button className="btn-accent" disabled={!form.receiverRfc || !form.description || !form.unitPrice || emit.isPending}
+                  onClick={() => emit.mutate()}
+                  whileHover={!form.receiverRfc || !form.description || !form.unitPrice || emit.isPending ? undefined : pressable.whileHover}
+                  whileTap={!form.receiverRfc || !form.description || !form.unitPrice || emit.isPending ? undefined : pressable.whileTap}
+                  transition={pressable.transition}>
             {emit.isPending ? 'Emitiendo…' : 'Emitir'}
-          </button>
+          </motion.button>
         </div>
         <p className="page-sub" style={{ margin: 'var(--space-3) 0 0' }}>
           Importe del concepto: <strong>{money(amount)}</strong>
@@ -144,17 +161,20 @@ export function InvoicingPage() {
             <span className="badge badge-danger">Error</span> {emitError}
           </p>
         )}
-      </div>
+      </motion.div>
 
-      <div className="card" style={{ marginTop: 'var(--space-5)' }}>
-        <h3>Cancelar factura</h3>
+      <motion.div className="card" style={{ marginTop: 'var(--space-5)' }} variants={fadeInUp} initial="hidden" animate="visible">
+        <h3 className="sec-title"><FileMinus size={18} /> Cancelar factura</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-3)', marginTop: 'var(--space-3)', alignItems: 'end', maxWidth: 420 }}>
           <label className="field"><span>CFDI (id)</span>
             <input value={cancelId} onChange={(e) => setCancelId(e.target.value)} /></label>
-          <button className="btn-ghost" disabled={!cancelId || cancel.isPending}
-                  onClick={() => cancel.mutate()}>
+          <motion.button className="btn-ghost" disabled={!cancelId || cancel.isPending}
+                  onClick={() => cancel.mutate()}
+                  whileHover={!cancelId || cancel.isPending ? undefined : pressable.whileHover}
+                  whileTap={!cancelId || cancel.isPending ? undefined : pressable.whileTap}
+                  transition={pressable.transition}>
             {cancel.isPending ? 'Cancelando…' : 'Cancelar'}
-          </button>
+          </motion.button>
         </div>
         {cancelMsg && (
           <p style={{ marginTop: 'var(--space-3)' }}>
@@ -166,7 +186,7 @@ export function InvoicingPage() {
             <span className="badge badge-danger">Error</span> {cancelError}
           </p>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

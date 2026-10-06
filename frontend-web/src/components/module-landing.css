@@ -1,0 +1,107 @@
+/* =====================================================================
+   Landing de módulo — hero con degradado, KPIs de resumen y cuadrícula de
+   opciones (sub-módulos). Reutilizable para Ventas, Compras, etc.
+   ===================================================================== */
+
+.mod { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.mod-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  padding: 4px 2px;
+  cursor: pointer;
+}
+.mod-back:hover { color: var(--brand-600); }
+
+/* Hero */
+.mod-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  color: #fff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.28);
+}
+.mod-hero-glow {
+  position: absolute;
+  right: -60px; top: -80px;
+  width: 260px; height: 260px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  filter: blur(12px);
+}
+.mod-hero-title { font-size: 30px; font-weight: 800; margin: 0; letter-spacing: -0.5px; position: relative; z-index: 1; }
+.mod-hero-sub { margin: 6px 0 0; color: rgba(255, 255, 255, 0.88); position: relative; z-index: 1; }
+
+/* KPIs dentro del hero */
+.mod-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  position: relative;
+  z-index: 1;
+}
+.mod-stat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.mod-stat-icon {
+  width: 42px; height: 42px;
+  flex: 0 0 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.mod-stat-icon svg { color: #fff; }
+.mod-stat-value { font-size: 22px; font-weight: 800; line-height: 1; }
+.mod-stat-label { font-size: var(--fs-xs); color: rgba(255, 255, 255, 0.85); margin-top: 3px; }
+
+/* Cuadrícula de opciones */
+.mod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+.mod-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.08s, border-color 0.15s;
+}
+.mod-option:hover { box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16); border-color: transparent; }
+.mod-option-icon {
+  width: 54px; height: 54px;
+  flex: 0 0 54px;
+  border-radius: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.22);
+}
+.mod-option-icon svg { color: #fff; position: relative; z-index: 1; }
+.mod-option-text { display: flex; flex-direction: column; min-width: 0; }
+.mod-option-label { font-weight: 800; font-size: var(--fs-lg); color: var(--heading); }
+.mod-option-sub { font-size: var(--fs-sm); color: var(--text-muted); }

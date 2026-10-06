@@ -2,6 +2,7 @@ package com.mybusinesssilva.licensing.adapters.in.rest;
 
 import com.mybusinesssilva.licensing.application.BusinessBackupService;
 import com.mybusinesssilva.licensing.application.BusinessBackupService.BusinessBackup;
+import com.mybusinesssilva.licensing.application.DemoDataSeeder;
 import com.mybusinesssilva.licensing.application.LicensingService;
 import com.mybusinesssilva.licensing.application.LicensingService.BusinessDetail;
 import com.mybusinesssilva.licensing.application.LicensingService.CreateBusinessResult;
@@ -86,6 +87,18 @@ public class SuperAdminBusinessController {
                 .body(backup);
     }
 
+    /**
+     * Restaura una empresa desde el contenido de un archivo de respaldo JSON. Crea un negocio
+     * NUEVO con los datos del respaldo (no sobrescribe negocios existentes) y devuelve su vista.
+     */
+    @PostMapping("/restore")
+    public ResponseEntity<BusinessView> restore(
+            @AuthenticationPrincipal AuthenticatedUser actor,
+            @RequestBody java.util.Map<String, Object> backup) {
+        Business restored = licensingService.restoreBusiness(actorEmail(actor), backup, backupService);
+        return ResponseEntity.status(HttpStatus.CREATED).body(BusinessView.from(restored));
+    }
+
     @PostMapping("/{id}/purchase")
     public ResponseEntity<Void> purchase(
             @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable long id) {
@@ -114,6 +127,32 @@ public class SuperAdminBusinessController {
             @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable long id) {
         licensingService.reactivate(actorEmail(actor), id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Restablece la contraseña del dueño del negocio: genera una nueva contraseña temporal, la
+     * reenvía por correo y WhatsApp, y la devuelve para mostrarla una sola vez en el panel.
+     */
+    @PostMapping("/{id}/reset-owner-password")
+    public ResponseEntity<ResetOwnerPasswordView> resetOwnerPassword(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable long id) {
+        LicensingService.ResetOwnerPasswordResult r =
+                licensingService.resetOwnerPassword(actorEmail(actor), id);
+        return ResponseEntity.ok(new ResetOwnerPasswordView(
+                r.email(), r.password(), r.whatsapp(), r.emailSent(), r.whatsappSent()));
+    }
+
+    /**
+     * Siembra datos de demostración en el negocio (inventario, compras, clientes, ventas, cortes,
+     * recargas/servicios y facturación) para mostrar el sistema con datos. Idempotente.
+     */
+    @PostMapping("/{id}/seed-demo")
+    public ResponseEntity<DemoSummaryView> seedDemo(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable long id) {
+        DemoDataSeeder.DemoSummary s = licensingService.seedDemoData(actorEmail(actor), id);
+        return ResponseEntity.ok(new DemoSummaryView(
+                s.branches(), s.products(), s.purchases(), s.customers(),
+                s.sales(), s.shifts(), s.operations(), s.invoices()));
     }
 
     @GetMapping("/{id}/modules")
@@ -204,6 +243,16 @@ public class SuperAdminBusinessController {
 
     /** Credenciales del dueño (contraseña visible solo al crear el negocio). */
     public record OwnerCredentialsView(String email, String password, String whatsapp) {
+    }
+
+    /** Resultado del restablecimiento de contraseña del dueño (contraseña visible una sola vez). */
+    public record ResetOwnerPasswordView(String email, String password, String whatsapp,
+                                         boolean emailSent, boolean whatsappSent) {
+    }
+
+    /** Resumen de la siembra de datos demo. */
+    public record DemoSummaryView(int branches, int products, int purchases, int customers,
+                                  int sales, int shifts, int operations, int invoices) {
     }
 
     /** Detalle de un negocio: datos, módulos habilitados y fechas del ciclo de licencia. */

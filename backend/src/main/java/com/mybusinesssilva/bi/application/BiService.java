@@ -29,28 +29,36 @@ public class BiService {
      * Resumen del día: número de ventas, total, ticket promedio y unidades vendidas.
      */
     public DashboardSummary todaySummary() {
+        // Las ventas se guardan en UTC (TIMESTAMPTZ). Para "hoy" se compara la fecha en la zona
+        // horaria local de México, no la del servidor: de lo contrario, una venta hecha por la
+        // noche (que en UTC ya es el día siguiente) no contaría en el resumen del día.
+        final String tz = "America/Mexico_City";
+
         long salesCount = jdbc.sql("""
                 SELECT COALESCE(count(*),0) FROM sale
-                WHERE status='COMPLETED' AND created_at::date = current_date
-                """).query(Long.class).single();
+                WHERE status='COMPLETED'
+                  AND (created_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                """).param("tz", tz).query(Long.class).single();
 
         BigDecimal salesTotal = jdbc.sql("""
                 SELECT COALESCE(sum(total),0) FROM sale
-                WHERE status='COMPLETED' AND created_at::date = current_date
-                """).query(BigDecimal.class).single();
+                WHERE status='COMPLETED'
+                  AND (created_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                """).param("tz", tz).query(BigDecimal.class).single();
 
         BigDecimal itemsSold = jdbc.sql("""
                 SELECT COALESCE(sum(sl.quantity),0) FROM sale_line sl
                 JOIN sale s ON s.id = sl.sale_id
-                WHERE s.status='COMPLETED' AND s.created_at::date = current_date
-                """).query(BigDecimal.class).single();
+                WHERE s.status='COMPLETED'
+                  AND (s.created_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                """).param("tz", tz).query(BigDecimal.class).single();
 
         BigDecimal avgTicket = salesCount == 0
                 ? BigDecimal.ZERO
                 : salesTotal.divide(BigDecimal.valueOf(salesCount), 2, RoundingMode.HALF_UP);
 
         return new DashboardSummary(
-                java.time.LocalDate.now().toString(),
+                java.time.LocalDate.now(java.time.ZoneId.of(tz)).toString(),
                 salesCount, salesTotal, avgTicket, itemsSold);
     }
 

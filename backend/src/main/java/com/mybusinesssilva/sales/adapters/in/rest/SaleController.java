@@ -1,6 +1,7 @@
 package com.mybusinesssilva.sales.adapters.in.rest;
 
 import com.mybusinesssilva.sales.application.SaleService;
+import com.mybusinesssilva.sales.application.SalesReturnService;
 import com.mybusinesssilva.sales.domain.model.Payment;
 import com.mybusinesssilva.sales.domain.model.PaymentMethod;
 import com.mybusinesssilva.sales.domain.model.Sale;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.mybusinesssilva.platform.security.AuthenticatedUser;
 
@@ -30,9 +32,39 @@ import com.mybusinesssilva.platform.security.AuthenticatedUser;
 public class SaleController {
 
     private final SaleService saleService;
+    private final SalesReturnService salesReturnService;
+    private final com.mybusinesssilva.sales.domain.port.out.SaleRepository saleRepository;
+    private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
-    public SaleController(SaleService saleService) {
+    public SaleController(SaleService saleService, SalesReturnService salesReturnService,
+                          com.mybusinesssilva.sales.domain.port.out.SaleRepository saleRepository,
+                          org.springframework.jdbc.core.simple.JdbcClient jdbc) {
         this.saleService = saleService;
+        this.salesReturnService = salesReturnService;
+        this.saleRepository = saleRepository;
+        this.jdbc = jdbc;
+    }
+
+    /** Detalle de una venta (cabecera + renglones) para buscar el ticket en devoluciones. */
+    @org.springframework.web.bind.annotation.GetMapping("/{id}")
+    public ResponseEntity<com.mybusinesssilva.sales.domain.port.out.SaleRepository.SaleDetail> detail(
+            @PathVariable long id) {
+        return saleRepository.findDetail(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Lista las listas de precio activas del negocio (nombres del multiprecio) para que el
+     * punto de venta ofrezca el selector "Público / Mayoreo / …".
+     */
+    @org.springframework.web.bind.annotation.GetMapping("/price-lists")
+    public List<java.util.Map<String, Object>> priceLists() {
+        return jdbc.sql("SELECT id, name FROM price_list WHERE active = TRUE ORDER BY id")
+                .query((rs, n) -> java.util.Map.<String, Object>of(
+                        "id", rs.getInt("id"),
+                        "name", rs.getString("name")))
+                .list();
     }
 
     /**
@@ -46,6 +78,24 @@ public class SaleController {
 
         String cashier = actor == null ? "unknown" : actor.subject();
 
+        // REGLA DE NEGOCIO: cada rol hace lo que su nombre dice. El Dueño administra, el
+        // Administrador administra y el Supervisor supervisa: NINGUNO vende. Solo el personal
+        // operativo de caja (Cajero o rol personalizado operativo) registra ventas.
+        boolean adminLike = actor != null
+                && (actor.hasRole("OWNER") || actor.hasRole("ADMIN") || actor.hasRole("SUPERVISOR"));
+        if (adminLike) {
+            throw new IllegalStateException(
+                    "Tu rol no registra ventas. Las ventas las realiza el personal de caja (cajeros). "
+                    + "Como administración/supervisión puedes consultar ventas, cortes y reportes.");
+        }
+
+        // SEGURIDAD (cero pérdidas): el personal de caja DEBE vender con su turno de caja abierto.
+        // No se permite vender sin turno (shiftId nulo); el servicio valida además que esté ABIERTO.
+        if (request.shiftId() == null) {
+            throw new IllegalStateException(
+                    "Debes tener tu caja abierta para registrar ventas. Abre tu caja para continuar.");
+        }
+
         List<SaleLine> lines = request.lines().stream()
                 .map(l -> new SaleLine(l.productId(), l.description(), l.quantity(),
                         l.unitPrice(), l.discount()))
@@ -56,8 +106,15 @@ public class SaleController {
                         .map(p -> new Payment(PaymentMethod.valueOf(p.method()), p.amount()))
                         .toList();
 
+        String salesperson = request.salesperson() == null || request.salesperson().isBlank()
+                ? cashier : request.salesperson();
+        short priceListId = request.priceListId() == null ? 1 : request.priceListId().shortValue();
+        boolean onCredit = request.onCredit() != null && request.onCredit();
+
         Sale sale = Sale.complete(request.branchId(), request.cashRegisterId(), request.shiftId(),
-                cashier, request.customerId(), lines, payments, request.idempotencyKey());
+                cashier, salesperson, request.customerId(), priceListId,
+                request.globalDiscount(), request.note(), onCredit,
+                lines, payments, request.idempotencyKey());
 
         SaleService.SaleResult result = saleService.registerSale(sale);
         HttpStatus status = result.duplicated() ? HttpStatus.OK : HttpStatus.CREATED;
@@ -71,17 +128,31 @@ public class SaleController {
         return ResponseEntity.noContent().build();
     }
 
-    /** Registra una devolución de productos (reingresa inventario). */
+    /**
+     * Registra una devolución REAL: la persiste como documento (ligada a la venta origen si se
+     * indica), valida que no se exceda lo vendido, reingresa inventario y registra el reembolso.
+     */
     @PostMapping("/returns")
-    public ResponseEntity<Void> registerReturn(
+    public ResponseEntity<SalesReturnService.ReturnResult> registerReturn(
             @AuthenticationPrincipal AuthenticatedUser actor,
             @Valid @RequestBody ReturnRequest request) {
-        List<SaleService.ReturnItem> items = request.items().stream()
-                .map(i -> new SaleService.ReturnItem(i.productId(), i.quantity()))
+        List<SalesReturnService.ReturnItem> items = request.items().stream()
+                .map(i -> new SalesReturnService.ReturnItem(
+                        i.productId(), i.description(), i.quantity(),
+                        i.unitPrice() == null ? BigDecimal.ZERO : i.unitPrice()))
                 .toList();
-        saleService.registerReturn(request.branchId(), items,
-                actor == null ? "unknown" : actor.subject());
-        return ResponseEntity.noContent().build();
+        var command = new SalesReturnService.ReturnCommand(
+                request.saleId(), request.branchId() == null ? 0L : request.branchId(),
+                request.customerId(), request.reason(), request.refundMethod(), items);
+        var result = salesReturnService.register(command, actor == null ? "unknown" : actor.subject());
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+
+    /** Historial de devoluciones recientes. */
+    @org.springframework.web.bind.annotation.GetMapping("/returns")
+    public List<java.util.Map<String, Object>> listReturns(
+            @RequestParam(value = "limit", required = false, defaultValue = "50") int limit) {
+        return salesReturnService.listRecent(limit);
     }
 
     /** Registra una cotización o apartado (no cobra ni descuenta inventario). */
@@ -100,24 +171,35 @@ public class SaleController {
 
     // --- DTOs ---
 
-    /** Devolución de productos. */
+    /** Devolución de productos. Si trae saleId, se valida contra esa venta. */
     public record ReturnRequest(
-            @NotNull Long branchId,
+            Long saleId,
+            Long branchId,
+            Long customerId,
+            String reason,
+            String refundMethod,
             @NotEmpty List<ReturnItemRequest> items) {
     }
 
     /** Renglón de devolución. */
     public record ReturnItemRequest(
             @NotNull Long productId,
-            @NotNull BigDecimal quantity) {
+            String description,
+            @NotNull BigDecimal quantity,
+            BigDecimal unitPrice) {
     }
 
-    /** Alta de venta. */
+    /** Alta de venta. Los campos comerciales (vendedor, lista, crédito, nota) son opcionales. */
     public record CreateSaleRequest(
             @NotNull Long branchId,
             Long cashRegisterId,
             Long shiftId,
             Long customerId,
+            String salesperson,
+            Integer priceListId,
+            BigDecimal globalDiscount,
+            String note,
+            Boolean onCredit,
             @NotEmpty List<LineRequest> lines,
             List<PaymentRequest> payments,
             String idempotencyKey) {

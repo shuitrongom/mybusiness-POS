@@ -30,6 +30,7 @@ public class LicensingService {
     private final BusinessModuleRepository businessModuleRepository;
     private final TenantProvisioningService provisioningService;
     private final BusinessOwnerProvisioner ownerProvisioner;
+    private final DemoDataSeeder demoDataSeeder;
     private final NotificationPort notificationPort;
     private final AuditService auditService;
     private final Clock clock;
@@ -39,6 +40,7 @@ public class LicensingService {
                             BusinessModuleRepository businessModuleRepository,
                             TenantProvisioningService provisioningService,
                             BusinessOwnerProvisioner ownerProvisioner,
+                            DemoDataSeeder demoDataSeeder,
                             NotificationPort notificationPort,
                             AuditService auditService,
                             Clock clock) {
@@ -47,9 +49,27 @@ public class LicensingService {
         this.businessModuleRepository = businessModuleRepository;
         this.provisioningService = provisioningService;
         this.ownerProvisioner = ownerProvisioner;
+        this.demoDataSeeder = demoDataSeeder;
         this.notificationPort = notificationPort;
         this.auditService = auditService;
         this.clock = clock;
+    }
+
+    /**
+     * Siembra datos de demostración en un negocio (todos los módulos) para mostrar el sistema
+     * "vivo". Idempotente: si el negocio ya tiene ventas, no hace nada.
+     *
+     * @param actor      Super Admin que solicita la siembra
+     * @param businessId id del negocio destino
+     * @return resumen de lo sembrado
+     */
+    public DemoDataSeeder.DemoSummary seedDemoData(String actor, long businessId) {
+        Business business = requireBusiness(businessId);
+        DemoDataSeeder.DemoSummary summary = demoDataSeeder.seed(business.getSchemaName());
+        auditService.recordGlobal(actor, "DEMO_DATA_SEEDED", "business",
+                String.valueOf(businessId), Map.of(
+                        "sales", summary.sales(), "products", summary.products()));
+        return summary;
     }
 
     /**
@@ -189,6 +209,62 @@ public class LicensingService {
         Business business = requireBusiness(businessId);
         List<BusinessModule> modules = businessModuleRepository.findByBusinessId(businessId);
         return new BusinessDetail(business, modules);
+    }
+
+    /**
+     * Restablece la contraseña del dueño de un negocio: genera una nueva contraseña temporal
+     * (el dueño deberá cambiarla en su próximo ingreso), la reenvía por correo y WhatsApp, y la
+     * devuelve para que el Super Admin también pueda entregarla manualmente.
+     *
+     * @param actor      correo del Super Admin que ejecuta la acción (para auditoría)
+     * @param businessId identificador del negocio
+     * @return resultado con la nueva contraseña temporal y el estado de los envíos
+     */
+    public ResetOwnerPasswordResult resetOwnerPassword(String actor, long businessId) {
+        Business business = requireBusiness(businessId);
+        BusinessOwnerProvisioner.ResetResult reset =
+                ownerProvisioner.resetOwnerPassword(business.getSchemaName());
+        if (reset == null) {
+            throw new IllegalStateException("El negocio no tiene un usuario Dueño registrado");
+        }
+
+        auditService.recordGlobal(actor, "OWNER_PASSWORD_RESET", "business",
+                String.valueOf(businessId), Map.of("ownerEmail", reset.email()));
+
+        // Reutiliza los mismos envíos de credenciales que en el alta del negocio.
+        BusinessOwnerProvisioner.OwnerCredentials cred =
+                new BusinessOwnerProvisioner.OwnerCredentials(reset.email(), reset.password());
+        boolean emailSent = sendCredentialsEmail(business.getName(), cred);
+        boolean whatsappSent = sendCredentialsWhatsApp(reset.whatsapp(), business.getName(), cred);
+
+        return new ResetOwnerPasswordResult(
+                reset.email(), reset.password(), reset.whatsapp(), emailSent, whatsappSent);
+    }
+
+    /** Resultado del restablecimiento de contraseña del dueño (contraseña visible una sola vez). */
+    public record ResetOwnerPasswordResult(String email, String password, String whatsapp,
+                                           boolean emailSent, boolean whatsappSent) {
+    }
+
+    /**
+     * Restaura un negocio a partir del contenido de un respaldo JSON. Crea un negocio NUEVO (no
+     * sobrescribe datos existentes), aprovisiona su schema y vuelca los datos del respaldo.
+     *
+     * @param actor  Super Admin que restaura
+     * @param backup contenido del respaldo (JSON deserializado)
+     * @return el negocio restaurado
+     */
+    public Business restoreBusiness(String actor, Map<String, Object> backup,
+                                    BusinessBackupService backupService) {
+        return backupService.restore(
+                actor,
+                backup,
+                // Registrar: crea el negocio nuevo en el schema admin (con 1 mes de prueba para
+                // que quede en estado con acceso) y habilita los módulos del plan si viene planId.
+                (a, name, rfc, line, planId) ->
+                        businessRegistrar.registerForRestore(a, name, rfc, line, planId),
+                // Provisioner: crea el schema del tenant y corre sus migraciones.
+                provisioningService::provisionSchema);
     }
 
     /**

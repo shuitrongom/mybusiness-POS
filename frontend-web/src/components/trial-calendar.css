@@ -1,0 +1,136 @@
+/* =====================================================================
+   Calendario de vencimientos (react-big-calendar) — capa premium que
+   adapta el estilo por defecto a los tokens del sistema (claro/oscuro).
+   ===================================================================== */
+
+.trial-cal-card {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+}
+.trial-cal-shell {
+  /* Altura acotada: el calendario ya no se estira "enorme" con el ancho. */
+  width: 100%;
+}
+
+/* --- Barra de herramientas (navegación + vistas) --- */
+.rbc-toolbar {
+  margin-bottom: var(--space-4);
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.rbc-toolbar .rbc-toolbar-label {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--heading);
+  text-transform: capitalize;
+}
+.rbc-btn-group button {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border) !important;
+  border-radius: 9px !important;
+  padding: 7px 14px;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.rbc-btn-group button:hover {
+  background: var(--surface-2);
+  color: var(--brand-600);
+  border-color: var(--brand-500) !important;
+}
+.rbc-btn-group button.rbc-active,
+.rbc-btn-group button.rbc-active:hover {
+  background: var(--brand-600);
+  color: #fff;
+  border-color: var(--brand-600) !important;
+  box-shadow: 0 4px 12px rgba(46, 110, 242, 0.3);
+}
+
+/* --- Rejilla del mes --- */
+.rbc-month-view,
+.rbc-time-view,
+.rbc-agenda-view {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.rbc-month-view { border-color: var(--border); }
+
+.rbc-header {
+  padding: 10px 6px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.rbc-month-row + .rbc-month-row { border-top: 1px solid var(--border); }
+.rbc-day-bg + .rbc-day-bg { border-left: 1px solid var(--border); }
+.rbc-header + .rbc-header { border-left: 1px solid var(--border); }
+
+.rbc-date-cell {
+  padding: 6px 8px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.rbc-off-range-bg { background: var(--surface-2); }
+.rbc-off-range { color: var(--text-muted); opacity: 0.55; }
+
+/* Día de hoy resaltado con acento de marca. */
+.rbc-today {
+  background: color-mix(in srgb, var(--brand-500) 12%, transparent);
+}
+
+/* --- Eventos (vencimientos) --- */
+.rbc-event,
+.rbc-day-slot .rbc-event {
+  background: linear-gradient(135deg, var(--warning), #f59e0b);
+  border: none;
+  border-radius: 7px;
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.35);
+}
+.rbc-event:focus { outline: 2px solid var(--brand-500); }
+.rbc-event-content { color: #fff; }
+.rbc-show-more {
+  color: var(--brand-600);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  background: transparent;
+}
+
+/* --- Agenda --- */
+.rbc-agenda-view table.rbc-agenda-table {
+  border-color: var(--border);
+}
+.rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  color: var(--text);
+  border-color: var(--border);
+  padding: 8px 12px;
+}
+
+/* --- Popup "ver más" --- */
+.rbc-overlay {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.rbc-overlay-header {
+  color: var(--heading);
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .rbc-toolbar { justify-content: center; }
+}

@@ -79,8 +79,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String tenant = jwtService.tenantOf(claims);
             List<String> roles = jwtService.rolesOf(claims);
             List<String> modules = jwtService.modulesOf(claims);
+            List<String> permissions = jwtService.permissionsOf(claims);
 
-            AuthenticatedUser principal = new AuthenticatedUser(subject, tenant, roles, modules);
+            AuthenticatedUser principal = new AuthenticatedUser(subject, tenant, roles, modules, permissions);
 
             var authorities = roles.stream()
                     .map(r -> new SimpleGrantedAuthority("ROLE_" + r))

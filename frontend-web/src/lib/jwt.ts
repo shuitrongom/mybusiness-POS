@@ -7,6 +7,7 @@ export interface TokenClaims {
   subject: string;
   roles: string[];
   modules: string[];
+  permissions: string[];
   tenant: string;
   exp: number;
 }
@@ -28,6 +29,7 @@ export function decodeToken(token: string | null): TokenClaims | null {
       subject: json.sub ?? '',
       roles: Array.isArray(json.roles) ? json.roles : [],
       modules: Array.isArray(json.modules) ? json.modules : [],
+      permissions: Array.isArray(json.perms) ? json.perms : [],
       tenant: json.tenant ?? '',
       exp: json.exp ?? 0,
     };
@@ -51,7 +53,38 @@ export function isCashier(claims: TokenClaims | null): boolean {
   return !!claims && claims.roles.includes('CASHIER') && !isBusinessAdmin(claims);
 }
 
+/** @returns true si el usuario es Supervisor. */
+export function isSupervisor(claims: TokenClaims | null): boolean {
+  return !!claims && claims.roles.includes('SUPERVISOR');
+}
+
+/**
+ * @returns true si el usuario puede VENDER / operar caja. Regla de negocio: el Dueño administra,
+ * el Administrador administra y el Supervisor supervisa — ninguno vende. Solo el personal
+ * operativo de caja (cajeros o roles personalizados que no son de administración/supervisión).
+ */
+export function canSell(claims: TokenClaims | null): boolean {
+  if (!claims) return false;
+  if (isSuperAdmin(claims) || isBusinessAdmin(claims) || isSupervisor(claims)) return false;
+  return true;
+}
+
 /** @returns true si el negocio del usuario tiene habilitado el módulo dado. */
 export function hasModule(claims: TokenClaims | null, moduleKey: string): boolean {
   return !!claims && claims.modules.includes(moduleKey);
+}
+
+/** @returns true si el usuario tiene el permiso granular module:action (o es Dueño/Admin). */
+export function hasPermission(claims: TokenClaims | null, moduleKey: string, action: string): boolean {
+  if (!claims) return false;
+  if (isBusinessAdmin(claims)) return true;
+  return claims.permissions.includes(`${moduleKey}:${action}`);
+}
+
+/** @returns true si el rol del usuario tiene algún permiso sobre el módulo (o es Dueño/Admin). */
+export function canUseModule(claims: TokenClaims | null, moduleKey: string): boolean {
+  if (!claims) return false;
+  if (isBusinessAdmin(claims)) return true;
+  const prefix = `${moduleKey}:`;
+  return claims.permissions.some((p) => p.startsWith(prefix));
 }

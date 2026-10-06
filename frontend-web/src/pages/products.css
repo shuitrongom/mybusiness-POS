@@ -25,8 +25,18 @@
   overflow: hidden;
   transition: border-color 0.15s, background 0.15s;
 }
-.prod-photo-drop:hover { border-color: var(--brand-500); background: #eef3fb; }
-.prod-photo-placeholder { text-align: center; color: var(--text-muted); font-size: var(--fs-sm); font-weight: 600; line-height: 1.6; }
+.prod-photo-drop:hover { border-color: var(--brand-500); background: color-mix(in srgb, var(--brand-500) 8%, var(--surface-2)); }
+.prod-photo-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.4;
+}
 .prod-photo-preview { width: 100%; height: 100%; object-fit: cover; }
 .prod-photo-clear {
   background: transparent;
@@ -69,4 +79,260 @@
   color: #fff;
   font-weight: 800;
   font-size: 13px;
+}
+
+/* =====================================================================
+   Acciones de fila (editar/eliminar) y modales de producto.
+   ===================================================================== */
+
+.prod-row-actions { display: flex; gap: var(--space-2); }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  /* Fondo de color sólido de alto contraste: el icono blanco siempre resalta. */
+  background: #2e6ef2;
+  cursor: pointer;
+  padding: 0;
+  transition: filter 0.15s ease, transform 0.05s ease;
+}
+.icon-btn:hover { filter: brightness(1.12); }
+.icon-btn:active { transform: translateY(1px); }
+/* El svg queda por encima del fondo, con trazo blanco garantizado. */
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: #ffffff;
+  fill: none;
+  position: relative;
+  z-index: 1;
+}
+.icon-btn-danger { background: #dc2626; }
+
+/* ---- Modales (autosuficientes para esta página) ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, #000 55%, transparent);
+  backdrop-filter: blur(3px);
+}
+.modal-card {
+  width: 100%;
+  max-width: 620px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  padding: var(--space-5);
+}
+.modal-card-sm { max-width: 460px; }
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.modal-head h3 { color: var(--heading); margin: 0; }
+.modal-text { color: var(--text); line-height: 1.6; margin: 0 0 var(--space-4); }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+.btn-danger {
+  padding: 11px 18px;
+  border: none;
+  border-radius: 12px;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+.btn-danger:disabled { opacity: 0.6; cursor: default; }
+
+/* =====================================================================
+   Editor slide-over (drawer) premium + pestañas + campos enterprise.
+   ===================================================================== */
+
+.prod-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.badge-muted, .badge-sale {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.badge-muted { background: color-mix(in srgb, var(--text-muted) 20%, transparent); color: var(--text-muted); }
+.badge-sale { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); }
+.row-inactive { opacity: 0.55; }
+
+/* ---- Backdrop + panel lateral ---- */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in srgb, #000 50%, transparent);
+  backdrop-filter: blur(2px);
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 61;
+  height: 100vh;
+  width: min(560px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.35);
+}
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.drawer-head h3 { color: var(--heading); margin: 0; }
+.drawer-sub { color: var(--text-muted); font-size: var(--fs-sm); }
+
+/* ---- Pestañas ---- */
+.drawer-tabs {
+  display: flex;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.drawer-tab:hover { color: var(--text); }
+.drawer-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ---- Cuerpo scrollable ---- */
+.drawer-body { flex: 1; overflow-y: auto; padding: var(--space-5); }
+.drawer-section { display: flex; flex-direction: column; gap: var(--space-4); }
+.drawer-note, .drawer-foot .btn-ghost { }
+.drawer-note {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0;
+}
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+@media (max-width: 520px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.prod-photo-inline { flex-direction: row; align-items: center; gap: var(--space-3); }
+.prod-photo-inline .prod-photo-drop { width: 96px; height: 96px; }
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.switch-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+
+.margin-hint {
+  font-size: var(--fs-sm);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.margin-hint.is-neg { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+textarea:focus { outline: none; border-color: var(--accent); }
+
+/* ---- Pie con acciones ---- */
+.drawer-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+/* =====================================================================
+   Responsive — tablet y móvil.
+   ===================================================================== */
+
+/* La tabla siempre puede desplazarse en horizontal si no cabe. */
+.card .table { width: 100%; }
+.card { overflow-x: auto; }
+
+@media (max-width: 860px) {
+  .prod-header { flex-direction: column; align-items: stretch; gap: var(--space-3); }
+  .prod-header .btn-accent { width: 100%; justify-content: center; }
+  .prod-list-head { flex-direction: column; align-items: stretch; gap: var(--space-3); }
+  .prod-search { width: 100%; }
+}
+
+/* En móvil, ocultamos columnas secundarias para que la tabla no se sienta apretada.
+   Se conservan Producto, Precio y Acciones, que es lo que se opera desde el celular. */
+@media (max-width: 620px) {
+  .table thead th:nth-child(3),   /* Unidad */
+  .table tbody td:nth-child(3),
+  .table thead th:nth-child(5),   /* Código */
+  .table tbody td:nth-child(5) {
+    display: none;
+  }
+  .prod-thumb { width: 36px; height: 36px; }
+  .icon-btn { width: 38px; height: 38px; }  /* área táctil cómoda */
+}
+
+/* El drawer ocupa toda la pantalla en móvil para aprovechar el espacio. */
+@media (max-width: 560px) {
+  .drawer { width: 100vw; }
+  .drawer-tabs { overflow-x: auto; }
+  .drawer-tab { white-space: nowrap; }
+  .grid-2 { grid-template-columns: 1fr; }
 }
