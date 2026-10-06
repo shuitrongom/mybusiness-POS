@@ -60,3 +60,8 @@ port82.txt
 resp.txt
 tid.txt
 _check_import.bat
+
+# ===== Artefactos de workflows / agentes (reportes internos, no son codigo) =====
+.agents/
+domaincheck.txt
+_pw.txt

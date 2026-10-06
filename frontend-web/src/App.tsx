@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSession } from '@/store/session';
 import { decodeToken, isSuperAdmin, isCashier } from '@/lib/jwt';
 import { LoginPage } from '@/pages/LoginPage';
+import { LandingPage } from '@/pages/LandingPage';
 import { AppLayout } from '@/components/AppLayout';
 import { HomePage } from '@/pages/HomePage';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -81,8 +82,11 @@ export function App() {
   if (!isAuthenticated) {
     return (
       <Routes>
+        {/* Visitantes sin sesión: la landing pública es la página de inicio. */}
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Cualquier ruta desconocida vuelve a la landing (no al login). */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
   }

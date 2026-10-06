@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Trash2, Eye, ShieldOff, ShieldCheck, DownloadCloud, BadgeDollarSign,
   Store, Layers, PackageOpen, Copy, Check, KeyRound, Mail, MessageCircle, UploadCloud, Database,
+  Pencil,
 } from 'lucide-react';
 import { api, getToken } from '@/lib/api';
 import {
@@ -756,6 +757,8 @@ function DeleteModal({ business, pending, onCancel, onConfirm }:
 function PlansTab() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ code: '', name: '', description: '', licensePrice: '', modules: [] as string[] });
+  // Plan en edición (null = ninguno). Al abrir el modal se precargan sus datos.
+  const [editing, setEditing] = useState<Plan | null>(null);
 
   const plans = useQuery({
     queryKey: ['admin', 'plans'],
@@ -865,6 +868,10 @@ function PlansTab() {
                 <td><span className={`badge ${p.active ? 'badge-success' : 'badge-muted'}`}>
                   {p.active ? 'Activo' : 'Inactivo'}</span></td>
                 <td className="admin-actions">
+                  <motion.button className="btn-ghost" onClick={() => setEditing(p)}
+                    whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+                    <Pencil size={15} /> Editar
+                  </motion.button>
                   {p.active && (
                     <motion.button className="btn-ghost" onClick={() => deactivate.mutate(p.id)}
                       whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
@@ -880,7 +887,124 @@ function PlansTab() {
           <EmptyState icon={<Layers size={40} />} text="Aún no hay planes. Crea el primero arriba." />
         )}
       </div>
+
+      <AnimatePresence>
+        {editing && (
+          <EditPlanModal
+            plan={editing}
+            modules={modules.data ?? []}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              queryClient.invalidateQueries({ queryKey: ['admin', 'plans'] });
+            }}
+          />
+        )}
+      </AnimatePresence>
     </>
+  );
+}
+
+/**
+ * Modal de edición de un plan existente. El código del plan NO se edita (es su identificador);
+ * sí se editan nombre, precio, descripción, estado (activo/inactivo) y módulos incluidos.
+ * Usa el endpoint PUT /admin/plans/{id}.
+ */
+function EditPlanModal({ plan, modules, onClose, onSaved }:
+  { plan: Plan; modules: ModuleCatalogItem[]; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    name: plan.name,
+    description: plan.description ?? '',
+    licensePrice: String(plan.licensePriceSuggested ?? 0),
+    active: plan.active,
+    modules: [...plan.moduleKeys],
+  });
+
+  const update = useMutation({
+    mutationFn: async () =>
+      api.put(`/admin/plans/${plan.id}`, {
+        name: form.name,
+        description: form.description || null,
+        licensePrice: Number(form.licensePrice),
+        active: form.active,
+        moduleKeys: form.modules,
+      }),
+    onSuccess: () => {
+      toast.success('Plan actualizado');
+      onSaved();
+    },
+    onError: () => toast.error('No se pudo actualizar el plan'),
+  });
+
+  const toggleModule = (key: string) =>
+    setForm((f) => ({
+      ...f,
+      modules: f.modules.includes(key) ? f.modules.filter((k) => k !== key) : [...f.modules, key],
+    }));
+
+  const canSave = form.name.trim() && form.licensePrice !== '' && form.modules.length > 0;
+
+  return (
+    <ModalShell onClose={onClose} title={`Editar plan · ${plan.code}`} wide>
+      <div className="admin-grid">
+        <label className="field">
+          <span>Nombre</span>
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="Profesional" />
+        </label>
+        <label className="field">
+          <span>Precio de licencia</span>
+          <input type="number" min={0} value={form.licensePrice}
+            onChange={(e) => setForm({ ...form, licensePrice: e.target.value })} placeholder="9900" />
+        </label>
+        <label className="field admin-col-span">
+          <span>Descripción</span>
+          <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="Para negocios en crecimiento" />
+        </label>
+      </div>
+
+      <label className="field" style={{ marginTop: 'var(--space-3)' }}>
+        <span>Estado</span>
+        <select value={form.active ? 'activo' : 'inactivo'}
+          onChange={(e) => setForm({ ...form, active: e.target.value === 'activo' })}>
+          <option value="activo">Activo (disponible para asignar)</option>
+          <option value="inactivo">Inactivo (oculto para nuevos negocios)</option>
+        </select>
+      </label>
+
+      <div className="module-picker">
+        <span className="module-picker-title">Módulos incluidos</span>
+        <div className="module-chips">
+          {modules.map((m) => {
+            const on = form.modules.includes(m.moduleKey);
+            return (
+              <motion.label key={m.moduleKey} className={`module-chip ${on ? 'is-on' : ''}`}
+                title={m.description ?? ''}
+                animate={{ scale: on ? 1.05 : 1 }} transition={quick}
+                whileTap={{ scale: 0.95 }}>
+                <input type="checkbox" checked={on} onChange={() => toggleModule(m.moduleKey)} />
+                {m.name}
+              </motion.label>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="admin-modal-actions">
+        <motion.button className="btn-ghost" onClick={onClose}
+          whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+          Cancelar
+        </motion.button>
+        <motion.button className="btn-accent" disabled={!canSave || update.isPending}
+          onClick={() => update.mutate()}
+          whileHover={!canSave || update.isPending ? undefined : pressable.whileHover}
+          whileTap={!canSave || update.isPending ? undefined : pressable.whileTap}
+          transition={pressable.transition}>
+          {update.isPending ? 'Guardando…' : 'Guardar cambios'}
+        </motion.button>
+      </div>
+    </ModalShell>
   );
 }
 
