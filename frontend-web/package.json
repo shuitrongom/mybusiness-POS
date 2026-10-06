@@ -1,9 +1,9 @@
 {
-  "name": "mybusiness-silva-web",
+  "name": "puntonube-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "MyBusiness Silva - Aplicación web (PWA) del POS en la nube",
+  "description": "PuntoNube - Aplicación web (PWA) del POS en la nube",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

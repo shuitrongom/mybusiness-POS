@@ -50,7 +50,7 @@ const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 
 /**
- * Panel del sistema (Super Admin / proveedor del SaaS): salud comercial de MyBusiness Silva.
+ * Panel del sistema (Super Admin / proveedor del SaaS): salud comercial de PuntoNube.
  * Presenta ingresos, cartera de negocios por estado, conversión de prueba a licencia, mezcla de
  * planes e ingresos recientes. No muestra la operación de los negocios (eso pertenece a cada dueño).
  */
@@ -97,7 +97,7 @@ export function SuperAdminDashboardPage() {
         <div>
           <h1 className="page-title">Panel del sistema</h1>
           <p className="page-sub" style={{ margin: '4px 0 0' }}>
-            Salud comercial de MyBusiness Silva como plataforma SaaS
+            Salud comercial de PuntoNube como plataforma SaaS
           </p>
         </div>
         <span className="dash-live">● En vivo</span>

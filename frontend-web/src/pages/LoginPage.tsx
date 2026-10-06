@@ -121,9 +121,9 @@ export function LoginPage() {
       {/* Cabecera de marca institucional */}
       <header className="auth-topbar">
         <div className="auth-brand">
-          <div className="auth-mark">MS</div>
+          <div className="auth-mark">PN</div>
           <div className="auth-brand-text">
-            <div className="auth-brand-name">MyBusiness Silva</div>
+            <div className="auth-brand-name">PuntoNube</div>
             <div className="auth-brand-tag">CLOUD POS · MÉXICO</div>
           </div>
         </div>
@@ -310,7 +310,7 @@ export function LoginPage() {
         </section>
 
         <p className="auth-foot">
-          MyBusiness Silva © 2026 · Punto de venta en la nube para México
+          PuntoNube © 2026 · Punto de venta en la nube para México
         </p>
       </main>
     </div>

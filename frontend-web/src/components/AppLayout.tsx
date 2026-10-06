@@ -157,9 +157,9 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">MS</div>
+          <div className="brand-mark">PN</div>
           <div className="brand-text">
-            <span className="brand-name">MyBusiness Silva</span>
+            <span className="brand-name">PuntoNube</span>
             <span className="brand-tag">{roleTag}</span>
           </div>
         </div>

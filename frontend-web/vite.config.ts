@@ -15,8 +15,8 @@ export default defineConfig({
         enabled: false,
       },
       manifest: {
-        name: 'MyBusiness Silva',
-        short_name: 'MB Silva',
+        name: 'PuntoNube',
+        short_name: 'PuntoNube',
         description: 'Punto de venta en la nube',
         theme_color: '#1a2b5c',
         background_color: '#0f172a',
