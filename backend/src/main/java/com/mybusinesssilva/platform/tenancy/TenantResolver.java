@@ -8,14 +8,18 @@ import org.springframework.util.StringUtils;
 /**
  * Resuelve el tenant de una petición HTTP.
  *
- * <p>Orden de resolución:
+ * <p>Fuente del tenant:
  * <ol>
- *   <li>Encabezado {@code X-Tenant-Id} (útil para clientes y pruebas).</li>
- *   <li>Subdominio del host (por ejemplo {@code negocio.mybusinesssilva.com} → {@code negocio}).</li>
+ *   <li>El claim del JWT (fuente de verdad), que fija el {@link JwtAuthenticationFilter}
+ *       directamente en el {@link TenantContext} antes de que corra este resolvedor.</li>
+ *   <li>El encabezado {@code X-Tenant-Id} (útil para clientes y pruebas) como respaldo
+ *       cuando no hay JWT.</li>
  * </ol>
  *
- * <p>En una fase posterior, cuando la autenticación esté activa, el tenant se tomará
- * preferentemente del claim del JWT. Este resolvedor deja preparada esa extensión.
+ * <p>NO se deduce el tenant del subdominio del host: la arquitectura es de login único
+ * (todos los negocios entran por el mismo dominio, p. ej. {@code app.puntonubepos.com}, y
+ * eligen su negocio al iniciar sesión). Deducir por subdominio rompía detrás de proxies/PaaS
+ * cuyo host (p. ej. {@code mybusiness-pos-production.up.railway.app}) no es un tenant válido.
  *
  * <p>Devuelve el nombre de schema del tenant ya validado, o vacío si la petición es global
  * (por ejemplo, endpoints del Super Admin que operan sobre el schema {@code admin}).
@@ -34,28 +38,9 @@ public class TenantResolver {
         if (StringUtils.hasText(headerValue)) {
             return Optional.of(normalizeToSchema(headerValue.trim()));
         }
-
-        String host = request.getServerName();
-        return subdomainOf(host).map(this::normalizeToSchema);
-    }
-
-    /**
-     * Extrae el subdominio de un host, si existe y no es un host base o local.
-     */
-    private Optional<String> subdomainOf(String host) {
-        if (!StringUtils.hasText(host) || "localhost".equalsIgnoreCase(host)) {
-            return Optional.empty();
-        }
-        String[] parts = host.split("\\.");
-        // Requiere al menos sub.dominio.tld para considerar subdominio de negocio.
-        if (parts.length < 3) {
-            return Optional.empty();
-        }
-        String sub = parts[0];
-        if ("www".equalsIgnoreCase(sub) || "app".equalsIgnoreCase(sub)) {
-            return Optional.empty();
-        }
-        return Optional.of(sub);
+        // Sin header: el tenant lo aporta el JWT (ya puesto en TenantContext por el filtro JWT).
+        // No se infiere del host.
+        return Optional.empty();
     }
 
     /**
