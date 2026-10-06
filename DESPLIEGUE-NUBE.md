@@ -9,7 +9,7 @@ Servicios recomendados (todos con plan gratis o barato para empezar):
 - **Frontend:** [Vercel](https://vercel.com) (gratis).
 - **Dominio + DNS:** [Cloudflare](https://cloudflare.com) (el más barato, DNS gratis).
 
-Decisión tomada: **todos los negocios entran por el mismo dominio** (ej. `app.tudominio.com`) y
+Decisión tomada: **todos los negocios entran por el mismo dominio** (ej. `app.puntonubepos.com`) y
 eligen su negocio al iniciar sesión. Más simple y suficiente para empezar.
 
 ---
@@ -30,12 +30,12 @@ No necesitas tocar código. Solo seguir los pasos de abajo.
 ## PASO 1 — Comprar el dominio (Cloudflare)
 
 1. Entra a https://dash.cloudflare.com → **Registrar dominio** (Domain Registration → Register).
-2. Busca el nombre que quieres (ej. `mybusinesssilva.com`). Cómpralo (~15 USD/año).
+2. Busca el nombre que quieres (ej. `puntonubepos.com`). Cómpralo (~15 USD/año).
 3. Al terminar, el dominio ya queda con DNS de Cloudflare (lo usaremos en el paso 6).
 
 Subdominios que usaremos:
-- `app.tudominio.com` → el frontend (lo que usan los negocios).
-- `api.tudominio.com` → el backend.
+- `app.puntonubepos.com` → el frontend (lo que usan los negocios).
+- `api.puntonubepos.com` → el backend.
 
 ---
 
@@ -71,14 +71,14 @@ Subdominios que usaremos:
    DB_PASSWORD   = (password de Neon)
    JWT_SECRET    = (una cadena larga y aleatoria de 40+ caracteres)
    JWT_ISSUER    = mybusiness-silva
-   CORS_ALLOWED_ORIGINS = https://app.tudominio.com
+   CORS_ALLOWED_ORIGINS = https://app.puntonubepos.com
    SERVER_PORT   = 8080
    ```
    Para `JWT_SECRET` usa algo largo y único (puedes generar uno en https://generate-secret.now.sh/32).
 5. En **Settings → Networking → Generate Domain**: Railway te da una URL temporal
    (ej. `pos-backend-production.up.railway.app`). Verifica que arranca abriendo
    `https://esa-url/actuator/health` → debe responder `{"status":"UP"}`.
-6. (Después del paso 6) Agrega el **dominio personalizado** `api.tudominio.com` en Networking.
+6. (Después del paso 6) Agrega el **dominio personalizado** `api.puntonubepos.com` en Networking.
 
 ---
 
@@ -89,19 +89,19 @@ Subdominios que usaremos:
 3. Framework: **Vite**. Build command: `npm run build`. Output: `dist`.
 4. En **Environment Variables** agrega:
    ```
-   VITE_API_URL = https://api.tudominio.com
+   VITE_API_URL = https://api.puntonubepos.com
    ```
    (Si aún no conectas el dominio del backend, pon temporalmente la URL de Railway del paso 3.5.)
 5. **Deploy**. Vercel te da una URL (ej. `tu-proyecto.vercel.app`). Ábrela: debe cargar el login.
-6. (Después del paso 6) Agrega el dominio `app.tudominio.com` en **Settings → Domains**.
+6. (Después del paso 6) Agrega el dominio `app.puntonubepos.com` en **Settings → Domains**.
 
 ---
 
 ## PASO 5 — Conectar el frontend con el backend (CORS)
 
 Ya quedó configurado por variables:
-- En **Railway** (backend): `CORS_ALLOWED_ORIGINS = https://app.tudominio.com`
-- En **Vercel** (frontend): `VITE_API_URL = https://api.tudominio.com`
+- En **Railway** (backend): `CORS_ALLOWED_ORIGINS = https://app.puntonubepos.com`
+- En **Vercel** (frontend): `VITE_API_URL = https://api.puntonubepos.com`
 
 Si cambias dominios, actualiza estas dos variables y vuelve a desplegar.
 
@@ -113,7 +113,7 @@ En Cloudflare → tu dominio → **DNS → Records**, agrega:
 
 1. **Frontend (Vercel):** sigue las instrucciones que Vercel te da en Settings → Domains
    (normalmente un registro `CNAME` de `app` → `cname.vercel-dns.com`).
-2. **Backend (Railway):** en Railway → Networking → Custom Domain pon `api.tudominio.com`;
+2. **Backend (Railway):** en Railway → Networking → Custom Domain pon `api.puntonubepos.com`;
    Railway te da un destino `CNAME`; créalo en Cloudflare (`api` → el destino de Railway).
 
 HTTPS: tanto Vercel como Railway emiten el certificado SSL automáticamente. No haces nada.
@@ -125,7 +125,7 @@ HTTPS: tanto Vercel como Railway emiten el certificado SSL automáticamente. No 
 
 ## PASO 7 — Primer arranque y prueba
 
-1. Abre `https://app.tudominio.com`.
+1. Abre `https://app.puntonubepos.com`.
 2. Inicia sesión como **Super Admin** (las credenciales semilla del sistema; revisa el seeder
    de datos o créalas según tu configuración actual).
 3. Da de alta un **negocio** desde el panel de Super Admin → se crea su tenant con el catálogo.
@@ -154,13 +154,13 @@ HTTPS: tanto Vercel como Railway emiten el certificado SSL automáticamente. No 
 | DB_PASSWORD | (Neon) |
 | JWT_SECRET | cadena larga aleatoria |
 | JWT_ISSUER | mybusiness-silva |
-| CORS_ALLOWED_ORIGINS | https://app.tudominio.com |
+| CORS_ALLOWED_ORIGINS | https://app.puntonubepos.com |
 | SERVER_PORT | 8080 |
 
 **Frontend (Vercel):**
 | Variable | Valor |
 |---|---|
-| VITE_API_URL | https://api.tudominio.com |
+| VITE_API_URL | https://api.puntonubepos.com |
 
 ---
 
