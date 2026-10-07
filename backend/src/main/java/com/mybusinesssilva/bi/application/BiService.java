@@ -1,7 +1,11 @@
 package com.mybusinesssilva.bi.application;
 
 import com.mybusinesssilva.bi.domain.model.DashboardSummary;
+import com.mybusinesssilva.bi.domain.model.PaymentMix;
+import com.mybusinesssilva.bi.domain.model.PeriodComparison;
+import com.mybusinesssilva.bi.domain.model.PeriodDelta;
 import com.mybusinesssilva.bi.domain.model.ProductRanking;
+import com.mybusinesssilva.bi.domain.model.TimeSeriesPoint;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -19,6 +23,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class BiService {
 
+    /** Zona horaria de negocio: las ventas se guardan en UTC y se agrupan en hora local de México. */
+    private static final String TZ = "America/Mexico_City";
+
     private final JdbcClient jdbc;
 
     public BiService(JdbcClient jdbc) {
@@ -32,7 +39,7 @@ public class BiService {
         // Las ventas se guardan en UTC (TIMESTAMPTZ). Para "hoy" se compara la fecha en la zona
         // horaria local de México, no la del servidor: de lo contrario, una venta hecha por la
         // noche (que en UTC ya es el día siguiente) no contaría en el resumen del día.
-        final String tz = "America/Mexico_City";
+        final String tz = TZ;
 
         long salesCount = jdbc.sql("""
                 SELECT COALESCE(count(*),0) FROM sale
@@ -133,5 +140,131 @@ public class BiService {
             cumulativeBefore = cumulativeBefore.add(r.revenue());
         }
         return classified;
+    }
+
+    /**
+     * Serie diaria de ventas de los últimos {@code days} días, agrupada por fecha local de México.
+     * Devuelve un punto por día con ventas registradas, en orden cronológico ascendente.
+     */
+    public List<TimeSeriesPoint> salesByDay(int days) {
+        return jdbc.sql("""
+                SELECT (created_at AT TIME ZONE :tz)::date AS d,
+                       count(*)              AS tickets,
+                       COALESCE(sum(total),0) AS revenue
+                FROM sale
+                WHERE status='COMPLETED'
+                  AND created_at >= now() - make_interval(days => :days)
+                GROUP BY d
+                ORDER BY d
+                """)
+                .param("tz", TZ)
+                .param("days", days)
+                .query((rs, n) -> new TimeSeriesPoint(
+                        rs.getString("d"),
+                        rs.getLong("tickets"),
+                        rs.getBigDecimal("revenue")))
+                .list();
+    }
+
+    /**
+     * Serie mensual de ventas de los últimos {@code months} meses, agrupada por mes local de
+     * México. El campo {@code date} usa el formato {@code yyyy-MM}.
+     */
+    public List<TimeSeriesPoint> salesByMonth(int months) {
+        return jdbc.sql("""
+                SELECT to_char(date_trunc('month', created_at AT TIME ZONE :tz), 'YYYY-MM') AS m,
+                       count(*)              AS tickets,
+                       COALESCE(sum(total),0) AS revenue
+                FROM sale
+                WHERE status='COMPLETED'
+                  AND created_at >= now() - make_interval(months => :months)
+                GROUP BY m
+                ORDER BY m
+                """)
+                .param("tz", TZ)
+                .param("months", months)
+                .query((rs, n) -> new TimeSeriesPoint(
+                        rs.getString("m"),
+                        rs.getLong("tickets"),
+                        rs.getBigDecimal("revenue")))
+                .list();
+    }
+
+    /**
+     * Comparativa de periodos (todos agrupados en hora local de México): hoy vs ayer, semana
+     * actual vs la anterior y mes actual vs el anterior. Cada {@link PeriodDelta} incluye la
+     * variación porcentual respecto al periodo previo.
+     */
+    public PeriodComparison periodComparison() {
+        BigDecimal today = sumBetween(
+                "(created_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date");
+        BigDecimal yesterday = sumBetween(
+                "(created_at AT TIME ZONE :tz)::date "
+                        + "= ((now() AT TIME ZONE :tz)::date - 1)");
+
+        BigDecimal thisWeek = sumBetween(
+                "date_trunc('week', created_at AT TIME ZONE :tz) "
+                        + "= date_trunc('week', now() AT TIME ZONE :tz)");
+        BigDecimal lastWeek = sumBetween(
+                "date_trunc('week', created_at AT TIME ZONE :tz) "
+                        + "= date_trunc('week', (now() AT TIME ZONE :tz) - interval '7 days')");
+
+        BigDecimal thisMonth = sumBetween(
+                "date_trunc('month', created_at AT TIME ZONE :tz) "
+                        + "= date_trunc('month', now() AT TIME ZONE :tz)");
+        BigDecimal lastMonth = sumBetween(
+                "date_trunc('month', created_at AT TIME ZONE :tz) "
+                        + "= date_trunc('month', (now() AT TIME ZONE :tz) - interval '1 month')");
+
+        return new PeriodComparison(
+                delta(today, yesterday),
+                delta(thisWeek, lastWeek),
+                delta(thisMonth, lastMonth));
+    }
+
+    /**
+     * Mezcla de ventas por método de pago en los últimos {@code days} días: número de operaciones
+     * y monto total por método, de mayor a menor monto.
+     */
+    public List<PaymentMix> paymentMix(int days) {
+        return jdbc.sql("""
+                SELECT sp.method AS method,
+                       count(*)              AS operations,
+                       COALESCE(sum(sp.amount),0) AS amount
+                FROM sale_payment sp
+                JOIN sale s ON s.id = sp.sale_id
+                WHERE s.status='COMPLETED'
+                  AND s.created_at >= now() - make_interval(days => :days)
+                GROUP BY sp.method
+                ORDER BY amount DESC
+                """)
+                .param("days", days)
+                .query((rs, n) -> new PaymentMix(
+                        rs.getString("method"),
+                        rs.getLong("operations"),
+                        rs.getBigDecimal("amount")))
+                .list();
+    }
+
+    /** Suma del total de ventas COMPLETED que cumplen la condición de fecha indicada. */
+    private BigDecimal sumBetween(String dateCondition) {
+        return jdbc.sql("""
+                SELECT COALESCE(sum(total),0) FROM sale
+                WHERE status='COMPLETED' AND %s
+                """.formatted(dateCondition))
+                .param("tz", TZ)
+                .query(BigDecimal.class)
+                .single();
+    }
+
+    /** Construye un {@link PeriodDelta} con variación porcentual (nula si el previo es cero). */
+    private PeriodDelta delta(BigDecimal current, BigDecimal previous) {
+        BigDecimal cur = current == null ? BigDecimal.ZERO : current;
+        BigDecimal prev = previous == null ? BigDecimal.ZERO : previous;
+        BigDecimal changePct = prev.signum() == 0
+                ? null
+                : cur.subtract(prev).multiply(BigDecimal.valueOf(100))
+                        .divide(prev, 2, RoundingMode.HALF_UP);
+        return new PeriodDelta(cur, prev, changePct);
     }
 }
