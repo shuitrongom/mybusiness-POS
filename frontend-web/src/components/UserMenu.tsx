@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, KeyRound, LogOut, X, ChevronDown, ShieldCheck, Camera } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -45,7 +45,6 @@ function roleLabel(roles: string[]): string {
  * sistemas modernos. Incluye el modal de cambio de contraseña.
  */
 export function UserMenu() {
-  const navigate = useNavigate();
   const token = useSession((s) => s.token);
   const logout = useSession((s) => s.logout);
   const claims = decodeToken(token);
@@ -79,7 +78,10 @@ export function UserMenu() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login', { replace: true });
+    // Redirección DURA a /login (no navigate del router): al limpiar la sesión, el router
+    // de la rama no-autenticada rebotaría la ruta actual a "/" (la landing) por la regla "*".
+    // window.location.replace fuerza ir directo al login sin pasar por ese rebote.
+    window.location.replace('/login');
   };
 
   return (
