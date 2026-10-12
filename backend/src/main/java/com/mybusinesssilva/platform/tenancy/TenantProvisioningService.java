@@ -43,6 +43,12 @@ public class TenantProvisioningService {
      * Aprovisiona un schema de tenant por su nombre. Idempotente: si el schema ya existe,
      * Flyway simplemente aplica las migraciones pendientes.
      *
+     * <p>En el camino de alta <strong>no</strong> se ejecuta {@code flyway.repair()}: el schema
+     * recién creado tiene un historial de Flyway vacío, así que {@code repair()} no realiza trabajo
+     * útil (solo realinea checksums de un historial ya existente) pero sí paga el costo de leer y
+     * re-checksumear todas las migraciones, lo que ralentizaba el alta. La reparación de historiales
+     * ya existentes (re-provisión/actualización masiva) se cubre en {@link #provisionOrRepair(String)}.
+     *
      * @param schema nombre de schema válido ({@code tenant_<id>})
      * @return el nombre del schema
      */
@@ -54,7 +60,45 @@ public class TenantProvisioningService {
         jdbc.execute("CREATE SCHEMA IF NOT EXISTS " + schema);
 
         // 2) Migrar el schema del tenant con Flyway, sustituyendo el placeholder.
-        Flyway flyway = Flyway.configure()
+        configureFlyway(schema).migrate();
+
+        return schema;
+    }
+
+    /**
+     * Aprovisiona o repara el schema de un tenant: realinea los checksums del historial de Flyway
+     * ({@code repair()}) y luego aplica las migraciones pendientes ({@code migrate()}). Pensado para
+     * arranque o migración masiva de tenants <em>ya existentes</em>, donde un historial previo puede
+     * tener checksums desalineados; <strong>no</strong> se invoca en el alta de un negocio nuevo.
+     *
+     * @param schema nombre de schema válido ({@code tenant_<id>})
+     * @return el nombre del schema
+     */
+    public String provisionOrRepair(String schema) {
+        TenantSchema.validate(schema);
+
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("CREATE SCHEMA IF NOT EXISTS " + schema);
+
+        Flyway flyway = configureFlyway(schema);
+        // Repara el historial antes de migrar: realinea los checksums registrados con los de los
+        // archivos actuales. Esto tolera cambios en migraciones ya aplicadas (idempotentes) sin
+        // abortar por "checksum mismatch", que de otro modo dejaría al tenant sin poder actualizarse.
+        flyway.repair();
+        flyway.migrate();
+
+        return schema;
+    }
+
+    /**
+     * Construye el objeto {@link Flyway} para migrar el schema del tenant, con el placeholder
+     * {@code ${tenant_schema}} apuntando al schema destino y su propia tabla de historial.
+     *
+     * @param schema nombre de schema del tenant
+     * @return instancia de Flyway configurada (sin ejecutar aún)
+     */
+    private Flyway configureFlyway(String schema) {
+        return Flyway.configure()
                 .dataSource(dataSource)
                 .schemas(schema)
                 .defaultSchema(schema)
@@ -63,14 +107,6 @@ public class TenantProvisioningService {
                 .table("flyway_schema_history")
                 .baselineOnMigrate(true)
                 .load();
-
-        // Repara el historial antes de migrar: realinea los checksums registrados con los de los
-        // archivos actuales. Esto tolera cambios en migraciones ya aplicadas (idempotentes) sin
-        // abortar por "checksum mismatch", que de otro modo dejaría al tenant sin poder actualizarse.
-        flyway.repair();
-        flyway.migrate();
-
-        return schema;
     }
 
     /**

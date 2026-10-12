@@ -164,6 +164,27 @@ public class BusinessOwnerProvisioner {
             return;
         }
 
+        // Prepara los arreglos a sembrar a partir de las filas del maestro ya leídas, para enviarlos
+        // en lotes (unnest) y colapsar los ~170 viajes a Neon en unas pocas sentencias.
+        int n = masterRows.size();
+        String[] prodNames = new String[n];
+        String[] prodCategories = new String[n];
+        String[] prodUnits = new String[n];
+        Boolean[] prodByWeight = new Boolean[n];
+        String[] prodSatProdServ = new String[n];
+        String[] prodSatUnit = new String[n];
+        String[] prodBarcodes = new String[n];
+        for (int i = 0; i < n; i++) {
+            MasterRow row = masterRows.get(i);
+            prodNames[i] = row.name();
+            prodCategories[i] = row.category();
+            prodUnits[i] = row.unit();
+            prodByWeight[i] = "kg".equalsIgnoreCase(row.unit()) || "litro".equalsIgnoreCase(row.unit());
+            prodSatProdServ[i] = row.satProdServ();
+            prodSatUnit[i] = row.satUnit();
+            prodBarcodes[i] = row.barcode();
+        }
+
         String previousTenant = TenantContext.getTenantId();
         TenantContext.setTenantId(schema);
         try {
@@ -172,45 +193,58 @@ public class BusinessOwnerProvisioner {
                 return; // No pisar un catálogo que ya tiene productos.
             }
 
-            // Crea las categorías del tenant y guarda su id por nombre.
-            java.util.Map<String, Long> categoryIds = new java.util.HashMap<>();
-            for (String cat : categories) {
-                Long id = jdbc.sql("""
-                        INSERT INTO category (name) VALUES (:name)
-                        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-                        RETURNING id
-                        """)
-                        .param("name", cat)
-                        .query(Long.class)
-                        .single();
-                categoryIds.put(cat, id);
-            }
+            // 1) Crea TODAS las categorías del tenant en una sola sentencia (ON CONFLICT (name)
+            //    DO NOTHING es equivalente seguro al DO UPDATE anterior: deja intacta la existente).
+            jdbc.sql("""
+                    INSERT INTO category (name)
+                    SELECT unnest(cast(:names AS text[]))
+                    ON CONFLICT (name) DO NOTHING
+                    """)
+                    .param("names", categories.toArray(new String[0]))
+                    .update();
 
-            for (MasterRow row : masterRows) {
-                boolean byWeight = "kg".equalsIgnoreCase(row.unit()) || "litro".equalsIgnoreCase(row.unit());
-                Long productId = jdbc.sql("""
+            // 2) Inserta TODOS los productos y sus códigos de barras en una sola sentencia set-based.
+            //    Un CTE 'ins' inserta los productos (price 0, cost 0, active TRUE) resolviendo
+            //    category_id por nombre y devuelve (id, name); luego se insertan los barcodes
+            //    uniendo por name (único en el maestro), saltando barcode nulo/blanco, con
+            //    ON CONFLICT (barcode) DO NOTHING. El ORDER BY replica el orden determinista previo.
+            jdbc.sql("""
+                    WITH src AS (
+                        SELECT s.name, s.category, s.unit, s.by_weight,
+                               s.sat_prod_serv, s.sat_unit, s.barcode
+                        FROM unnest(
+                                 cast(:names AS text[]),
+                                 cast(:categories AS text[]),
+                                 cast(:units AS text[]),
+                                 cast(:byWeight AS boolean[]),
+                                 cast(:satProdServ AS text[]),
+                                 cast(:satUnit AS text[]),
+                                 cast(:barcodes AS text[])
+                             ) AS s(name, category, unit, by_weight, sat_prod_serv, sat_unit, barcode)
+                    ),
+                    ins AS (
                         INSERT INTO product
                             (name, category_id, unit, sold_by_weight, sat_prod_serv, sat_unit, price, cost, active)
-                        VALUES (:name, :cat, :unit, :byWeight, :prodServ, :unitSat, 0, 0, TRUE)
-                        RETURNING id
-                        """)
-                        .param("name", row.name())
-                        .param("cat", categoryIds.get(row.category()))
-                        .param("unit", row.unit())
-                        .param("byWeight", byWeight)
-                        .param("prodServ", row.satProdServ())
-                        .param("unitSat", row.satUnit())
-                        .query(Long.class)
-                        .single();
-
-                if (row.barcode() != null && !row.barcode().isBlank()) {
-                    jdbc.sql("INSERT INTO product_barcode (product_id, barcode) VALUES (:pid, :bc) "
-                            + "ON CONFLICT (barcode) DO NOTHING")
-                            .param("pid", productId)
-                            .param("bc", row.barcode())
-                            .update();
-                }
-            }
+                        SELECT src.name, c.id, src.unit, src.by_weight,
+                               src.sat_prod_serv, src.sat_unit, 0, 0, TRUE
+                        FROM src JOIN category c ON c.name = src.category
+                        ORDER BY src.category, src.name
+                        RETURNING id, name
+                    )
+                    INSERT INTO product_barcode (product_id, barcode)
+                    SELECT ins.id, src.barcode
+                    FROM ins JOIN src ON src.name = ins.name
+                    WHERE src.barcode IS NOT NULL AND btrim(src.barcode) <> ''
+                    ON CONFLICT (barcode) DO NOTHING
+                    """)
+                    .param("names", prodNames)
+                    .param("categories", prodCategories)
+                    .param("units", prodUnits)
+                    .param("byWeight", prodByWeight)
+                    .param("satProdServ", prodSatProdServ)
+                    .param("satUnit", prodSatUnit)
+                    .param("barcodes", prodBarcodes)
+                    .update();
         } finally {
             if (previousTenant != null) {
                 TenantContext.setTenantId(previousTenant);
