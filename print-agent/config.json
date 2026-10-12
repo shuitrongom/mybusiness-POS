@@ -1,0 +1,5 @@
+{
+  "port": 9100,
+  "defaultPrinter": "POS-80",
+  "widthMm": 80
+}
