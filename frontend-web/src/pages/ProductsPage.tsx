@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Camera, Pencil, Trash2, X, Info, DollarSign, Boxes, SlidersHorizontal, Plus,
+  Camera, Pencil, Trash2, X, Info, DollarSign, Boxes, SlidersHorizontal, Plus, Tags, Check,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
@@ -201,6 +201,7 @@ export function ProductsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<DraftForm>(emptyDraft());
   const [tab, setTab] = useState<Tab>('general');
+  const [catModalOpen, setCatModalOpen] = useState(false);
 
   const products = useQuery({
     queryKey: ['products', 'all'],
@@ -283,10 +284,16 @@ export function ProductsPage() {
           <h1 className="page-title">Productos</h1>
           <p className="page-sub">Catálogo profesional de tu negocio</p>
         </div>
-        <motion.button className="btn-accent" onClick={openCreate}
-          whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
-          <Plus size={17} /> Nuevo producto
-        </motion.button>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <motion.button className="btn-ghost" onClick={() => setCatModalOpen(true)}
+            whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+            <Tags size={17} /> Gestionar categorías
+          </motion.button>
+          <motion.button className="btn-accent" onClick={openCreate}
+            whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+            <Plus size={17} /> Nuevo producto
+          </motion.button>
+        </div>
       </div>
 
       <motion.div className="card" style={{ marginTop: 'var(--space-4)' }}
@@ -618,6 +625,138 @@ export function ProductsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Gestión de categorías (crear / renombrar / eliminar) */}
+      <AnimatePresence>
+        {catModalOpen && (
+          <CategoryManagerModal
+            categories={categories.data ?? []}
+            onClose={() => setCatModalOpen(false)}
+            onChanged={() => {
+              queryClient.invalidateQueries({ queryKey: ['catalog', 'categories'] });
+              queryClient.invalidateQueries({ queryKey: ['products'] });
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+/**
+ * Modal para administrar las categorías del negocio: crear nuevas, renombrar y eliminar.
+ * Al eliminar una categoría, los productos que la tenían quedan "Sin categoría" (no se borran).
+ */
+function CategoryManagerModal({ categories, onClose, onChanged }: {
+  categories: Category[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [newName, setNewName] = useState('');
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [confirmDel, setConfirmDel] = useState<Category | null>(null);
+
+  const create = useMutation({
+    mutationFn: async (name: string) =>
+      api.post('/catalog/products/categories', { name }),
+    onSuccess: () => { setNewName(''); onChanged(); toast.success('Categoría creada'); },
+    onError: () => toast.error('No se pudo crear', '¿El nombre ya existe?'),
+  });
+  const rename = useMutation({
+    mutationFn: async (c: { id: number; name: string }) =>
+      api.put(`/catalog/products/categories/${c.id}`, { name: c.name }),
+    onSuccess: () => { setEditId(null); onChanged(); toast.success('Categoría actualizada'); },
+    onError: () => toast.error('No se pudo actualizar'),
+  });
+  const remove = useMutation({
+    mutationFn: async (id: number) => api.delete(`/catalog/products/categories/${id}`),
+    onSuccess: () => { setConfirmDel(null); onChanged(); toast.success('Categoría eliminada'); },
+    onError: () => toast.error('No se pudo eliminar'),
+  });
+
+  return (
+    <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}>
+      <motion.div className="modal-card" onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }} transition={{ duration: 0.18 }}>
+        <div className="modal-head">
+          <h3>Categorías</h3>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        {/* Alta de categoría */}
+        <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+          <input className="prod-search" style={{ flex: 1 }} value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Nueva categoría (ej. Pasteles)"
+            onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) create.mutate(newName.trim()); }} />
+          <motion.button className="btn-accent" disabled={!newName.trim() || create.isPending}
+            onClick={() => create.mutate(newName.trim())}
+            whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+            <Plus size={16} /> Agregar
+          </motion.button>
+        </div>
+
+        {/* Lista de categorías */}
+        <div style={{ maxHeight: 360, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {categories.length === 0 && (
+            <p className="empty" style={{ padding: 'var(--space-3)' }}>Aún no hay categorías. Crea la primera arriba.</p>
+          )}
+          {categories.map((c) => (
+            <div key={c.id} style={{
+              display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+              padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 10,
+            }}>
+              {editId === c.id ? (
+                <>
+                  <input className="prod-search" style={{ flex: 1 }} value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && editName.trim()) rename.mutate({ id: c.id, name: editName.trim() }); }}
+                    autoFocus />
+                  <button type="button" className="icon-btn" title="Guardar"
+                    onClick={() => editName.trim() && rename.mutate({ id: c.id, name: editName.trim() })}>
+                    <Check size={18} color="#ffffff" strokeWidth={2.25} />
+                  </button>
+                  <button type="button" className="icon-btn" title="Cancelar" onClick={() => setEditId(null)}>
+                    <X size={18} color="#ffffff" strokeWidth={2.25} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span style={{ flex: 1, fontWeight: 600 }}>{c.name}</span>
+                  <button type="button" className="icon-btn" title="Renombrar"
+                    onClick={() => { setEditId(c.id); setEditName(c.name); }}>
+                    <Pencil size={18} color="#ffffff" strokeWidth={2.25} />
+                  </button>
+                  <button type="button" className="icon-btn icon-btn-danger" title="Eliminar"
+                    onClick={() => setConfirmDel(c)}>
+                    <Trash2 size={18} color="#ffffff" strokeWidth={2.25} />
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {confirmDel && (
+          <div style={{ marginTop: 'var(--space-3)', padding: 'var(--space-3)', border: '1px solid var(--border)', borderRadius: 10 }}>
+            <p className="modal-text" style={{ marginTop: 0 }}>
+              ¿Eliminar la categoría <strong>{confirmDel.name}</strong>? Los productos que la tengan
+              quedarán como <strong>Sin categoría</strong> (no se borran).
+            </p>
+            <div className="modal-actions">
+              <button className="btn-ghost" onClick={() => setConfirmDel(null)}>Cancelar</button>
+              <motion.button className="btn-danger" disabled={remove.isPending}
+                onClick={() => remove.mutate(confirmDel.id)}
+                whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+                {remove.isPending ? 'Eliminando…' : 'Sí, eliminar'}
+              </motion.button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
   );
 }
