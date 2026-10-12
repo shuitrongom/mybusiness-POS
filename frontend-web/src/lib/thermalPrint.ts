@@ -83,12 +83,19 @@ export function printTicketHtml(innerHtml: string) {
 
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
+  // CLAVE: el iframe debe tener ALTURA REAL para que el motor de impresión renderice su
+  // contenido. Con height:0 el navegador imprime una página vacía (franja en blanco). Por eso
+  // NO se oculta con height:0 ni display:none; se saca del flujo visual con position:fixed y
+  // opacity:0 fuera de la pantalla, pero conservando tamaño para que exista contenido imprimible.
   frame.style.position = 'fixed';
-  frame.style.left = '-9999px';
   frame.style.top = '0';
+  frame.style.left = '0';
   frame.style.width = `${w}mm`;
-  frame.style.height = '0';
+  frame.style.height = '100vh';
   frame.style.border = '0';
+  frame.style.opacity = '0';
+  frame.style.pointerEvents = 'none';
+  frame.style.zIndex = '-1';
   // srcdoc: el contenido existe desde que el iframe carga; dispara un `load` fiable.
   frame.srcdoc = html;
 
@@ -110,10 +117,12 @@ export function printTicketHtml(innerHtml: string) {
         img.complete ? Promise.resolve()
           : img.decode().catch(() => undefined)));
     } catch { /* si falla la decodificación, imprime igual */ }
+    // Doble rAF: garantiza que el layout del iframe ya se calculó antes de imprimir.
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     win.focus();
     win.print();
     // Da tiempo a que el diálogo se abra antes de retirar el iframe.
-    setTimeout(cleanup, 1500);
+    setTimeout(cleanup, 2000);
   };
 
   // El `load` del iframe garantiza que srcdoc ya se parseó y renderizó.
