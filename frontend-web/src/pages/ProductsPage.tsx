@@ -41,6 +41,7 @@ interface Product {
   id: number;
   sku: string | null;
   name: string;
+  categoryId: number | null;
   unit: string;
   soldByWeight: boolean;
   price: number;
@@ -49,6 +50,12 @@ interface Product {
   barcodes: string[];
   imageUrl: string | null;
   extras: ProductExtras;
+}
+
+/** Categoría del negocio (para asignar al producto y filtrar en el POS). */
+interface Category {
+  id: number;
+  name: string;
 }
 
 const money = (n: number) =>
@@ -80,6 +87,7 @@ interface DraftForm {
   sku: string;
   description: string;
   brand: string;
+  categoryId: string; // '' = sin categoría
   unit: string;
   soldByWeight: boolean;
   barcode: string;
@@ -112,7 +120,7 @@ interface DraftForm {
 
 function emptyDraft(): DraftForm {
   return {
-    name: '', sku: '', description: '', brand: '', unit: 'pieza', soldByWeight: false,
+    name: '', sku: '', description: '', brand: '', categoryId: '', unit: 'pieza', soldByWeight: false,
     barcode: '', imageUrl: '', active: true,
     price: '', cost: '', lastCost: '', price2: '', price3: '', price4: '', price5: '',
     taxRate: '16', iepsRate: '0',
@@ -126,6 +134,7 @@ function draftFromProduct(p: Product): DraftForm {
   const x = p.extras;
   return {
     name: p.name, sku: p.sku ?? '', description: x.description ?? '', brand: x.brand ?? '',
+    categoryId: p.categoryId != null ? String(p.categoryId) : '',
     unit: p.unit, soldByWeight: p.soldByWeight, barcode: p.barcodes?.[0] ?? '',
     imageUrl: p.imageUrl ?? '', active: p.active,
     price: String(p.price ?? 0), cost: String(p.cost ?? 0), lastCost: String(x.lastCost ?? 0),
@@ -148,6 +157,7 @@ function draftToPayload(d: DraftForm) {
     sku: d.sku.trim() || null,
     description: d.description.trim() || null,
     brand: d.brand.trim() || null,
+    categoryId: d.categoryId ? Number(d.categoryId) : null,
     unit: d.unit,
     soldByWeight: d.soldByWeight,
     barcodes: d.barcode.trim() ? [d.barcode.trim()] : [],
@@ -195,6 +205,12 @@ export function ProductsPage() {
   const products = useQuery({
     queryKey: ['products', 'all'],
     queryFn: async () => (await api.get<Product[]>('/catalog/products')).data,
+  });
+
+  // Categorías del negocio para el selector del formulario (Pan dulce, Pan salado, etc.).
+  const categories = useQuery({
+    queryKey: ['catalog', 'categories'],
+    queryFn: async () => (await api.get<Category[]>('/catalog/products/categories')).data,
   });
 
   const save = useMutation({
@@ -380,6 +396,15 @@ export function ProductsPage() {
                       <textarea value={draft.description} rows={2}
                         onChange={(e) => set('description', e.target.value)}
                         placeholder="Detalle del producto (opcional)" />
+                    </label>
+                    <label className="field">
+                      <span>Categoría</span>
+                      <select value={draft.categoryId} onChange={(e) => set('categoryId', e.target.value)}>
+                        <option value="">Sin categoría</option>
+                        {(categories.data ?? []).map((c) => (
+                          <option key={c.id} value={String(c.id)}>{c.name}</option>
+                        ))}
+                      </select>
                     </label>
                     <div className="grid-2">
                       <label className="field">
