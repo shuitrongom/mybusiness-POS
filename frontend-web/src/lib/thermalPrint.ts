@@ -30,7 +30,12 @@ function ticketCss(widthMm: number): string {
   return `
     @page { size: ${widthMm}mm auto; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: ${widthMm}mm; background: #fff; color: #000; }
+    html, body {
+      width: ${widthMm}mm;
+      height: auto;
+      display: block;
+      background: #fff; color: #000;
+    }
     body {
       font-family: "Consolas", "Courier New", monospace;
       font-size: ${fontSize}px; line-height: 1.35;
@@ -56,42 +61,65 @@ function ticketCss(widthMm: number): string {
 }
 
 /**
- * Imprime un ticket/comprobante en el rollo térmico abriendo una ventana aislada con su HTML.
- * @param innerHtml  HTML del cuerpo del ticket (usar las clases t-* de ticketCss).
+ * Imprime un ticket/comprobante en el rollo térmico usando un iframe AISLADO.
+ *
+ * Técnica robusta y determinista:
+ *  - El HTML completo (con sus estilos) se inyecta por `srcdoc`, de modo que el iframe tiene su
+ *    propio documento con el @page del rollo y NADA de la app. Así el navegador imprime solo el
+ *    ticket, al ancho exacto del rollo.
+ *  - Se espera al evento `load` REAL del iframe (no a timeouts adivinados) antes de imprimir, y
+ *    además se esperan las imágenes (logo) con `img.decode()`. Esto evita el bug de imprimir el
+ *    iframe vacío (hoja en blanco) cuando el print se dispara antes de que el contenido exista.
+ *  - Se imprime sobre el contentWindow del iframe, no sobre la página; el diálogo del navegador
+ *    es inevitable por seguridad, pero el preview ya sale al tamaño del ticket.
+ *
+ * @param innerHtml  HTML del cuerpo del ticket (clases t-* de ticketCss).
  */
 export function printTicketHtml(innerHtml: string) {
   const w = paperWidthMm;
-  // iframe oculto: imprime sin abrir una pestaña visible y sin bloqueadores de pop-ups.
+  const html = `<!doctype html><html><head><meta charset="utf-8">`
+    + `<title>Ticket</title><style>${ticketCss(w)}</style></head>`
+    + `<body>${innerHtml}</body></html>`;
+
   const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
   frame.style.position = 'fixed';
-  frame.style.right = '0';
-  frame.style.bottom = '0';
-  frame.style.width = '0';
+  frame.style.left = '-9999px';
+  frame.style.top = '0';
+  frame.style.width = `${w}mm`;
   frame.style.height = '0';
   frame.style.border = '0';
-  document.body.appendChild(frame);
+  // srcdoc: el contenido existe desde que el iframe carga; dispara un `load` fiable.
+  frame.srcdoc = html;
 
-  const doc = frame.contentWindow?.document;
-  if (!doc) { document.body.removeChild(frame); return; }
+  let done = false;
+  const cleanup = () => {
+    if (frame.parentNode) frame.parentNode.removeChild(frame);
+  };
 
-  doc.open();
-  doc.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>Ticket</title><style>${ticketCss(w)}</style></head>
-    <body>${innerHtml}</body></html>`);
-  doc.close();
-
-  const cleanup = () => { if (frame.parentNode) document.body.removeChild(frame); };
-  const win = frame.contentWindow!;
-  // Espera a que carguen imágenes (logo) antes de imprimir.
-  const run = () => {
+  const doPrint = async () => {
+    if (done) return;
+    done = true;
+    const win = frame.contentWindow;
+    const doc = frame.contentDocument;
+    if (!win || !doc) { cleanup(); return; }
+    try {
+      // Espera a que las imágenes (logo) estén decodificadas, si las hay.
+      const imgs = Array.from(doc.images);
+      await Promise.all(imgs.map((img) =>
+        img.complete ? Promise.resolve()
+          : img.decode().catch(() => undefined)));
+    } catch { /* si falla la decodificación, imprime igual */ }
     win.focus();
     win.print();
-    setTimeout(cleanup, 1000);
+    // Da tiempo a que el diálogo se abra antes de retirar el iframe.
+    setTimeout(cleanup, 1500);
   };
-  if (doc.readyState === 'complete') {
-    setTimeout(run, 150);
-  } else {
-    win.onload = () => setTimeout(run, 150);
-    setTimeout(run, 500); // respaldo por si onload no dispara
-  }
+
+  // El `load` del iframe garantiza que srcdoc ya se parseó y renderizó.
+  frame.addEventListener('load', () => { void doPrint(); });
+  // Respaldo defensivo por si algún navegador no dispara load con srcdoc.
+  setTimeout(() => { void doPrint(); }, 1200);
+
+  document.body.appendChild(frame);
 }
