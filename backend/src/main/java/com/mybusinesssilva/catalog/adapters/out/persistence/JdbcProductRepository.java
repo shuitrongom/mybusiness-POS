@@ -203,8 +203,23 @@ public class JdbcProductRepository implements ProductRepository {
 
     @Override
     public List<Product> findAll() {
+        // Optimización N+1: en lugar de una consulta de códigos de barras POR producto
+        // (lentísimo con la BD en la nube: ~1 viaje por producto), se traen TODOS los códigos
+        // en una sola consulta y se agrupan en memoria por product_id. Así la carga del catálogo
+        // (p. ej. la cuadrícula del punto de venta) pasa de N+1 consultas a solo 2.
+        java.util.Map<Long, List<String>> barcodesByProduct = new java.util.HashMap<>();
+        jdbc.sql("SELECT product_id, barcode FROM product_barcode ORDER BY product_id, id")
+                .query((rs, n) -> {
+                    barcodesByProduct
+                            .computeIfAbsent(rs.getLong("product_id"), k -> new ArrayList<>())
+                            .add(rs.getString("barcode"));
+                    return null;
+                })
+                .list();
+
         return jdbc.sql("SELECT * FROM product ORDER BY name")
-                .query(this::mapRow)
+                .query((rs, rowNum) -> mapRowWithBarcodes(rs,
+                        barcodesByProduct.getOrDefault(rs.getLong("id"), List.of())))
                 .list();
     }
 
@@ -217,6 +232,11 @@ public class JdbcProductRepository implements ProductRepository {
         }
     }
 
+    /**
+     * Mapea una fila de producto consultando sus códigos de barras individualmente.
+     * Usado por lecturas de UN solo producto (findById, byBarcode, search). Para listados
+     * grandes usar {@link #findAll()}, que evita el N+1 cargando los barcodes en bloque.
+     */
     private Product mapRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         long id = rs.getLong("id");
         List<String> barcodes = jdbc.sql(
@@ -224,6 +244,16 @@ public class JdbcProductRepository implements ProductRepository {
                 .param("id", id)
                 .query(String.class)
                 .list();
+        return mapRowWithBarcodes(rs, barcodes);
+    }
+
+    /**
+     * Mapea una fila de producto usando una lista de códigos de barras ya cargada (sin consultar
+     * la BD). Permite a {@link #findAll()} resolver todos los barcodes en una sola consulta previa.
+     */
+    private Product mapRowWithBarcodes(java.sql.ResultSet rs, List<String> barcodes)
+            throws java.sql.SQLException {
+        long id = rs.getLong("id");
         Product.ProductExtras extras = new Product.ProductExtras(
                 rs.getString("description"),
                 rs.getString("brand"),
