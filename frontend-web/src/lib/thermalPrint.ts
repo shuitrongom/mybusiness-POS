@@ -61,74 +61,51 @@ function ticketCss(widthMm: number): string {
 }
 
 /**
- * Imprime un ticket/comprobante en el rollo térmico usando un iframe AISLADO.
+ * Imprime un ticket/comprobante en el rollo térmico abriendo una VENTANA nueva aislada.
  *
- * Técnica robusta y determinista:
- *  - El HTML completo (con sus estilos) se inyecta por `srcdoc`, de modo que el iframe tiene su
- *    propio documento con el @page del rollo y NADA de la app. Así el navegador imprime solo el
- *    ticket, al ancho exacto del rollo.
- *  - Se espera al evento `load` REAL del iframe (no a timeouts adivinados) antes de imprimir, y
- *    además se esperan las imágenes (logo) con `img.decode()`. Esto evita el bug de imprimir el
- *    iframe vacío (hoja en blanco) cuando el print se dispara antes de que el contenido exista.
- *  - Se imprime sobre el contentWindow del iframe, no sobre la página; el diálogo del navegador
- *    es inevitable por seguridad, pero el preview ya sale al tamaño del ticket.
+ * Por qué ventana nueva y no iframe oculto: el iframe oculto (height:0 / fuera de pantalla) hace
+ * que el motor de impresión del navegador no tenga contenido con alto real que renderizar y
+ * saque una página en blanco. Una ventana real SÍ renderiza y mide el contenido correctamente,
+ * así que el preview sale al tamaño del rollo con el ticket visible. Es el método más compatible.
+ *
+ * La ventana se abre, imprime y se cierra sola. El diálogo del navegador es inevitable por
+ * seguridad; la impresión 100% silenciosa la da el agente local (src/lib/localPrint).
  *
  * @param innerHtml  HTML del cuerpo del ticket (clases t-* de ticketCss).
  */
 export function printTicketHtml(innerHtml: string) {
   const w = paperWidthMm;
   const html = `<!doctype html><html><head><meta charset="utf-8">`
-    + `<title>Ticket</title><style>${ticketCss(w)}</style></head>`
-    + `<body>${innerHtml}</body></html>`;
+    + `<title>Ticket</title><style>${ticketCss(w)}</style>`
+    + `<script>
+         function __doPrint(){ try { window.focus(); window.print(); } catch(e){} }
+         window.onload = function(){
+           // Espera a que las imágenes (logo) carguen antes de imprimir.
+           var imgs = Array.prototype.slice.call(document.images);
+           var pending = imgs.filter(function(i){ return !i.complete; });
+           if (pending.length === 0) { setTimeout(__doPrint, 60); return; }
+           var left = pending.length;
+           pending.forEach(function(i){
+             i.addEventListener('load', done); i.addEventListener('error', done);
+           });
+           function done(){ if (--left <= 0) setTimeout(__doPrint, 60); }
+           // Respaldo por si una imagen nunca resuelve.
+           setTimeout(__doPrint, 1500);
+         };
+         // Cierra la ventana cuando el diálogo de impresión termina (imprimir o cancelar).
+         window.onafterprint = function(){ setTimeout(function(){ window.close(); }, 300); };
+       </script>`
+    + `</head><body>${innerHtml}</body></html>`;
 
-  const frame = document.createElement('iframe');
-  frame.setAttribute('aria-hidden', 'true');
-  // CLAVE: el iframe debe tener ALTURA REAL para que el motor de impresión renderice su
-  // contenido. Con height:0 el navegador imprime una página vacía (franja en blanco). Por eso
-  // NO se oculta con height:0 ni display:none; se saca del flujo visual con position:fixed y
-  // opacity:0 fuera de la pantalla, pero conservando tamaño para que exista contenido imprimible.
-  frame.style.position = 'fixed';
-  frame.style.top = '0';
-  frame.style.left = '0';
-  frame.style.width = `${w}mm`;
-  frame.style.height = '100vh';
-  frame.style.border = '0';
-  frame.style.opacity = '0';
-  frame.style.pointerEvents = 'none';
-  frame.style.zIndex = '-1';
-  // srcdoc: el contenido existe desde que el iframe carga; dispara un `load` fiable.
-  frame.srcdoc = html;
-
-  let done = false;
-  const cleanup = () => {
-    if (frame.parentNode) frame.parentNode.removeChild(frame);
-  };
-
-  const doPrint = async () => {
-    if (done) return;
-    done = true;
-    const win = frame.contentWindow;
-    const doc = frame.contentDocument;
-    if (!win || !doc) { cleanup(); return; }
-    try {
-      // Espera a que las imágenes (logo) estén decodificadas, si las hay.
-      const imgs = Array.from(doc.images);
-      await Promise.all(imgs.map((img) =>
-        img.complete ? Promise.resolve()
-          : img.decode().catch(() => undefined)));
-    } catch { /* si falla la decodificación, imprime igual */ }
-    // Doble rAF: garantiza que el layout del iframe ya se calculó antes de imprimir.
-    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-    win.focus();
-    win.print();
-    // Da tiempo a que el diálogo se abra antes de retirar el iframe.
-    setTimeout(cleanup, 2000);
-  };
-
-  // El `load` del iframe garantiza que srcdoc ya se parseó y renderizó.
-  frame.addEventListener('load', () => { void doPrint(); });
-  // Respaldo defensivo por si algún navegador no dispara load con srcdoc.
-  setTimeout(() => { void doPrint(); }, 1200);
-
-  document.body.appendChild(frame);
+  // Ventana pequeña, fuera del foco visual del cajero. Se cierra sola tras imprimir.
+  const win = window.open('', '_blank', `width=380,height=640`);
+  if (!win) {
+    // Si un bloqueador de pop-ups impide abrir la ventana, se informa en consola; el llamador
+    // puede recurrir al agente local. (El navegador suele permitir pop-ups por acción del usuario.)
+    console.warn('No se pudo abrir la ventana de impresión (¿bloqueador de pop-ups?).');
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
 }
