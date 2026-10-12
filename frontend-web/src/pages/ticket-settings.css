@@ -85,8 +85,7 @@
 }
 .tk-pager-info { font-size: var(--fs-sm); color: var(--text-muted); font-weight: 600; }
 
-/* No imprimir el overlay/acciones del modal: solo el ticket (#ticket-print del componente). */
-@media print {
-  .pos-modal-overlay { position: static !important; background: none !important; }
-  .ticket-modal-head, .ticket-actions, .modal-close { display: none !important; }
-}
+/* La impresión térmica (ticket, cortes, comprobantes) se hace SIEMPRE en una ventana/iframe
+   AISLADO (src/lib/thermalPrint.ts), que no usa el CSS de la app. Por eso NO debe haber reglas
+   @media print aquí: un @media print sobre la página hacía que el navegador imprimiera la hoja
+   completa (Carta/A4 en blanco) en vez de solo el ticket del iframe. */
