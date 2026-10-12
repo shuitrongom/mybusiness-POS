@@ -12,8 +12,8 @@ import { staggerContainer, staggerItem, springSoft } from '@/lib/motion';
 import { Ticket, defaultTicketSettings, type TicketSettings, type TicketData } from '@/components/Ticket';
 import { applyPromotions, type Promotion } from '@/lib/promotions';
 import { PosShift, cachedShift, type ActiveShift } from '@/components/PosShift';
-import { printTicketHtml, setPaperWidth } from '@/lib/thermalPrint';
-import { saleTicketHtml } from '@/lib/ticketHtml';
+import { setPaperWidth } from '@/lib/thermalPrint';
+import { printSale } from '@/lib/printRouter';
 import { useSession } from '@/store/session';
 import { decodeToken, canSell } from '@/lib/jwt';
 import { ShieldAlert } from 'lucide-react';
@@ -107,9 +107,9 @@ function priceForList(p: Product, listId: number): number {
   const x = p.extras;
   const candidate =
     listId === 2 ? x?.price2 :
-    listId === 3 ? x?.price3 :
-    listId === 4 ? x?.price4 :
-    listId === 5 ? x?.price5 : p.price;
+      listId === 3 ? x?.price3 :
+        listId === 4 ? x?.price4 :
+          listId === 5 ? x?.price5 : p.price;
   return candidate && candidate > 0 ? candidate : p.price;
 }
 
@@ -185,7 +185,7 @@ export function PosPage() {
         setCategories(cats.data);
         api.get<TicketSettings>('/tickets/settings')
           .then((r) => { setTicketSettings(r.data); setPaperWidth(r.data.paperWidthMm); })
-          .catch(() => {});
+          .catch(() => { });
         api.get<PriceList[]>('/sales/price-lists')
           .then((r) => setPriceLists(r.data.length ? r.data : [{ id: 1, name: 'Público' }]))
           .catch(() => setPriceLists([{ id: 1, name: 'Público' }]));
@@ -310,7 +310,7 @@ export function PosPage() {
   useEffect(() => {
     if (!ticket) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === 'p' || e.key === 'P') { e.preventDefault(); if (ticket) printTicketHtml(saleTicketHtml(ticketSettings, ticket)); }
+      if (e.key === 'Enter' || e.key === 'p' || e.key === 'P') { e.preventDefault(); if (ticket) void printSale(ticketSettings, ticket); }
       else if (e.key === 'Escape') { e.preventDefault(); setTicket(null); barcodeRef.current?.focus(); }
     };
     window.addEventListener('keydown', onKey);
@@ -777,7 +777,7 @@ export function PosPage() {
               </div>
               <div className="ticket-actions">
                 <button className="btn-ghost" onClick={() => setTicket(null)}>Cerrar</button>
-                <button className="pos-confirm" onClick={() => ticket && printTicketHtml(saleTicketHtml(ticketSettings, ticket))}>
+                <button className="pos-confirm" onClick={() => { if (ticket) void printSale(ticketSettings, ticket); }}>
                   <TicketIcon size={16} /> Imprimir ticket <span className="pos-key-hint">P / Enter</span>
                 </button>
               </div>

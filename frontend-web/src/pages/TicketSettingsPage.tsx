@@ -7,8 +7,9 @@ import { toast } from '@/store/toast';
 import { fileToThumbnailDataUrl } from '@/lib/image';
 import { fadeInUp, pressable } from '@/lib/motion';
 import { Ticket, defaultTicketSettings, type TicketSettings, type TicketData } from '@/components/Ticket';
-import { printTicketHtml, setPaperWidth } from '@/lib/thermalPrint';
-import { saleTicketHtml } from '@/lib/ticketHtml';
+import { setPaperWidth } from '@/lib/thermalPrint';
+import { printSale } from '@/lib/printRouter';
+import { isAgentAvailable } from '@/lib/localPrint';
 import { Printer } from 'lucide-react';
 import './dashboard.css';
 import './ticket-settings.css';
@@ -37,6 +38,21 @@ const SAMPLE: TicketData = {
 export function TicketSettingsPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<TicketSettings>(defaultTicketSettings);
+  // Estado del agente de impresión local: 'checking' mientras se consulta, luego online/offline.
+  const [agentStatus, setAgentStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+
+  // Comprueba el agente al montar y cada ~5s. isAgentAvailable ya cachea, así que no satura.
+  useEffect(() => {
+    let activo = true;
+    const comprobar = () => {
+      void isAgentAvailable().then((ok) => {
+        if (activo) setAgentStatus(ok ? 'online' : 'offline');
+      });
+    };
+    comprobar();
+    const id = setInterval(comprobar, 5000);
+    return () => { activo = false; clearInterval(id); };
+  }, []);
 
   const settings = useQuery({
     queryKey: ['ticket', 'settings'],
@@ -129,6 +145,37 @@ export function TicketSettingsPage() {
           </div>
 
           <h3 style={{ marginTop: 'var(--space-4)' }}>Impresora de tickets</h3>
+
+          {/* Indicador del agente de impresión local. Verde = conectado (imprime sin diálogo);
+              gris = no detectado (se usa la impresión por navegador como respaldo). Cuando no se
+              detecta, se ofrece un enlace de ayuda. Como el agente no publica una URL de doc
+              navegable desde la app, el enlace apunta al README del agente dentro del propio
+              paquete ('/print-agent/README.md'); si no estuviera accesible, el navegador mostrará
+              404 y el usuario puede abrir el archivo localmente. */}
+          <div className="tk-agent-status" style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginTop: 'var(--space-2)',
+            fontSize: 13,
+          }}>
+            <span style={{
+              width: 9, height: 9, borderRadius: '50%',
+              background: agentStatus === 'online' ? '#16a34a' : '#9ca3af',
+              flex: '0 0 auto',
+            }} />
+            <span style={{ color: agentStatus === 'online' ? '#16a34a' : 'var(--text-muted, #6b7280)' }}>
+              {agentStatus === 'checking'
+                ? 'Agente de impresión: comprobando…'
+                : agentStatus === 'online'
+                  ? 'Agente de impresión: conectado'
+                  : 'Agente de impresión: no detectado'}
+            </span>
+            {agentStatus !== 'online' && (
+              <a href="/print-agent/README.md" target="_blank" rel="noreferrer"
+                style={{ marginLeft: 4, fontSize: 13 }}>
+                ¿Cómo instalar la impresión directa?
+              </a>
+            )}
+          </div>
+
           <label className="field" style={{ marginTop: 'var(--space-2)' }}>
             <span>Tamaño del rollo de papel</span>
             <select value={form.paperWidthMm}
@@ -147,7 +194,7 @@ export function TicketSettingsPage() {
               whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
               <Save size={16} /> {save.isPending ? 'Guardando…' : 'Guardar configuración'}
             </motion.button>
-            <button className="btn-ghost" onClick={() => { setPaperWidth(form.paperWidthMm); printTicketHtml(saleTicketHtml(form, SAMPLE)); }}>
+            <button className="btn-ghost" onClick={() => { setPaperWidth(form.paperWidthMm); void printSale(form, SAMPLE); }}>
               <Printer size={16} /> Imprimir prueba
             </button>
           </div>

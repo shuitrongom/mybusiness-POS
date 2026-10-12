@@ -9,8 +9,8 @@ import { SupervisorAuthModal } from '@/components/SupervisorAuthModal';
 import { useSession } from '@/store/session';
 import { decodeToken, isBusinessAdmin, hasPermission } from '@/lib/jwt';
 import { toast } from '@/store/toast';
-import { printTicketHtml, setPaperWidth } from '@/lib/thermalPrint';
-import { saleTicketHtml } from '@/lib/ticketHtml';
+import { setPaperWidth } from '@/lib/thermalPrint';
+import { printSale } from '@/lib/printRouter';
 import './dashboard.css';
 import './ticket-settings.css';
 
@@ -86,7 +86,7 @@ export function TicketReprintPage() {
 
   // Impresión térmica: sale al rollo (58/80mm) con el tamaño correcto, sin hoja gigante.
   const doPrint = () => {
-    if (ticketData) printTicketHtml(saleTicketHtml(settings.data ?? defaultTicketSettings, ticketData));
+    if (ticketData) void printSale(settings.data ?? defaultTicketSettings, ticketData);
   };
   const reprint = () => { if (canReprintDirectly) doPrint(); else setAuthOpen(true); };
 
