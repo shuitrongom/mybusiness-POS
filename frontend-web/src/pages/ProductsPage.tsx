@@ -659,18 +659,18 @@ function CategoryManagerModal({ categories, onClose, onChanged }: {
 
   const create = useMutation({
     mutationFn: async (name: string) =>
-      api.post('/catalog/products/categories', { name }),
+      api.post('/catalog/categories', { name }),
     onSuccess: () => { setNewName(''); onChanged(); toast.success('Categoría creada'); },
     onError: () => toast.error('No se pudo crear', '¿El nombre ya existe?'),
   });
   const rename = useMutation({
     mutationFn: async (c: { id: number; name: string }) =>
-      api.put(`/catalog/products/categories/${c.id}`, { name: c.name }),
+      api.put(`/catalog/categories/${c.id}`, { name: c.name }),
     onSuccess: () => { setEditId(null); onChanged(); toast.success('Categoría actualizada'); },
     onError: () => toast.error('No se pudo actualizar'),
   });
   const remove = useMutation({
-    mutationFn: async (id: number) => api.delete(`/catalog/products/categories/${id}`),
+    mutationFn: async (id: number) => api.delete(`/catalog/categories/${id}`),
     onSuccess: () => { setConfirmDel(null); onChanged(); toast.success('Categoría eliminada'); },
     onError: () => toast.error('No se pudo eliminar'),
   });
