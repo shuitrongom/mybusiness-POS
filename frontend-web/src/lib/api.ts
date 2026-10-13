@@ -103,7 +103,12 @@ api.interceptors.response.use(
       refreshPromise = null;
 
       if (newToken) {
-        original.headers.Authorization = `Bearer ${newToken}`;
+        // Persiste el token nuevo (por si renewAccessToken no lo guardó aún) y fuerza su uso en el
+        // reintento, tanto en el header del request original como vía getToken() del interceptor
+        // de request. Así el reintento NUNCA viaja con el token viejo (causa del 401 persistente).
+        setToken(newToken);
+        original.headers = original.headers ?? {};
+        (original.headers as Record<string, string>).Authorization = `Bearer ${newToken}`;
         return api(original); // reintenta la petición original con el token renovado
       }
       // No se pudo renovar: la sesión terminó de verdad.

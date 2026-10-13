@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useSession } from '@/store/session';
@@ -37,7 +36,6 @@ export function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const login = useSession((s) => s.login);
-  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,7 +54,10 @@ export function LoginPage() {
           setMustChange(true);
         } else {
           login(data.accessToken, data.refreshToken);
-          navigate('/', { replace: true });
+          // Redirección DURA: recargar en "/" hace que App arranque YA autenticado (lee la sesión
+          // del localStorage) y muestre el panel según el rol. Con navigate() había una condición
+          // de carrera: App aún veía isAuthenticated=false y "/" mostraba la landing.
+          window.location.replace('/');
         }
       } else {
         setError('Credenciales incorrectas. Verifica tu correo y contraseña.');
@@ -99,7 +100,7 @@ export function LoginPage() {
       });
       if (data.accessToken) {
         login(data.accessToken, data.refreshToken);
-        navigate('/', { replace: true });
+        window.location.replace('/');
       } else {
         setError('No se pudo cambiar la contraseña. Inténtalo de nuevo.');
       }
