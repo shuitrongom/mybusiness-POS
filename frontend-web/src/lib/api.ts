@@ -39,8 +39,44 @@ export const api: AxiosInstance = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-api.interceptors.request.use((config) => {
-  const token = getToken();
+/**
+ * Lee el timestamp de expiración (exp, en segundos) del JWT sin verificar firma. Devuelve 0 si
+ * no se puede leer. Solo se usa para decidir si conviene renovar ANTES de enviar la petición.
+ */
+function tokenExpSeconds(token: string | null): number {
+  if (!token) return 0;
+  try {
+    const payload = token.split('.')[1];
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof json.exp === 'number' ? json.exp : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** @returns true si al token le quedan menos de 60s de vida (o ya expiró). */
+function tokenCasiExpirado(token: string | null): boolean {
+  const exp = tokenExpSeconds(token);
+  if (!exp) return false; // si no se puede leer, no forzamos refresh aquí (lo hará el 401)
+  return exp * 1000 - Date.now() < 60_000;
+}
+
+// Interceptor de request PROACTIVO: si el access token está por expirar (o ya expiró) y hay
+// refresh token, lo renueva ANTES de enviar la petición. Así NINGUNA petición (incluidas
+// POST/PUT/DELETE de escritura) sale con un token muerto, que era la causa de los 401 al operar
+// tras un rato. El reintento ante 401 (abajo) queda como segunda red de seguridad.
+api.interceptors.request.use(async (config) => {
+  const url = config.url ?? '';
+  const isAuthCall = url.includes('/auth/refresh') || url.includes('/auth/login')
+    || url.includes('/auth/superadmin/login');
+
+  let token = getToken();
+  if (!isAuthCall && tokenCasiExpirado(token) && getRefreshToken()) {
+    refreshPromise = refreshPromise ?? renewAccessToken();
+    const fresh = await refreshPromise;
+    refreshPromise = null;
+    if (fresh) token = fresh;
+  }
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
