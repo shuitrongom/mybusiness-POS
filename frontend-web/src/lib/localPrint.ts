@@ -71,7 +71,10 @@ export async function isAgentAvailable(): Promise<boolean> {
   if (estadoCache && ahora - estadoCache.ts < CACHE_MS) return estadoCache.disponible;
 
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 1200);
+  // 6s de timeout: el /status del agente puede tardar un par de segundos la primera vez porque
+  // Windows lista las impresoras vía PowerShell (arranque lento). 1.2s era demasiado corto y
+  // abortaba la detección aunque el agente estuviera vivo (AbortError), marcándolo "no detectado".
+  const t = setTimeout(() => ctrl.abort(), 6000);
   try {
     const res = await fetch(`${AGENT_URL}/status`, { method: 'GET', signal: ctrl.signal });
     const ok = res.ok;
