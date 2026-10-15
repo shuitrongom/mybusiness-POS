@@ -86,7 +86,7 @@ export function TicketReprintPage() {
 
   // Impresión térmica: sale al rollo (58/80mm) con el tamaño correcto, sin hoja gigante.
   const doPrint = () => {
-    if (ticketData) void printSale(settings.data ?? defaultTicketSettings, ticketData);
+    if (ticketData) printSale(settings.data ?? defaultTicketSettings, ticketData);
   };
   const reprint = () => { if (canReprintDirectly) doPrint(); else setAuthOpen(true); };
 

@@ -310,7 +310,7 @@ export function PosPage() {
   useEffect(() => {
     if (!ticket) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === 'p' || e.key === 'P') { e.preventDefault(); if (ticket) void printSale(ticketSettings, ticket); }
+      if (e.key === 'Enter' || e.key === 'p' || e.key === 'P') { e.preventDefault(); if (ticket) printSale(ticketSettings, ticket); }
       else if (e.key === 'Escape') { e.preventDefault(); setTicket(null); barcodeRef.current?.focus(); }
     };
     window.addEventListener('keydown', onKey);
@@ -777,7 +777,7 @@ export function PosPage() {
               </div>
               <div className="ticket-actions">
                 <button className="btn-ghost" onClick={() => setTicket(null)}>Cerrar</button>
-                <button className="pos-confirm" onClick={() => { if (ticket) void printSale(ticketSettings, ticket); }}>
+                <button className="pos-confirm" onClick={() => { if (ticket) printSale(ticketSettings, ticket); }}>
                   <TicketIcon size={16} /> Imprimir ticket <span className="pos-key-hint">P / Enter</span>
                 </button>
               </div>

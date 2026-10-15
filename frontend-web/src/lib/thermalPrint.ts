@@ -71,9 +71,15 @@ function ticketCss(widthMm: number): string {
  * La ventana se abre, imprime y se cierra sola. El diálogo del navegador es inevitable por
  * seguridad; la impresión 100% silenciosa la da el agente local (src/lib/localPrint).
  *
+ * NO BLOQUEANTE: el window.print() ocurre SOLO dentro de la ventana aislada (vía su window.onload),
+ * nunca sobre el documento principal del POS, así que esta función retorna al instante sin esperar
+ * al diálogo. Si un bloqueador de pop-ups impide abrir la ventana, devuelve false (sin lanzar) para
+ * que el llamador avise con un toast y la caja siga usable; devuelve true si la ventana se abrió.
+ *
  * @param innerHtml  HTML del cuerpo del ticket (clases t-* de ticketCss).
+ * @returns true si se abrió la ventana de impresión; false si un bloqueador de pop-ups lo impidió.
  */
-export function printTicketHtml(innerHtml: string) {
+export function printTicketHtml(innerHtml: string): boolean {
   const w = paperWidthMm;
   const html = `<!doctype html><html><head><meta charset="utf-8">`
     + `<title>Ticket</title><style>${ticketCss(w)}</style>`
@@ -100,12 +106,13 @@ export function printTicketHtml(innerHtml: string) {
   // Ventana pequeña, fuera del foco visual del cajero. Se cierra sola tras imprimir.
   const win = window.open('', '_blank', `width=380,height=640`);
   if (!win) {
-    // Si un bloqueador de pop-ups impide abrir la ventana, se informa en consola; el llamador
-    // puede recurrir al agente local. (El navegador suele permitir pop-ups por acción del usuario.)
+    // Si un bloqueador de pop-ups impide abrir la ventana, se informa en consola y se devuelve
+    // false para que el llamador avise con un toast. NO se lanza: el POS debe seguir usable.
     console.warn('No se pudo abrir la ventana de impresión (¿bloqueador de pop-ups?).');
-    return;
+    return false;
   }
   win.document.open();
   win.document.write(html);
   win.document.close();
+  return true;
 }
