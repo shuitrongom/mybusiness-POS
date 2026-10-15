@@ -3,42 +3,275 @@
  * Envio RAW de un buffer ESC/POS a una impresora de Windows POR NOMBRE.
  *
  * METODO ELEGIDO (justificado en README): P/Invoke a winspool.drv via
- * PowerShell + .NET (Add-Type). Se abre la impresora por nombre con
- * OpenPrinter, se inicia un documento RAW con StartDocPrinter (datatype
- * "RAW"), se escribe el buffer con WritePrinter y se cierra con
- * EndDocPrinter/ClosePrinter. Es el metodo mas robusto para imprimir bytes
- * crudos a una termica sin compilar binarios nativos (solo PowerShell y el
- * .NET del sistema, presentes en todo Windows moderno). No depende de que la
- * impresora este compartida en red.
+ * PowerShell + .NET. La diferencia clave respecto a la version anterior es que
+ * ya NO se compila C# (Add-Type) en CADA impresion: eso costaba 2-5 s por
+ * ticket. Ahora un PROCESO PowerShell PERSISTENTE (src/raw-print-worker.ps1)
+ * hace el Add-Type del helper RawPrinterHelper UNA sola vez al arrancar y
+ * luego recibe trabajos por stdin (una linea JSON por trabajo) y responde por
+ * stdout. El P/Invoke a winspool.drv es identico al anterior.
  *
- * El buffer se pasa por un archivo temporal .prn (os.tmpdir()) para evitar
- * problemas de codificacion al inyectar bytes por la linea de comandos; el
- * script PowerShell lo lee con -Encoding Byte / ReadAllBytes.
+ * Arquitectura:
+ *   - Worker singleton: se lanza powershell.exe con el .ps1 la primera vez que
+ *     se necesita y se mantiene vivo. Si muere, se relanza en la siguiente
+ *     impresion.
+ *   - Cola FIFO en serie: printRaw() encola el trabajo y se procesa de a uno,
+ *     con un timeout por trabajo. Un trabajo que falla o expira NO bloquea los
+ *     siguientes.
+ *   - Cache de impresoras: listPrinters() devuelve de inmediato una lista
+ *     cacheada que un refresco en background actualiza al arrancar y cada ~5
+ *     min. Nunca lanza PowerShell en el camino de /status.
+ *
+ * El buffer se pasa por un archivo temporal .prn (os.tmpdir()) que el worker
+ * lee con [System.IO.File]::ReadAllBytes, para evitar problemas de codificacion
+ * al inyectar bytes crudos.
  */
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { info, error } from './logger.js';
 
-const PS_TIMEOUT_MS = 15000;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WORKER_PATH = path.join(__dirname, 'raw-print-worker.ps1');
+
+// Timeout por trabajo de impresion (ms). Si un trabajo no responde en este
+// tiempo se rechaza con error legible y la cola continua con el siguiente.
+const JOB_TIMEOUT_MS = 20000;
+// Timeout para los comandos de listado de impresoras (refresco de cache).
+const LIST_TIMEOUT_MS = 15000;
+// Intervalo de refresco de la cache de impresoras (~5 min).
+const PRINTER_REFRESH_MS = 5 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// Worker PowerShell persistente (singleton)
+// ---------------------------------------------------------------------------
+
+/** @type {import('node:child_process').ChildProcessWithoutNullStreams | null} */
+let worker = null;
+// Buffer de stdout del worker para parsear por lineas.
+let workerStdoutBuf = '';
+// Trabajos pendientes de respuesta, por id -> { resolve, reject, timer }.
+const pending = new Map();
+
+/**
+ * Rechaza todos los trabajos pendientes (p. ej. si el worker muere).
+ * @param {Error} err
+ */
+function rechazarPendientes(err) {
+  for (const [, p] of pending) {
+    clearTimeout(p.timer);
+    p.reject(err);
+  }
+  pending.clear();
+}
+
+/**
+ * Procesa el stdout acumulado del worker: cada linea completa es un JSON
+ * { id, ok, error? }. Resuelve o rechaza el trabajo con ese id.
+ */
+function procesarStdout() {
+  let idx;
+  while ((idx = workerStdoutBuf.indexOf('\n')) >= 0) {
+    const linea = workerStdoutBuf.slice(0, idx).trim();
+    workerStdoutBuf = workerStdoutBuf.slice(idx + 1);
+    if (!linea) continue;
+
+    let msg;
+    try {
+      msg = JSON.parse(linea);
+    } catch {
+      // Linea no-JSON (ruido). Ignorar.
+      continue;
+    }
+    if (!msg || typeof msg.id !== 'string') continue;
+
+    const p = pending.get(msg.id);
+    if (!p) continue;
+    clearTimeout(p.timer);
+    pending.delete(msg.id);
+    if (msg.ok) {
+      p.resolve();
+    } else {
+      p.reject(new Error(msg.error || 'Fallo la impresion RAW'));
+    }
+  }
+}
+
+/**
+ * Garantiza que el worker persistente este vivo; lo lanza si hace falta.
+ * @returns {import('node:child_process').ChildProcessWithoutNullStreams}
+ */
+function asegurarWorker() {
+  if (worker && !worker.killed && worker.exitCode === null) {
+    return worker;
+  }
+
+  info('rawPrint: lanzando worker PowerShell persistente');
+  const ps = spawn(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', WORKER_PATH],
+    { windowsHide: true }
+  );
+
+  ps.stdout.setEncoding('utf8');
+  ps.stdout.on('data', (d) => {
+    workerStdoutBuf += d;
+    procesarStdout();
+  });
+  ps.stderr.on('data', (d) => {
+    const s = String(d).trim();
+    if (s) error(`rawPrint worker (stderr): ${s}`);
+  });
+  ps.on('error', (err) => {
+    error('rawPrint worker: error de proceso', err);
+    if (worker === ps) worker = null;
+    rechazarPendientes(new Error(`Worker de impresion fallo: ${err.message}`));
+  });
+  ps.on('exit', (code, signal) => {
+    info(`rawPrint worker: termino (code=${code}, signal=${signal})`);
+    if (worker === ps) worker = null;
+    workerStdoutBuf = '';
+    rechazarPendientes(new Error('El worker de impresion termino inesperadamente'));
+  });
+
+  worker = ps;
+  return ps;
+}
+
+// ---------------------------------------------------------------------------
+// Cola FIFO en serie
+// ---------------------------------------------------------------------------
+
+/** @type {Array<() => Promise<void>>} */
+const cola = [];
+let procesando = false;
+
+/**
+ * Procesa la cola de a un trabajo (serie). Reentrante-seguro.
+ */
+async function bombearCola() {
+  if (procesando) return;
+  procesando = true;
+  try {
+    while (cola.length > 0) {
+      const tarea = cola.shift();
+      // Cada tarea maneja su propio exito/fallo; no se propaga aqui para no
+      // detener la cola.
+      // eslint-disable-next-line no-await-in-loop
+      await tarea();
+    }
+  } finally {
+    procesando = false;
+  }
+}
+
+/**
+ * Envia UN trabajo al worker y espera la respuesta de su id, con timeout.
+ * @param {string} id
+ * @param {string} printer
+ * @param {string} file ruta del .prn temporal
+ * @returns {Promise<void>}
+ */
+function enviarTrabajo(id, printer, file) {
+  return new Promise((resolve, reject) => {
+    let ps;
+    try {
+      ps = asegurarWorker();
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (pending.has(id)) {
+        pending.delete(id);
+        reject(new Error(`Tiempo de espera agotado (${JOB_TIMEOUT_MS} ms) al imprimir`));
+      }
+    }, JOB_TIMEOUT_MS);
+
+    pending.set(id, { resolve, reject, timer });
+
+    const payload = JSON.stringify({ id, printer, file }) + '\n';
+    ps.stdin.write(payload, 'utf8', (err) => {
+      if (err) {
+        const p = pending.get(id);
+        if (p) {
+          clearTimeout(p.timer);
+          pending.delete(id);
+          reject(new Error(`No se pudo enviar el trabajo al worker: ${err.message}`));
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Envia un buffer RAW a la impresora de Windows por nombre.
+ * Escribe el buffer a un .prn temporal, lo encola, se procesa en serie por el
+ * worker persistente y se espera la respuesta de ese trabajo con timeout. En
+ * finally borra el temporal. Rechaza con error legible si la impresora no
+ * existe, esta apagada o sin papel (errores del spooler) o si expira.
+ * @param {string} printerName nombre de la impresora en Windows (p.ej. 'POS-80')
+ * @param {Buffer} buffer bytes ESC/POS a imprimir
+ * @returns {Promise<void>}
+ */
+export async function printRaw(printerName, buffer) {
+  if (!printerName || typeof printerName !== 'string') {
+    throw new Error('Nombre de impresora invalido');
+  }
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new Error('Buffer de impresion vacio');
+  }
+
+  const id = randomUUID();
+  const tmp = path.join(os.tmpdir(), `puntonube-${id}.prn`);
+
+  return new Promise((resolveExterno, rejectExterno) => {
+    cola.push(async () => {
+      const inicio = Date.now();
+      try {
+        fs.writeFileSync(tmp, buffer);
+        info(`printRaw: enviando ${buffer.length} bytes a '${printerName}' (temp ${tmp})`);
+        await enviarTrabajo(id, printerName, tmp);
+        const ms = Date.now() - inicio;
+        info(`printRaw: impresion enviada a '${printerName}' en ${ms} ms`);
+        resolveExterno();
+      } catch (err) {
+        const ms = Date.now() - inicio;
+        error(`printRaw: fallo tras ${ms} ms`, err);
+        rejectExterno(err instanceof Error ? err : new Error(String(err)));
+      } finally {
+        try { fs.unlinkSync(tmp); } catch { /* el temporal puede no existir */ }
+      }
+    });
+    bombearCola();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Cache de impresoras
+// ---------------------------------------------------------------------------
+
+/** @type {string[]} */
+let printerCache = [];
+let refreshTimer = null;
 
 /**
  * Ejecuta PowerShell con un script y devuelve { code, stdout, stderr }.
- * Aplica un timeout; si expira, mata el proceso y rechaza.
- * @param {string} script contenido del script de PowerShell
+ * Solo lo usa el refresco de cache de impresoras (no el camino de impresion).
+ * @param {string} script
  * @param {number} [timeoutMs]
- * @param {Record<string,string>} [extraEnv] variables de entorno extra para el proceso
  * @returns {Promise<{ code:number, stdout:string, stderr:string }>}
  */
-function runPowerShell(script, timeoutMs = PS_TIMEOUT_MS, extraEnv = {}) {
+function runPowerShell(script, timeoutMs = LIST_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const ps = spawn(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
-      { windowsHide: true, env: { ...process.env, ...extraEnv } }
+      { windowsHide: true }
     );
 
     let stdout = '';
@@ -72,12 +305,11 @@ function runPowerShell(script, timeoutMs = PS_TIMEOUT_MS, extraEnv = {}) {
 }
 
 /**
- * Lista los nombres de impresoras instaladas en Windows.
- * Intenta Get-Printer (moderno) y cae a WMIC si falla. Nunca lanza: si todo
- * falla devuelve [].
+ * Consulta las impresoras instaladas (Get-Printer, fallback WMIC). Devuelve []
+ * si todo falla. Es la operacion lenta que la cache evita en el camino caliente.
  * @returns {Promise<string[]>}
  */
-export async function listPrinters() {
+async function consultarImpresoras() {
   // Metodo 1: Get-Printer (modulo PrintManagement, Windows 8+/Server 2012+)
   try {
     const r = await runPowerShell('Get-Printer | Select-Object -ExpandProperty Name');
@@ -86,7 +318,7 @@ export async function listPrinters() {
       if (nombres.length) return nombres;
     }
   } catch (err) {
-    error('listPrinters: fallo Get-Printer', err);
+    error('consultarImpresoras: fallo Get-Printer', err);
   }
 
   // Metodo 2 (fallback): WMIC
@@ -100,128 +332,49 @@ export async function listPrinters() {
       return nombres;
     }
   } catch (err) {
-    error('listPrinters: fallo WMIC', err);
+    error('consultarImpresoras: fallo WMIC', err);
   }
 
   return [];
 }
 
 /**
- * Script PowerShell que imprime RAW un archivo a una impresora por nombre
- * usando P/Invoke a winspool.drv. Recibe las variables por el entorno:
- *   $env:PN_PRINTER (nombre), $env:PN_FILE (ruta .prn).
- */
-const RAW_PRINT_SCRIPT = `
-$ErrorActionPreference = 'Stop'
-$printerName = $env:PN_PRINTER
-$filePath = $env:PN_FILE
-
-$signature = @'
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-
-public class RawPrinterHelper {
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-  public struct DOCINFOW {
-    [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
-    [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
-    [MarshalAs(UnmanagedType.LPWStr)] public string pDatatype;
-  }
-
-  [DllImport("winspool.drv", EntryPoint = "OpenPrinterW", SetLastError = true, CharSet = CharSet.Unicode)]
-  public static extern bool OpenPrinter(string src, out IntPtr hPrinter, IntPtr pd);
-  [DllImport("winspool.drv", EntryPoint = "ClosePrinter", SetLastError = true)]
-  public static extern bool ClosePrinter(IntPtr hPrinter);
-  [DllImport("winspool.drv", EntryPoint = "StartDocPrinterW", SetLastError = true, CharSet = CharSet.Unicode)]
-  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOCINFOW di);
-  [DllImport("winspool.drv", EntryPoint = "EndDocPrinter", SetLastError = true)]
-  public static extern bool EndDocPrinter(IntPtr hPrinter);
-  [DllImport("winspool.drv", EntryPoint = "StartPagePrinter", SetLastError = true)]
-  public static extern bool StartPagePrinter(IntPtr hPrinter);
-  [DllImport("winspool.drv", EntryPoint = "EndPagePrinter", SetLastError = true)]
-  public static extern bool EndPagePrinter(IntPtr hPrinter);
-  [DllImport("winspool.drv", EntryPoint = "WritePrinter", SetLastError = true)]
-  public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
-
-  public static void SendBytes(string printerName, byte[] bytes) {
-    IntPtr hPrinter;
-    if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero)) {
-      throw new Exception("No se pudo abrir la impresora '" + printerName + "' (codigo " + Marshal.GetLastWin32Error() + ")");
-    }
-    try {
-      DOCINFOW di = new DOCINFOW();
-      di.pDocName = "PuntoNube Ticket";
-      di.pDatatype = "RAW";
-      if (!StartDocPrinter(hPrinter, 1, ref di)) {
-        throw new Exception("StartDocPrinter fallo (codigo " + Marshal.GetLastWin32Error() + ")");
-      }
-      try {
-        if (!StartPagePrinter(hPrinter)) {
-          throw new Exception("StartPagePrinter fallo (codigo " + Marshal.GetLastWin32Error() + ")");
-        }
-        IntPtr pUnmanaged = Marshal.AllocCoTaskMem(bytes.Length);
-        try {
-          Marshal.Copy(bytes, 0, pUnmanaged, bytes.Length);
-          int written;
-          if (!WritePrinter(hPrinter, pUnmanaged, bytes.Length, out written)) {
-            throw new Exception("WritePrinter fallo (codigo " + Marshal.GetLastWin32Error() + ")");
-          }
-        } finally {
-          Marshal.FreeCoTaskMem(pUnmanaged);
-        }
-        EndPagePrinter(hPrinter);
-      } finally {
-        EndDocPrinter(hPrinter);
-      }
-    } finally {
-      ClosePrinter(hPrinter);
-    }
-  }
-}
-'@
-
-Add-Type -TypeDefinition $signature -Language CSharp
-$bytes = [System.IO.File]::ReadAllBytes($filePath)
-[RawPrinterHelper]::SendBytes($printerName, $bytes)
-Write-Output "OK"
-`;
-
-/**
- * Envia un buffer RAW a la impresora de Windows por nombre.
- * Escribe el buffer a un .prn temporal, invoca el P/Invoke via PowerShell,
- * captura resultado y borra el temporal. Rechaza con error legible si la
- * impresora no existe, esta apagada o sin papel (errores del spooler).
- * @param {string} printerName nombre de la impresora en Windows (p.ej. 'POS-80')
- * @param {Buffer} buffer bytes ESC/POS a imprimir
+ * Refresca la cache de impresoras en background. Nunca lanza.
  * @returns {Promise<void>}
  */
-export async function printRaw(printerName, buffer) {
-  if (!printerName || typeof printerName !== 'string') {
-    throw new Error('Nombre de impresora invalido');
-  }
-  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-    throw new Error('Buffer de impresion vacio');
-  }
-
-  const tmp = path.join(os.tmpdir(), `puntonube-${randomUUID()}.prn`);
+async function refrescarCache() {
   try {
-    fs.writeFileSync(tmp, buffer);
-    info(`printRaw: enviando ${buffer.length} bytes a '${printerName}' (temp ${tmp})`);
-
-    const r = await runPowerShell(RAW_PRINT_SCRIPT, PS_TIMEOUT_MS, {
-      PN_PRINTER: printerName,
-      PN_FILE: tmp,
-    });
-
-    if (r.code !== 0 || !/OK/.test(r.stdout)) {
-      const detalle = r.stderr || r.stdout || `codigo ${r.code}`;
-      throw new Error(`Fallo la impresion RAW: ${detalle}`);
-    }
-    info(`printRaw: impresion enviada a '${printerName}'`);
-  } finally {
-    try { fs.unlinkSync(tmp); } catch { /* el temporal puede no existir */ }
+    const nombres = await consultarImpresoras();
+    printerCache = nombres;
+    info(`listPrinters: cache actualizada (${nombres.length} impresoras)`);
+  } catch (err) {
+    error('refrescarCache: error inesperado', err);
   }
 }
 
-export default { printRaw, listPrinters };
+/**
+ * Arranca el refresco de la cache de impresoras: un refresco inmediato y luego
+ * cada ~5 min. Idempotente (no crea intervalos duplicados). El intervalo se
+ * desreferencia para no mantener vivo el proceso.
+ */
+export function startPrinterCache() {
+  // Refresco inicial (no bloquea; corre en background).
+  refrescarCache();
+  if (!refreshTimer) {
+    refreshTimer = setInterval(refrescarCache, PRINTER_REFRESH_MS);
+    if (typeof refreshTimer.unref === 'function') refreshTimer.unref();
+  }
+}
+
+/**
+ * Devuelve la lista de impresoras desde la cache en memoria, de inmediato.
+ * Nunca lanza y nunca ejecuta PowerShell en el camino de /status: si la cache
+ * aun no se ha poblado devuelve []. Se mantiene async por compatibilidad con
+ * el contrato de server.js.
+ * @returns {Promise<string[]>}
+ */
+export async function listPrinters() {
+  return printerCache;
+}
+
+export default { printRaw, listPrinters, startPrinterCache };

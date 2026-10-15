@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildTicketBuffer, buildOpenDrawerBuffer } from './escpos.js';
-import { printRaw, listPrinters } from './rawPrint.js';
+import { printRaw, listPrinters, startPrinterCache } from './rawPrint.js';
 import { info, error } from './logger.js';
 
 const VERSION = '1.0.0';
@@ -215,6 +215,9 @@ process.on('unhandledRejection', (err) => error('unhandledRejection', err));
 server.listen(PORT, HOST, () => {
   info(`PuntoNube Print v${VERSION} escuchando en http://${HOST}:${PORT}`);
   info(`Impresora por defecto: '${DEFAULT_PRINTER}' | Ancho: ${DEFAULT_WIDTH_MM}mm`);
+  // Arranca el refresco en background de la cache de impresoras para que
+  // GET /status responda en ms (no lanza PowerShell por peticion).
+  startPrinterCache();
 });
 
 export { server, origenPermitido };

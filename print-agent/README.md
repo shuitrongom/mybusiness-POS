@@ -91,18 +91,53 @@ sin que Windows "renderice" nada. Las opciones evaluadas:
 - Binarios nativos obligarian a compilar por arquitectura.
 
 El metodo elegido es **P/Invoke a `winspool.drv`** (la API del spooler de
-Windows) desde PowerShell con `Add-Type`: se abre la impresora por nombre con
-`OpenPrinter`, se inicia un documento con datatype `"RAW"` (`StartDocPrinter`),
-se escribe el buffer con `WritePrinter` y se cierra. Es el metodo mas robusto
-**sin compilar binarios nativos** (solo PowerShell + el .NET del sistema, que
-ya vienen en Windows) e imprime **por nombre de impresora**, sin depender de
-que este compartida.
+Windows) desde PowerShell: se abre la impresora por nombre con `OpenPrinter`,
+se inicia un documento con datatype `"RAW"` (`StartDocPrinter`), se escribe el
+buffer con `WritePrinter` y se cierra. Es el metodo mas robusto **sin compilar
+binarios nativos** (solo PowerShell + el .NET del sistema, que ya vienen en
+Windows) e imprime **por nombre de impresora**, sin depender de que este
+compartida.
 
-El buffer se escribe primero a un archivo temporal `.prn` en `%TEMP%` y el
-script PowerShell lo lee con `ReadAllBytes`, para evitar problemas de
-codificacion al pasar bytes por la linea de comandos. El temporal se borra al
-terminar. Hay un timeout de 15 s; errores del spooler (impresora inexistente,
-apagada o sin papel) se devuelven como mensaje legible.
+El buffer se escribe primero a un archivo temporal `.prn` en `%TEMP%`, el
+worker lo lee con `ReadAllBytes` y el temporal se borra al terminar.
+
+## Arquitectura: worker persistente + cola en serie + cache de /status
+
+La version anterior compilaba el helper C# (`Add-Type`) en **cada** impresion,
+lo que agregaba 2-5 s por ticket y, bajo carga, hacia que el POS pareciera
+"colgado". Esta version lo elimina:
+
+- **Worker PowerShell persistente** (`src/raw-print-worker.ps1`): un proceso de
+  larga vida que hace `Add-Type` del helper `RawPrinterHelper` **una sola vez**
+  al arrancar. Luego recibe trabajos por `stdin` (una linea JSON
+  `{ id, printer, file }` por trabajo) y responde por `stdout`
+  (`{ id, ok }` o `{ id, ok:false, error }`). `rawPrint.js` lanza el worker la
+  primera vez que se necesita y lo mantiene vivo; si el proceso muere, se
+  relanza en la siguiente impresion. Tras el arranque, cada impresion solo paga
+  el envio al spooler (tipicamente < 1 s).
+- **Cola FIFO en serie con timeout por trabajo**: `printRaw()` encola el
+  trabajo y los procesa de a uno. Cada trabajo tiene un timeout (20 s) que lo
+  rechaza con un mensaje legible **sin bloquear los siguientes**: un ticket que
+  falla, expira o va a una impresora apagada no detiene la cola.
+- **Cache de impresoras**: `listPrinters()` devuelve de inmediato una lista en
+  memoria. Un refresco en background ejecuta `Get-Printer`/`wmic` al arrancar
+  (via `startPrinterCache()`, llamado al escuchar) y cada ~5 min, por lo que
+  `GET /status` responde en milisegundos y nunca lanza PowerShell en linea.
+
+### IMPORTANTE: reiniciar el agente para tomar esta version
+
+El agente carga el worker y el helper C# **al arrancar**. Para que el cliente
+tome esta version debe **detener y volver a arrancar** el agente:
+
+- Opcion B (Node): cierra la ventana / proceso `npm start` y vuelve a ejecutar
+  `npm start`.
+- Opcion A (`.exe`): cierra el `puntonube-print.exe` en ejecucion y vuelve a
+  abrirlo. Si el `.exe` se re-empaqueta, hay que **reinstalar/re-empaquetar**
+  (`npm run build:exe`) y reemplazar el ejecutable; el `.ps1` del worker ya se
+  incluye como asset del paquete.
+
+Errores del spooler (impresora inexistente, apagada o sin papel) se siguen
+devolviendo como mensaje legible por trabajo.
 
 ---
 
