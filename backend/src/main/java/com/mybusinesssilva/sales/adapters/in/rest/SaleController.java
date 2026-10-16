@@ -115,7 +115,22 @@ public class SaleController {
                                 request.globalDiscount(), request.note(), onCredit,
                                 lines, payments, request.idempotencyKey());
 
-                SaleService.SaleResult result = saleService.registerSale(sale);
+                // Renglones marcados como merma de panadería: wastePrice = unitPrice del
+                // renglón,
+                // entryPrice = entryPrice del renglón (puede ser null -> lo resuelve el
+                // backend).
+                List<com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase.WasteLineCommand> wasteLines = request
+                                .lines().stream()
+                                .filter(l -> l.productId() != null
+                                                && Boolean.TRUE.equals(l.waste()))
+                                .map(l -> new com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase.WasteLineCommand(
+                                                l.productId(), l.quantity(), l.entryPrice(),
+                                                l.unitPrice()))
+                                .toList();
+
+                SaleService.SaleResult result = wasteLines.isEmpty()
+                                ? saleService.registerSale(sale)
+                                : saleService.registerSaleWithWaste(sale, wasteLines);
                 HttpStatus status = result.duplicated() ? HttpStatus.OK : HttpStatus.CREATED;
                 return ResponseEntity.status(status).body(result);
         }
@@ -214,7 +229,9 @@ public class SaleController {
                         @NotNull BigDecimal quantity,
                         @NotNull BigDecimal unitPrice,
                         BigDecimal discount,
-                        @Size(max = 16) String unit) {
+                        @Size(max = 16) String unit,
+                        Boolean waste,
+                        BigDecimal entryPrice) {
         }
 
         /** Pago de venta. */

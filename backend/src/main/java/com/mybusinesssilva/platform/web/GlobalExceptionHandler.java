@@ -1,5 +1,6 @@
 package com.mybusinesssilva.platform.web;
 
+import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -10,16 +11,21 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * Manejo global de errores para la API. Traduce las excepciones de negocio y de validación a
- * respuestas HTTP claras y consistentes, sin filtrar detalles internos (stack traces).
+ * Manejo global de errores para la API. Traduce las excepciones de negocio y de
+ * validación a
+ * respuestas HTTP claras y consistentes, sin filtrar detalles internos (stack
+ * traces).
  *
- * <p>Usa {@link ProblemDetail} (RFC 7807), el estándar de Spring 6+/Boot 3+ para errores.
+ * <p>
+ * Usa {@link ProblemDetail} (RFC 7807), el estándar de Spring 6+/Boot 3+ para
+ * errores.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     /**
-     * Errores de reglas de negocio (por ejemplo, límite de crédito excedido, plan inexistente).
+     * Errores de reglas de negocio (por ejemplo, límite de crédito excedido, plan
+     * inexistente).
      * Se traducen a 422 (Unprocessable Entity) con el mensaje de negocio.
      */
     @ExceptionHandler(IllegalArgumentException.class)
@@ -32,7 +38,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Estados inválidos de una operación (por ejemplo, cancelar un CFDI no timbrado).
+     * Estados inválidos de una operación (por ejemplo, cancelar un CFDI no
+     * timbrado).
      */
     @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleInvalidState(IllegalStateException ex) {
@@ -44,9 +51,23 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Errores de validación de los datos de entrada (Bean Validation). Devuelve 400 con el
+     * Errores de validación de los datos de entrada (Bean Validation). Devuelve 400
+     * con el
      * detalle de los campos inválidos.
      */
+    @ExceptionHandler(InsufficientStockException.class)
+    public ProblemDetail handleInsufficientStock(InsufficientStockException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("INSUFFICIENT_STOCK");
+        problem.setProperty("productId", ex.productId());
+        problem.setProperty("productName", ex.productName());
+        problem.setProperty("available", ex.available());
+        problem.setProperty("requested", ex.requested());
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> fieldErrors = new HashMap<>();

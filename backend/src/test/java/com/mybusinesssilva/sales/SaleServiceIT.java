@@ -228,7 +228,173 @@ class SaleServiceIT extends AbstractIntegrationTest {
                 assertThat(specialCount).isEqualTo(1);
         }
 
+        @Test
+        void enforceStockSaleSubtractsWhenEnough() {
+                long productId = setup("Concha");
+                markEnforceStock(productId);
+                inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
+                                new BigDecimal("10"), "PROD:1", "panadero");
+
+                Sale sale = Sale.complete(branchId, null, null, "cajero", null,
+                                List.of(new SaleLine(productId, "Concha", new BigDecimal("4"),
+                                                new BigDecimal("8.00"), BigDecimal.ZERO)),
+                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("32.00"))),
+                                null);
+                saleService.registerSale(sale);
+
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("6");
+        }
+
+        @Test
+        void enforceStockSaleThatExceedsThrowsAndDoesNotPersistSale() {
+                long productId = setup("Bolillo");
+                markEnforceStock(productId);
+                inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
+                                new BigDecimal("3"), "PROD:1", "panadero");
+
+                Sale sale = Sale.complete(branchId, null, null, "cajero", null,
+                                List.of(new SaleLine(productId, "Bolillo", new BigDecimal("5"),
+                                                new BigDecimal("4.00"), BigDecimal.ZERO)),
+                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("20.00"))),
+                                null);
+
+                org.assertj.core.api.Assertions.assertThatThrownBy(() -> saleService.registerSale(sale))
+                                .isInstanceOf(com.mybusinesssilva.inventory.domain.model.InsufficientStockException.class);
+
+                JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+                // La venta NO se persistió (rollback) y el stock no cambió.
+                Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM sale", Integer.class);
+                assertThat(count).isZero();
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("3");
+        }
+
+        @Test
+        void enforceStockRuleDoesNotAffectUncontrolledProducts() {
+                long productId = setup("Refresco");
+                // enforce_stock queda en FALSE (default): se permite stock negativo como hoy.
+                inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
+                                new BigDecimal("2"), "COMPRA", "tester");
+
+                Sale sale = Sale.complete(branchId, null, null, "cajero", null,
+                                List.of(new SaleLine(productId, "Refresco", new BigDecimal("5"),
+                                                new BigDecimal("10.00"), BigDecimal.ZERO)),
+                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("50.00"))),
+                                null);
+                SaleService.SaleResult r = saleService.registerSale(sale);
+
+                assertThat(r.saleId()).isNotNull();
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("-3");
+        }
+
+        @Test
+        void concurrentStrictOutboundLetsOnlyOnePass() throws Exception {
+                long productId = setup("Telera");
+                markEnforceStock(productId);
+                inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
+                                new BigDecimal("5"), "PROD:1", "panadero");
+                String tenant = TenantContext.getTenantId();
+
+                java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+                java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+                java.util.concurrent.Callable<Boolean> attempt = () -> {
+                        TenantContext.setTenantId(tenant);
+                        try {
+                                start.await();
+                                inventoryService.applyOutboundStrict(productId, branchId,
+                                                MovementType.SALE, new BigDecimal("4"), "SALE:x", "cajero");
+                                return Boolean.TRUE;
+                        } catch (com.mybusinesssilva.inventory.domain.model.InsufficientStockException e) {
+                                return Boolean.FALSE;
+                        } finally {
+                                TenantContext.clear();
+                        }
+                };
+                var f1 = pool.submit(attempt);
+                var f2 = pool.submit(attempt);
+                start.countDown();
+                boolean r1 = f1.get();
+                boolean r2 = f2.get();
+                pool.shutdown();
+                TenantContext.setTenantId(tenant);
+
+                // Solo una de las dos salidas de 4 (sobre 5) puede pasar; la otra se rechaza.
+                assertThat(r1 ^ r2).isTrue();
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("1");
+        }
+
+        @Test
+        void saleWithWasteRecordsTraceabilityAndDiscountsStock() {
+                long productId = setup("ConchaMerma");
+                markBakery(productId);
+                inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
+                                new BigDecimal("10"), "PROD:1", "panadero");
+
+                Sale sale = Sale.complete(branchId, null, null, "cajero", null,
+                                List.of(new SaleLine(productId, "ConchaMerma", new BigDecimal("3"),
+                                                new BigDecimal("3.00"), BigDecimal.ZERO)),
+                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("9.00"))),
+                                null);
+                var waste = List.of(
+                                new com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase.WasteLineCommand(
+                                                productId, new BigDecimal("3"), new BigDecimal("5.00"),
+                                                new BigDecimal("3.00")));
+
+                SaleService.SaleResult r = saleService.registerSaleWithWaste(sale, waste);
+
+                JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+                Map<String, Object> row = jdbc.queryForMap(
+                                "SELECT quantity, entry_price, waste_price, difference FROM bakery_waste_sale "
+                                                + "WHERE sale_id = ? AND product_id = ?",
+                                r.saleId(), productId);
+                assertThat((BigDecimal) row.get("quantity")).isEqualByComparingTo("3");
+                assertThat((BigDecimal) row.get("entry_price")).isEqualByComparingTo("5.00");
+                assertThat((BigDecimal) row.get("waste_price")).isEqualByComparingTo("3.00");
+                assertThat((BigDecimal) row.get("difference")).isEqualByComparingTo("2.00");
+                // Stock descontado por la venta: 10 - 3 = 7.
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("7");
+        }
+
+        @Test
+        void saleWithInvalidWasteRevertsEverything() {
+                long productId = setup("PanMalMerma");
+                markBakery(productId);
+                inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
+                                new BigDecimal("10"), "PROD:1", "panadero");
+
+                Sale sale = Sale.complete(branchId, null, null, "cajero", null,
+                                List.of(new SaleLine(productId, "PanMalMerma", new BigDecimal("2"),
+                                                new BigDecimal("9.00"), BigDecimal.ZERO)),
+                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("18.00"))),
+                                null);
+                // waste_price (9) > entry_price (5): regla de negocio -> revierte toda la
+                // transacción.
+                var waste = List.of(
+                                new com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase.WasteLineCommand(
+                                                productId, new BigDecimal("2"), new BigDecimal("5.00"),
+                                                new BigDecimal("9.00")));
+
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                                () -> saleService.registerSaleWithWaste(sale, waste))
+                                .isInstanceOf(IllegalArgumentException.class);
+
+                JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sale", Integer.class)).isZero();
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM bakery_waste_sale", Integer.class)).isZero();
+                // Ni la venta ni los movimientos de salida quedaron: el stock sigue en 10.
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("10");
+        }
+
         // --- helpers ---
+
+        private void markEnforceStock(long productId) {
+                new JdbcTemplate(dataSource).update(
+                                "UPDATE product SET is_bakery = TRUE, enforce_stock = TRUE WHERE id = ?", productId);
+        }
+
+        private void markBakery(long productId) {
+                new JdbcTemplate(dataSource).update(
+                                "UPDATE product SET is_bakery = TRUE WHERE id = ?", productId);
+        }
 
         private long setup(String productName) {
                 long planId = planRepository.findByCode("PROFESSIONAL").orElseThrow().id();

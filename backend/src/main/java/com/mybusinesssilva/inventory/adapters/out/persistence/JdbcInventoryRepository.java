@@ -11,7 +11,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * Implementación JDBC del repositorio de inventario, sobre el schema del tenant en curso.
+ * Implementación JDBC del repositorio de inventario, sobre el schema del tenant
+ * en curso.
  */
 @Repository
 public class JdbcInventoryRepository implements InventoryRepository {
@@ -36,7 +37,8 @@ public class JdbcInventoryRepository implements InventoryRepository {
 
     @Override
     public BigDecimal adjustQuantity(long productId, long branchId, BigDecimal delta) {
-        // Upsert atómico: si no existe el registro se crea; si existe, se suma el delta.
+        // Upsert atómico: si no existe el registro se crea; si existe, se suma el
+        // delta.
         return jdbc.sql("""
                 INSERT INTO inventory_stock (product_id, branch_id, quantity)
                 VALUES (:p, :b, :delta)
@@ -49,6 +51,23 @@ public class JdbcInventoryRepository implements InventoryRepository {
                 .param("delta", delta)
                 .query(BigDecimal.class)
                 .single();
+    }
+
+    @Override
+    public Optional<BigDecimal> adjustQuantityIfEnough(long productId, long branchId, BigDecimal qty) {
+        // Descuento atómico y condicionado: el WHERE quantity >= :qty garantiza que dos
+        // salidas concurrentes no dejen existencia negativa; la segunda recibe 0 filas.
+        return jdbc.sql("""
+                UPDATE inventory_stock
+                   SET quantity = quantity - :qty, updated_at = now()
+                 WHERE product_id = :p AND branch_id = :b AND quantity >= :qty
+                RETURNING quantity
+                """)
+                .param("p", productId)
+                .param("b", branchId)
+                .param("qty", qty)
+                .query(BigDecimal.class)
+                .optional();
     }
 
     @Override
