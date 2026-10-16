@@ -1,0 +1,38 @@
+=== BRANCH ===
+feature/producto-rapido
+=== STATUS BEFORE ===
+M  backend/src/main/java/com/mybusinesssilva/bi/application/BiService.java
+M  backend/src/main/java/com/mybusinesssilva/sales/adapters/in/rest/SaleController.java
+M  backend/src/main/java/com/mybusinesssilva/sales/adapters/out/persistence/JdbcSaleRepository.java
+M  backend/src/main/java/com/mybusinesssilva/sales/application/SaleService.java
+M  backend/src/main/java/com/mybusinesssilva/sales/application/SalesReturnService.java
+M  backend/src/main/java/com/mybusinesssilva/sales/domain/model/SaleLine.java
+M  backend/src/main/java/com/mybusinesssilva/sales/domain/port/out/SaleRepository.java
+A  backend/src/main/resources/db/migration/tenant/V31__sale_line_free_item.sql
+M  backend/src/test/java/com/mybusinesssilva/sales/domain/SaleTest.java
+?? _commit.bat
+?? commit_out.txt
+?? gitstatus.txt
+=== ADD ===
+The following paths are ignored by one of your .gitignore files:
+.agents
+hint: Use -f if you really want to add them.
+hint: Disable this message with "git config set advice.addIgnoredFile false"
+ADD_EXIT=1
+=== STAGED ===
+backend/src/main/java/com/mybusinesssilva/bi/application/BiService.java
+backend/src/main/java/com/mybusinesssilva/sales/adapters/in/rest/SaleController.java
+backend/src/main/java/com/mybusinesssilva/sales/adapters/out/persistence/JdbcSaleRepository.java
+backend/src/main/java/com/mybusinesssilva/sales/application/SaleService.java
+backend/src/main/java/com/mybusinesssilva/sales/application/SalesReturnService.java
+backend/src/main/java/com/mybusinesssilva/sales/domain/model/SaleLine.java
+backend/src/main/java/com/mybusinesssilva/sales/domain/port/out/SaleRepository.java
+backend/src/main/resources/db/migration/tenant/V31__sale_line_free_item.sql
+backend/src/test/java/com/mybusinesssilva/sales/domain/SaleTest.java
+=== COMMIT ===
+[feature/producto-rapido eb48386] feat(sales): allow free product-less sale lines (backend)
+ 9 files changed, 101 insertions(+), 24 deletions(-)
+ create mode 100644 backend/src/main/resources/db/migration/tenant/V31__sale_line_free_item.sql
+COMMIT_EXIT=0
+=== LOG ===
+eb48386 feat(sales): allow free product-less sale lines (backend)
