@@ -1,12 +1,17 @@
 package com.mybusinesssilva.platform.billing;
 
+import com.mybusinesssilva.bi.application.insight.Insight;
+import com.mybusinesssilva.bi.application.insight.InsightEngine;
+import com.mybusinesssilva.bi.domain.model.TimeSeriesPoint;
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -15,6 +20,12 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>No expone datos operativos de los negocios (ventas, inventario, etc.): eso pertenece a cada
  * negocio. Aquí solo se mide el desempeño del SaaS. Requiere rol SUPER_ADMIN.
+ *
+ * <p>El resumen, la mezcla de planes y las ventas recientes se resuelven aquí mismo (forma JSON
+ * estable que ya consume el panel del Super Admin). Las series mensuales, las pruebas por vencer y
+ * los insights se delegan a {@link SuperAdminBiService} y al {@link InsightEngine} compartido con
+ * el BI de negocio (inyectado por tipo para que una futura implementación con IA lo sustituya sin
+ * tocar este controlador).
  */
 @RestController
 @RequestMapping("/api/v1/admin/bi")
@@ -22,9 +33,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class SuperAdminBiController {
 
     private final JdbcClient jdbc;
+    private final SuperAdminBiService biService;
+    private final InsightEngine insightEngine;
 
-    public SuperAdminBiController(JdbcClient jdbc) {
+    public SuperAdminBiController(JdbcClient jdbc, SuperAdminBiService biService,
+            InsightEngine insightEngine) {
         this.jdbc = jdbc;
+        this.biService = biService;
+        this.insightEngine = insightEngine;
     }
 
     /** Resumen general del SaaS: totales de negocios por estado e ingresos. */
@@ -93,6 +109,36 @@ public class SuperAdminBiController {
                         "voucherType", rs.getString("voucher_type"),
                         "date", rs.getTimestamp("created_at").toInstant().toString()))
                 .list();
+    }
+
+    /** Serie mensual de negocios creados (agrupada en hora local de México). */
+    @GetMapping("/businesses/series")
+    public List<TimeSeriesPoint> businessesSeries(@RequestParam(defaultValue = "12") int months) {
+        return biService.businessesByMonth(months);
+    }
+
+    /** Serie mensual de ingresos del Super Admin (agrupada en hora local de México). */
+    @GetMapping("/revenue/series")
+    public List<TimeSeriesPoint> revenueSeries(@RequestParam(defaultValue = "12") int months) {
+        return biService.revenueByMonth(months);
+    }
+
+    /** Negocios en prueba por vencer dentro de la ventana indicada (15 días por defecto). */
+    @GetMapping("/trials-ending")
+    public List<TrialEnding> trialsEnding(@RequestParam(defaultValue = "15") int days) {
+        return biService.trialsEndingSoon(days);
+    }
+
+    /**
+     * Insights de plataforma en español: reutiliza el mismo {@link InsightEngine} del BI de
+     * negocio, pasándole las métricas de la plataforma. La serie de ingresos mensual se entrega
+     * bajo la clave {@code series} para que el motor emita la proyección de ingresos.
+     */
+    @GetMapping("/insights")
+    public List<Insight> insights() {
+        Map<String, Object> metrics = new HashMap<>();
+        metrics.put("series", biService.revenueByMonth(12));
+        return insightEngine.generate("plataforma", metrics);
     }
 
     private long count(String sql) {
