@@ -4,12 +4,17 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Venta. Concentra las reglas de cálculo de totales, el descuento global y la validación de
- * pagos. Soporta tres modalidades: venta de contado (los pagos cubren el total), venta a
- * crédito (los pagos cubren solo una parte y el resto genera una cuenta por cobrar) y
+ * Venta. Concentra las reglas de cálculo de totales, el descuento global y la
+ * validación de
+ * pagos. Soporta tres modalidades: venta de contado (los pagos cubren el
+ * total), venta a
+ * crédito (los pagos cubren solo una parte y el resto genera una cuenta por
+ * cobrar) y
  * cotización/apartado (sin pagos ni afectación de inventario).
  *
- * <p>Es prácticamente inmutable: se construye con sus renglones y pagos ya definidos; solo
+ * <p>
+ * Es prácticamente inmutable: se construye con sus renglones y pagos ya
+ * definidos; solo
  * cambian el id/folio asignados al persistir y el estado al cancelar.
  */
 public class Sale {
@@ -32,9 +37,9 @@ public class Sale {
     private SaleStatus status;
 
     private Sale(long branchId, Long cashRegisterId, Long shiftId, String cashier,
-                 String salesperson, Long customerId, short priceListId,
-                 BigDecimal globalDiscount, String note, boolean onCredit,
-                 List<SaleLine> lines, List<Payment> payments, String idempotencyKey) {
+            String salesperson, Long customerId, short priceListId,
+            BigDecimal globalDiscount, String note, boolean onCredit,
+            List<SaleLine> lines, List<Payment> payments, String idempotencyKey) {
         this.branchId = branchId;
         this.cashRegisterId = cashRegisterId;
         this.shiftId = shiftId;
@@ -52,37 +57,44 @@ public class Sale {
     }
 
     /**
-     * Crea una venta completada de CONTADO, validando que haya renglones y que los pagos cubran
-     * el total (incluyendo descuento global). Versión simple compatible con el flujo anterior.
+     * Crea una venta completada de CONTADO, validando que haya renglones y que los
+     * pagos cubran
+     * el total (incluyendo descuento global). Versión simple compatible con el
+     * flujo anterior.
      */
     public static Sale complete(long branchId, Long cashRegisterId, Long shiftId, String cashier,
-                                Long customerId, List<SaleLine> lines, List<Payment> payments,
-                                String idempotencyKey) {
+            Long customerId, List<SaleLine> lines, List<Payment> payments,
+            String idempotencyKey) {
         return complete(branchId, cashRegisterId, shiftId, cashier, cashier, customerId,
                 (short) 1, BigDecimal.ZERO, null, false, lines, payments, idempotencyKey);
     }
 
     /**
-     * Crea una venta completada con todos los metadatos comerciales y soporte de crédito.
+     * Crea una venta completada con todos los metadatos comerciales y soporte de
+     * crédito.
      *
      * <ul>
-     *   <li>Contado ({@code onCredit = false}): los pagos deben cubrir el total; de lo contrario
-     *       se lanza excepción.</li>
-     *   <li>Crédito ({@code onCredit = true}): los pagos pueden ser menores al total (incluso
-     *       cero). Requiere cliente asignado, porque el saldo genera una cuenta por cobrar.</li>
+     * <li>Contado ({@code onCredit = false}): los pagos deben cubrir el total; de
+     * lo contrario
+     * se lanza excepción.</li>
+     * <li>Crédito ({@code onCredit = true}): los pagos pueden ser menores al total
+     * (incluso
+     * cero). Requiere cliente asignado, porque el saldo genera una cuenta por
+     * cobrar.</li>
      * </ul>
      *
      * @param salesperson    vendedor (puede coincidir con el cajero)
      * @param priceListId    lista de precio usada (1..5)
-     * @param globalDiscount descuento global de la venta (sobre el total de renglones)
+     * @param globalDiscount descuento global de la venta (sobre el total de
+     *                       renglones)
      * @param note           nota/observaciones (opcional)
      * @param onCredit       true si es venta a crédito (permite pagos parciales)
      */
     public static Sale complete(long branchId, Long cashRegisterId, Long shiftId, String cashier,
-                                String salesperson, Long customerId, short priceListId,
-                                BigDecimal globalDiscount, String note, boolean onCredit,
-                                List<SaleLine> lines, List<Payment> payments,
-                                String idempotencyKey) {
+            String salesperson, Long customerId, short priceListId,
+            BigDecimal globalDiscount, String note, boolean onCredit,
+            List<SaleLine> lines, List<Payment> payments,
+            String idempotencyKey) {
         if (lines == null || lines.isEmpty()) {
             throw new IllegalArgumentException("La venta debe tener al menos un renglón");
         }
@@ -114,11 +126,12 @@ public class Sale {
     }
 
     /**
-     * Crea una cotización o apartado: tiene renglones pero no exige pagos ni afecta inventario.
+     * Crea una cotización o apartado: tiene renglones pero no exige pagos ni afecta
+     * inventario.
      * Se guarda con estado QUOTE para consultarse o convertirse en venta después.
      */
     public static Sale quote(long branchId, String cashier, Long customerId,
-                             List<SaleLine> lines) {
+            List<SaleLine> lines) {
         if (lines == null || lines.isEmpty()) {
             throw new IllegalArgumentException("La cotización debe tener al menos un renglón");
         }
@@ -128,7 +141,10 @@ public class Sale {
         return sale;
     }
 
-    /** Subtotal: suma de los importes de los renglones (precio * cantidad), sin descuentos. */
+    /**
+     * Subtotal: suma de los importes de los renglones (precio * cantidad), sin
+     * descuentos.
+     */
     public BigDecimal subtotal() {
         return lines.stream()
                 .map(l -> l.unitPrice().multiply(l.quantity()))
@@ -154,7 +170,10 @@ public class Sale {
         return payments.stream().map(Payment::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    /** Saldo pendiente (total - pagado), nunca negativo. Relevante en ventas a crédito. */
+    /**
+     * Saldo pendiente (total - pagado), nunca negativo. Relevante en ventas a
+     * crédito.
+     */
     public BigDecimal balanceDue() {
         BigDecimal due = total().subtract(totalPaid());
         return due.signum() < 0 ? BigDecimal.ZERO : due;
@@ -237,6 +256,19 @@ public class Sale {
 
     public SaleStatus getStatus() {
         return status;
+    }
+
+    /**
+     * Clasificación derivada de la venta: {@link SaleType#SPECIAL} si algún renglón
+     * es un
+     * artículo libre (sin producto de catálogo), {@link SaleType#NORMAL} en caso
+     * contrario.
+     * Se calcula siempre en el dominio; no se confía en ningún campo enviado por el
+     * cliente.
+     */
+    public SaleType getSaleType() {
+        boolean anyFreeItem = lines.stream().anyMatch(l -> l.productId() == null);
+        return anyFreeItem ? SaleType.SPECIAL : SaleType.NORMAL;
     }
 
     public void markVoided() {
