@@ -1882,15 +1882,270 @@
 }
 
 /* Modal Producto rápido: fila de precio + cantidad y nota de IVA. */
-.pos-quick-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+/* =====================================================================
+   Modal PREMIUM "Producto rápido" (venta especial de panadería)
+   ===================================================================== */
+.pos-quick-modal {
+  position: relative;
+  width: calc(100% - 32px);
+  max-width: 460px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
-.pos-quick-hint {
-  margin: 2px 0 0;
-  font-size: var(--fs-sm, 12px);
+/* Encabezado con degradado y sello de venta especial */
+.pos-quick-hero {
+  position: relative;
+  padding: 20px 22px 18px;
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, #7c5cff 26%, transparent) 0%, transparent 60%),
+    linear-gradient(135deg, color-mix(in srgb, var(--brand-600, #2563eb) 24%, var(--surface)) 0%, var(--surface) 70%);
+  border-bottom: 1px solid var(--border);
+}
+
+.pos-quick-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, #7c5cff, #5b8cff);
+  padding: 4px 10px;
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(124, 92, 255, 0.35);
+}
+
+.pos-quick-hero-title {
+  margin: 10px 0 2px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--heading);
+}
+
+.pos-quick-hero-sub {
+  margin: 0;
+  max-width: 92%;
+  font-size: 12.5px;
+  line-height: 1.45;
   color: var(--text-muted);
+}
+
+.pos-quick-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  padding: 6px;
+  border: none;
+  border-radius: 10px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-2, #0003) 60%, transparent);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.pos-quick-close:hover {
+  color: var(--heading);
+  background: var(--surface-2, rgba(255, 255, 255, 0.08));
+}
+
+/* Cuerpo */
+.pos-quick-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 22px 6px;
+}
+
+.pos-quick-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pos-quick-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pos-quick-input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--heading);
+  background: var(--surface-2, rgba(255, 255, 255, 0.05));
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pos-quick-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.pos-quick-input:focus {
+  outline: none;
+  border-color: var(--brand-600, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-600, #2563eb) 20%, transparent);
+}
+
+/* Chips de unidad de medida */
+.pos-quick-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pos-quick-unit {
+  flex: 1 0 auto;
+  min-width: 62px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: capitalize;
+  color: var(--text-muted);
+  background: var(--surface-2, rgba(255, 255, 255, 0.05));
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pos-quick-unit:hover {
+  color: var(--heading);
+  border-color: color-mix(in srgb, var(--brand-600, #2563eb) 40%, var(--border));
+}
+
+.pos-quick-unit.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand-600, #2563eb), color-mix(in srgb, var(--brand-600, #2563eb) 70%, #7c5cff));
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+}
+
+/* Precio + IVA en dos columnas */
+.pos-quick-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.pos-quick-price {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pos-quick-price-symbol {
+  position: absolute;
+  left: 13px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.pos-quick-price .pos-quick-input {
+  padding-left: 28px;
+}
+
+.pos-quick-tax {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pos-quick-tax-btn {
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-2, rgba(255, 255, 255, 0.05));
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pos-quick-tax-btn:hover {
+  color: var(--heading);
+}
+
+.pos-quick-tax-btn.is-active {
+  color: var(--brand-600, #2563eb);
+  background: color-mix(in srgb, var(--brand-600, #2563eb) 12%, transparent);
+  border-color: var(--brand-600, #2563eb);
+}
+
+.pos-quick-note {
+  margin: -2px 0 0;
+  font-size: 12px;
   line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* Resumen del renglón */
+.pos-quick-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, #12b886 12%, var(--surface-2, transparent));
+  border: 1px solid color-mix(in srgb, #12b886 30%, transparent);
+  border-radius: 14px;
+}
+
+.pos-quick-summary-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pos-quick-summary-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--heading);
+  text-transform: capitalize;
+}
+
+.pos-quick-summary-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.pos-quick-summary-amount {
+  font-size: 24px;
+  font-weight: 800;
+  color: #12b886;
+}
+
+/* Acciones */
+.pos-quick-actions {
+  display: flex;
+  gap: 12px;
+  padding: 18px 22px 22px;
+}
+
+.pos-quick-actions .btn-ghost {
+  flex: 0 0 auto;
+}
+
+.pos-quick-actions .pos-confirm {
+  flex: 1;
+  justify-content: center;
 }

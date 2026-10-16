@@ -78,6 +78,8 @@ interface CartLine {
   discount: number;
   /** IVA informativo del renglón (precios con IVA incluido; no suma al total). */
   taxRate?: number;
+  /** Unidad de medida del artículo libre (pieza, kg, lt, …). Solo para artículos libres. */
+  unit?: string;
   /** true si es un artículo libre capturado con "Producto rápido". */
   free?: boolean;
 }
@@ -382,11 +384,12 @@ export function PosPage() {
   }, [openCheckout, bumpLast, checkoutOpen, customerOpen, discountOpen, quickOpen, ticket, cart.length]);
 
   /** Agrega al carrito un artículo libre capturado en el modal "Producto rápido". */
-  const addQuickItem = useCallback((item: { description: string; unitPrice: number; quantity: number; taxRate: number }) => {
+  const addQuickItem = useCallback((item: { description: string; unitPrice: number; unit: string; taxRate: number }) => {
+    // El artículo libre entra con cantidad 1; el cajero la ajusta en el carrito con − / +.
     addLine({
       id: crypto.randomUUID(), productId: null, categoryId: null,
-      description: item.description.trim(), quantity: item.quantity,
-      unitPrice: item.unitPrice, discount: 0, taxRate: item.taxRate, free: true,
+      description: item.description.trim(), quantity: 1,
+      unitPrice: item.unitPrice, discount: 0, taxRate: item.taxRate, unit: item.unit, free: true,
     });
     setQuickOpen(false);
     setMessage(null);
@@ -412,6 +415,7 @@ export function PosPage() {
         quantity: l.quantity,
         unitPrice: l.unitPrice,
         discount: promoDiscountOf(l),
+        unit: l.unit ?? null,
       })),
       payments: payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: p.amount })),
       idempotencyKey,
@@ -693,7 +697,7 @@ export function PosPage() {
                   <div className="pos-line-info">
                     <div className="pos-line-name">
                       {l.free ? (
-                        <span className="pos-line-free"><Sparkles size={11} /> libre</span>
+                        <span className="pos-line-free"><Sparkles size={11} /> especial{l.unit ? ` · ${l.unit}` : ''}</span>
                       ) : (
                         <span className="pos-line-code">#{l.productId}</span>
                       )}{' '}
@@ -1070,29 +1074,34 @@ function DiscountModal({ subtotal, current, onCancel, onApply }:
   );
 }
 
+/** Unidades de medida para artículos de panadería capturados con Producto rápido. */
+const QUICK_UNITS = ['pieza', 'kg', 'lt', 'bolsa', 'costal', 'docena'] as const;
+type QuickUnit = typeof QUICK_UNITS[number];
+
 /**
- * Modal "Producto rápido": captura un artículo libre (sin catálogo) para venderlo al instante.
- * El precio se maneja con IVA incluido (igual que el POS); el selector de IVA es informativo y
- * no suma al total. Se habilita el confirmar solo con descripción y precio > 0.
+ * Modal "Producto rápido" (venta especial): captura un artículo que no está en el catálogo
+ * (harina, leche, azúcar y demás ventas esporádicas de la panadería) para venderlo al instante.
+ * El precio es con IVA incluido (igual que el resto del POS); el IVA es informativo y NO suma al
+ * total. La cantidad NO se captura aquí: el renglón entra con 1 y se ajusta en el carrito. La
+ * venta que incluya un artículo así queda clasificada como "especial" para el corte del admin.
  */
 function QuickItemModal({ onCancel, onConfirm }:
   {
     onCancel: () => void;
-    onConfirm: (item: { description: string; unitPrice: number; quantity: number; taxRate: number }) => void;
+    onConfirm: (item: { description: string; unitPrice: number; unit: QuickUnit; taxRate: number }) => void;
   }) {
   const [description, setDescription] = useState('');
   const [priceInput, setPriceInput] = useState('');
-  const [qtyInput, setQtyInput] = useState('1');
-  const [taxRate, setTaxRate] = useState(0.16);
+  const [unit, setUnit] = useState<QuickUnit>('pieza');
+  // Panadería: exento por defecto. El 16% queda disponible para otros giros.
+  const [taxRate, setTaxRate] = useState(0);
 
   const unitPrice = round2(Number(priceInput) || 0);
-  const quantity = Math.max(Number(qtyInput) || 0, 0);
-  const lineTotal = round2(unitPrice * quantity);
-  const canConfirm = description.trim().length > 0 && unitPrice > 0 && quantity > 0;
+  const canConfirm = description.trim().length > 0 && unitPrice > 0;
 
   const confirm = () => {
     if (!canConfirm) return;
-    onConfirm({ description: description.trim(), unitPrice, quantity, taxRate });
+    onConfirm({ description: description.trim(), unitPrice, unit, taxRate });
   };
 
   useEffect(() => {
@@ -1103,53 +1112,81 @@ function QuickItemModal({ onCancel, onConfirm }:
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canConfirm, description, priceInput, qtyInput, taxRate]);
+  }, [canConfirm, description, priceInput, unit, taxRate]);
 
   return (
     <motion.div className="pos-modal-overlay" onClick={onCancel}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-      <motion.div className="pos-modal pos-modal-sm" onClick={(e) => e.stopPropagation()}
-        initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+      <motion.div className="pos-quick-modal" onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.95, y: 14 }} animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97 }} transition={springSoft}>
-        <div className="pos-modal-head">
-          <h3><Sparkles size={18} /> Producto rápido</h3>
-          <button className="modal-close" onClick={onCancel} aria-label="Cerrar">×</button>
+
+        {/* Encabezado con sello de venta especial */}
+        <div className="pos-quick-hero">
+          <span className="pos-quick-hero-badge"><Sparkles size={14} /> Venta especial</span>
+          <h3 className="pos-quick-hero-title">Producto rápido</h3>
+          <p className="pos-quick-hero-sub">Artículo fuera del catálogo (harina, leche, azúcar…). Queda registrado aparte en el corte.</p>
+          <button className="pos-quick-close" onClick={onCancel} aria-label="Cerrar"><X size={18} /></button>
         </div>
 
-        <label className="pos-received">
-          <span>Descripción del artículo</span>
-          <input type="text" value={description} autoFocus maxLength={120}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ej. Servicio especial, artículo sin código…" />
-        </label>
-
-        <div className="pos-quick-row">
-          <label className="pos-received">
-            <span>Precio unitario</span>
-            <input type="number" min={0} step="0.01" value={priceInput} placeholder="0.00"
-              onChange={(e) => setPriceInput(e.target.value)} />
+        <div className="pos-quick-body">
+          {/* Descripción */}
+          <label className="pos-quick-field">
+            <span className="pos-quick-label">Descripción del artículo</span>
+            <input className="pos-quick-input" type="text" value={description} autoFocus maxLength={120}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ej. Harina de trigo 1 kg, Leche entera 1 L…" />
           </label>
-          <label className="pos-received">
-            <span>Cantidad</span>
-            <input type="number" min={0} step="0.001" value={qtyInput}
-              onChange={(e) => setQtyInput(e.target.value)} />
-          </label>
+
+          {/* Unidad de medida (chips) */}
+          <div className="pos-quick-field">
+            <span className="pos-quick-label">Unidad de medida</span>
+            <div className="pos-quick-units">
+              {QUICK_UNITS.map((u) => (
+                <button type="button" key={u}
+                  className={`pos-quick-unit ${unit === u ? 'is-active' : ''}`}
+                  onClick={() => setUnit(u)}>
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Precio + IVA */}
+          <div className="pos-quick-grid">
+            <label className="pos-quick-field">
+              <span className="pos-quick-label">Precio unitario</span>
+              <div className="pos-quick-price">
+                <span className="pos-quick-price-symbol">$</span>
+                <input className="pos-quick-input" type="number" min={0} step="0.01"
+                  value={priceInput} placeholder="0.00"
+                  onChange={(e) => setPriceInput(e.target.value)} />
+              </div>
+            </label>
+            <div className="pos-quick-field">
+              <span className="pos-quick-label">IVA</span>
+              <div className="pos-quick-tax">
+                <button type="button" className={`pos-quick-tax-btn ${taxRate === 0 ? 'is-active' : ''}`}
+                  onClick={() => setTaxRate(0)}>Exento 0%</button>
+                <button type="button" className={`pos-quick-tax-btn ${taxRate === 0.16 ? 'is-active' : ''}`}
+                  onClick={() => setTaxRate(0.16)}>IVA 16%</button>
+              </div>
+            </div>
+          </div>
+
+          <p className="pos-quick-note">Precio con IVA incluido. El IVA es informativo y no se suma al total.</p>
+
+          {/* Resumen del renglón */}
+          <div className="pos-quick-summary">
+            <div className="pos-quick-summary-left">
+              <span className="pos-quick-summary-label">Se agrega 1 {unit}</span>
+              <span className="pos-quick-summary-hint">Ajusta la cantidad después en el carrito</span>
+            </div>
+            <strong className="pos-quick-summary-amount">{money(unitPrice)}</strong>
+          </div>
         </div>
 
-        <div className="pos-methods">
-          <button type="button" className={`pos-method ${taxRate === 0.16 ? 'is-active' : ''}`}
-            onClick={() => setTaxRate(0.16)}>IVA 16%</button>
-          <button type="button" className={`pos-method ${taxRate === 0 ? 'is-active' : ''}`}
-            onClick={() => setTaxRate(0)}>Exento 0%</button>
-        </div>
-        <p className="pos-quick-hint">El precio se registra con IVA incluido. El IVA es informativo y no se suma al total.</p>
-
-        <div className="pos-change">
-          <span>Importe del renglón</span>
-          <strong>{money(lineTotal)}</strong>
-        </div>
-
-        <div className="pos-modal-actions">
+        <div className="pos-quick-actions">
           <button className="btn-ghost" onClick={onCancel}>Cancelar</button>
           <button className="pos-confirm" disabled={!canConfirm} onClick={confirm}>
             <Plus size={15} /> Agregar al carrito <span className="pos-key-hint">Enter</span>
