@@ -6,13 +6,21 @@
  * se degrada a solo-consola para no tumbar el servidor.
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// logs viven en print-agent/logs (un nivel arriba de src/)
-const LOG_DIR = path.join(__dirname, '..', 'logs');
+// Carpeta donde viven los logs. En DEV (node src/server.js) escribe en
+// print-agent/logs (un nivel arriba de src/, igual que antes). Empaquetado con
+// pkg (process.pkg truthy) __dirname apunta al snapshot virtual de solo
+// lectura (C:\snapshot\...), que NO se puede escribir; por eso bajo pkg los
+// logs van a una carpeta REAL en disco: %LOCALAPPDATA%\PuntoNubePrint\logs (o
+// os.tmpdir() si no existe LOCALAPPDATA). __dirname/__filename son nativos de
+// CommonJS, no requieren import.meta.
+const BASE_DIR = process.pkg
+  ? path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'PuntoNubePrint')
+  : path.join(__dirname, '..');
+const LOG_DIR = path.join(BASE_DIR, 'logs');
 
 /**
  * Devuelve la fecha en formato YYYY-MM-DD (hora local).
@@ -52,7 +60,7 @@ function aArchivo(linea) {
  * Registra un mensaje informativo.
  * @param {string} msg
  */
-export function info(msg) {
+function info(msg) {
   const linea = `[${sello()}] [INFO] ${msg}`;
   // eslint-disable-next-line no-console
   console.log(linea);
@@ -64,7 +72,7 @@ export function info(msg) {
  * @param {string} msg
  * @param {unknown} [err]
  */
-export function error(msg, err) {
+function error(msg, err) {
   let detalle = '';
   if (err) {
     detalle = err instanceof Error ? ` -> ${err.message}` : ` -> ${String(err)}`;
@@ -75,4 +83,4 @@ export function error(msg, err) {
   aArchivo(linea);
 }
 
-export default { info, error };
+module.exports = { info, error };

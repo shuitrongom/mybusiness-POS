@@ -4,9 +4,9 @@
  * impresora fisica.
  */
 
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { buildTicketBuffer, buildOpenDrawerBuffer, colsFor } from './escpos.js';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { buildTicketBuffer, buildOpenDrawerBuffer, colsFor } = require('./escpos.js');
 
 // Secuencias clave.
 const INIT = Buffer.from([0x1b, 0x40]); // ESC @
