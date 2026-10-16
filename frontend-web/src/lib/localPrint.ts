@@ -64,17 +64,18 @@ const CACHE_MS = 5000;
 
 /**
  * Indica si el agente local está disponible (GET /status). Cachea el resultado ~5s. Cualquier
- * error o timeout (~1200ms) devuelve false.
+ * error o timeout (~1500ms) devuelve false SIN lanzar.
  */
 export async function isAgentAvailable(): Promise<boolean> {
   const ahora = Date.now();
   if (estadoCache && ahora - estadoCache.ts < CACHE_MS) return estadoCache.disponible;
 
   const ctrl = new AbortController();
-  // 6s de timeout: el /status del agente puede tardar un par de segundos la primera vez porque
-  // Windows lista las impresoras vía PowerShell (arranque lento). 1.2s era demasiado corto y
-  // abortaba la detección aunque el agente estuviera vivo (AbortError), marcándolo "no detectado".
-  const t = setTimeout(() => ctrl.abort(), 6000);
+  // 1.5s de timeout: tras FEAT-001 el agente cachea las impresoras al arrancar y /status responde
+  // en milisegundos, así que no hace falta esperar varios segundos. Como la detección corre en
+  // segundo plano (fire-and-forget), un timeout corto garantiza que el fallback por navegador se
+  // dispare rápido y la caja nunca se quede esperando.
+  const t = setTimeout(() => ctrl.abort(), 1500);
   try {
     const res = await fetch(`${AGENT_URL}/status`, { method: 'GET', signal: ctrl.signal });
     const ok = res.ok;
@@ -90,7 +91,7 @@ export async function isAgentAvailable(): Promise<boolean> {
 
 /**
  * Envía el ticket al agente para impresión RAW (sin diálogo). Devuelve true solo si el agente
- * respondió ok. Cualquier error/timeout (~8s) -> false (el enrutador caerá al navegador).
+ * respondió ok. Cualquier error/timeout (~5s) -> false SIN lanzar (el enrutador caerá al navegador).
  */
 export async function printViaAgent(
   ticket: AgentTicket,
@@ -103,7 +104,9 @@ export async function printViaAgent(
   };
 
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 8000);
+  // 5s de timeout: con el worker persistente de FEAT-001 el envío RAW tarda poco; si por lo que sea
+  // el agente no responde a tiempo, resolvemos a false y el enrutador cae al navegador sin colgar.
+  const t = setTimeout(() => ctrl.abort(), 5000);
   try {
     const res = await fetch(`${AGENT_URL}/print`, {
       method: 'POST',

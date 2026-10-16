@@ -14,7 +14,10 @@
   },
   "pkg": {
     "scripts": "src/**/*.js",
-    "assets": "config.json"
+    "assets": [
+      "config.json",
+      "src/raw-print-worker.ps1"
+    ]
   },
   "author": "PuntoNube POS",
   "license": "UNLICENSED",

@@ -194,7 +194,7 @@ export function TicketSettingsPage() {
               whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
               <Save size={16} /> {save.isPending ? 'Guardando…' : 'Guardar configuración'}
             </motion.button>
-            <button className="btn-ghost" onClick={() => { setPaperWidth(form.paperWidthMm); void printSale(form, SAMPLE); }}>
+            <button className="btn-ghost" onClick={() => { setPaperWidth(form.paperWidthMm); printSale(form, SAMPLE); }}>
               <Printer size={16} /> Imprimir prueba
             </button>
           </div>

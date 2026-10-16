@@ -9,7 +9,7 @@ import { printVoucher } from '@/lib/printRouter';
  */
 export function PrintableVoucher({ data, onDone }: { data: VoucherData; onDone: () => void }) {
   useEffect(() => {
-    void printVoucher(data);
+    printVoucher(data);
     const t = setTimeout(onDone, 1200);
     return () => clearTimeout(t);
   }, [data, onDone]);
