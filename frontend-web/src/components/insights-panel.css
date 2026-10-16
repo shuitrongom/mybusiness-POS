@@ -1,0 +1,125 @@
+/* =====================================================================
+   Panel "Análisis inteligente" (insights de IA). Glassmorphism azul/cian
+   coherente con el resto del panel premium. Tarjetas con color por severidad.
+   ===================================================================== */
+
+.insights-panel {
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--brand-500) 24%, transparent);
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--brand-500) 10%, transparent),
+      color-mix(in srgb, var(--accent-500) 8%, transparent));
+  backdrop-filter: blur(10px);
+}
+
+.insights-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.insights-ia-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand-600), var(--accent-600));
+  box-shadow: 0 6px 16px rgba(46, 110, 242, 0.35);
+}
+.insights-title {
+  margin: 0;
+  color: var(--heading);
+  font-size: var(--fs-lg);
+}
+.insight-badge-ia {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand-600), var(--accent-600));
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.insights-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-muted);
+}
+.insights-empty svg { color: var(--brand-600); }
+.insights-empty p { margin: 0; max-width: 420px; }
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.insight-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.insight-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.insight-body { min-width: 0; }
+.insight-card-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--heading);
+}
+.insight-card-msg {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.insight-card-value {
+  display: inline-block;
+  margin-top: 8px;
+  font-weight: 800;
+  font-size: var(--fs-md);
+  color: var(--heading);
+}
+
+/* Color por severidad: POSITIVO verde, ALERTA ámbar, INFO azul. */
+.insight-sev-positivo { border-left-color: var(--success); }
+.insight-sev-positivo .insight-icon {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+.insight-sev-alerta { border-left-color: var(--warning); }
+.insight-sev-alerta .insight-icon {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+.insight-sev-info { border-left-color: var(--brand-600); }
+.insight-sev-info .insight-icon {
+  color: var(--brand-600);
+  background: color-mix(in srgb, var(--brand-500) 14%, transparent);
+}
