@@ -4,9 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mybusinesssilva.bi.application.AnalyticsService;
 import com.mybusinesssilva.bi.application.BiService;
+import com.mybusinesssilva.bi.application.insight.Insight;
+import com.mybusinesssilva.bi.application.insight.InsightEngine;
 import com.mybusinesssilva.bi.domain.model.DashboardSummary;
+import com.mybusinesssilva.bi.domain.model.PaymentMix;
+import com.mybusinesssilva.bi.domain.model.PeriodComparison;
 import com.mybusinesssilva.bi.domain.model.ProductRanking;
 import com.mybusinesssilva.bi.domain.model.PurchaseSuggestion;
+import com.mybusinesssilva.bi.domain.model.TimeSeriesPoint;
 import com.mybusinesssilva.catalog.application.CatalogService;
 import com.mybusinesssilva.catalog.domain.model.Product;
 import com.mybusinesssilva.inventory.application.InventoryService;
@@ -42,6 +47,7 @@ class BiServiceIT extends AbstractIntegrationTest {
     @Autowired private SaleService saleService;
     @Autowired private BiService biService;
     @Autowired private AnalyticsService analyticsService;
+    @Autowired private InsightEngine insightEngine;
     @Autowired private PlanRepository planRepository;
     @Autowired private DataSource dataSource;
 
@@ -109,6 +115,66 @@ class BiServiceIT extends AbstractIntegrationTest {
         assertThat(suggestions).anyMatch(s -> s.productId() == p && s.suggestedQty().signum() > 0);
     }
 
+    @Test
+    void seriesComparisonPaymentMixAndInsights() {
+        setup();
+        long p1 = createProduct("Refresco", new BigDecimal("18.00"), new BigDecimal("12.00"));
+        long p2 = createProduct("Pan", new BigDecimal("5.00"), new BigDecimal("3.00"));
+        stock(p1, 100);
+        stock(p2, 100);
+
+        // Ventas de hoy con métodos de pago distintos.
+        sell(p1, new BigDecimal("10"), new BigDecimal("18.00"), PaymentMethod.CASH); // 180 efectivo
+        sell(p2, new BigDecimal("5"), new BigDecimal("5.00"), PaymentMethod.CARD);    // 25 tarjeta
+
+        // La serie diaria debe tener al menos el punto de hoy.
+        List<TimeSeriesPoint> series = biService.salesByDay(30);
+        assertThat(series).isNotEmpty();
+        BigDecimal seriesRevenue = series.stream()
+                .map(TimeSeriesPoint::revenue).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(seriesRevenue).isEqualByComparingTo("205.00");
+
+        // La mezcla de pago debe sumar por método.
+        List<PaymentMix> mix = biService.paymentMix(30);
+        assertThat(mix).hasSize(2);
+        BigDecimal cash = mix.stream().filter(m -> m.method().equals("CASH"))
+                .map(PaymentMix::amount).findFirst().orElseThrow();
+        BigDecimal card = mix.stream().filter(m -> m.method().equals("CARD"))
+                .map(PaymentMix::amount).findFirst().orElseThrow();
+        assertThat(cash).isEqualByComparingTo("180.00");
+        assertThat(card).isEqualByComparingTo("25.00");
+
+        // La comparativa de hoy debe calcular changePct (ayer=0 -> null; hoy>0).
+        PeriodComparison comparison = biService.periodComparison();
+        assertThat(comparison.today().current()).isEqualByComparingTo("205.00");
+        assertThat(comparison.today().previous()).isEqualByComparingTo("0");
+
+        // El InsightEngine inyectado debe devolver al menos un insight con severidad válida.
+        List<Insight> insights = insightEngine.generate("negocio", Map.of(
+                "today", biService.todaySummary(),
+                "series", series,
+                "comparison", comparison,
+                "paymentMix", mix,
+                "topProducts", biService.topProducts(30, 10),
+                "abc", biService.abcAnalysis(90)));
+        assertThat(insights).isNotEmpty();
+        assertThat(insights).allMatch(i -> i.severidad() != null);
+        assertThat(insights).anyMatch(i -> i.severidad() == Insight.Severity.POSITIVO);
+    }
+
+    @Test
+    void monthlySeriesAggregatesByMonth() {
+        setup();
+        long p = createProduct("Leche", new BigDecimal("25.00"), new BigDecimal("18.00"));
+        stock(p, 100);
+        sell(p, new BigDecimal("4"), new BigDecimal("25.00")); // 100
+
+        List<TimeSeriesPoint> monthly = biService.salesByMonth(12);
+        assertThat(monthly).isNotEmpty();
+        // El formato del mes es yyyy-MM.
+        assertThat(monthly.get(monthly.size() - 1).date()).matches("\\d{4}-\\d{2}");
+    }
+
     // --- helpers ---
 
     private void setup() {
@@ -133,10 +199,14 @@ class BiServiceIT extends AbstractIntegrationTest {
     }
 
     private void sell(long productId, BigDecimal qty, BigDecimal price) {
+        sell(productId, qty, price, PaymentMethod.CASH);
+    }
+
+    private void sell(long productId, BigDecimal qty, BigDecimal price, PaymentMethod method) {
         BigDecimal total = qty.multiply(price);
         Sale sale = Sale.complete(branchId, null, null, "cajero", null,
                 List.of(new SaleLine(productId, "item", qty, price, BigDecimal.ZERO)),
-                List.of(new Payment(PaymentMethod.CASH, total)), null);
+                List.of(new Payment(method, total)), null);
         saleService.registerSale(sale);
     }
 }

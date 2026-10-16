@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
+import { CalendarClock, LineChart, TrendingUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { money } from '@/lib/format';
 import { TrialCalendar } from '@/components/TrialCalendar';
@@ -9,6 +10,8 @@ import {
   RevenueByTypeChart,
   type PortfolioDatum,
 } from '@/components/SaasCharts';
+import { SalesTrendChart, type TrendPoint } from '@/components/BiCharts';
+import { InsightsPanel, type Insight } from '@/components/InsightsPanel';
 import { staggerContainer, staggerItem } from '@/lib/motion';
 import '@/pages/dashboard.css';
 import './admin.css';
@@ -46,6 +49,12 @@ interface Business {
   trialEndsAt: string | null;
 }
 
+interface TrialEnding {
+  businessId: number;
+  name: string;
+  trialEndsAt: string;
+}
+
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -70,6 +79,22 @@ export function SuperAdminDashboardPage() {
   const businesses = useQuery({
     queryKey: ['admin', 'businesses'],
     queryFn: async () => (await api.get<Business[]>('/admin/businesses')).data,
+  });
+  const businessesSeries = useQuery({
+    queryKey: ['saas', 'businesses-series'],
+    queryFn: async () => (await api.get<TrendPoint[]>('/admin/bi/businesses/series?months=12')).data,
+  });
+  const revenueSeries = useQuery({
+    queryKey: ['saas', 'revenue-series'],
+    queryFn: async () => (await api.get<TrendPoint[]>('/admin/bi/revenue/series?months=12')).data,
+  });
+  const trialsEnding = useQuery({
+    queryKey: ['saas', 'trials-ending'],
+    queryFn: async () => (await api.get<TrialEnding[]>('/admin/bi/trials-ending?days=15')).data,
+  });
+  const insights = useQuery({
+    queryKey: ['saas', 'insights'],
+    queryFn: async () => (await api.get<Insight[]>('/admin/bi/insights')).data,
   });
 
   const s = summary.data;
@@ -179,6 +204,46 @@ export function SuperAdminDashboardPage() {
         </motion.div>
       </motion.div>
 
+      {/* Series mensuales: negocios creados e ingresos */}
+      <motion.div className="dash-two-col" variants={staggerContainer} initial="hidden" animate="visible">
+        <motion.div className="card" variants={staggerItem}>
+          <div className="sec-title"><LineChart size={18} /><h3>Negocios por mes</h3></div>
+          <p className="admin-plan-hint" style={{ marginTop: 4 }}>Altas de negocios en los últimos 12 meses</p>
+          <SalesTrendChart data={businessesSeries.data ?? []} emptyLabel="Aún no hay altas para graficar." />
+        </motion.div>
+
+        <motion.div className="card" variants={staggerItem}>
+          <div className="sec-title"><TrendingUp size={18} /><h3>Ingresos por mes</h3></div>
+          <p className="admin-plan-hint" style={{ marginTop: 4 }}>Ventas de licencias y módulos por mes</p>
+          <SalesTrendChart data={revenueSeries.data ?? []} emptyLabel="Aún no hay ingresos para graficar." />
+        </motion.div>
+      </motion.div>
+
+      {/* Pruebas por vencer (15 días) */}
+      <motion.div className="card" style={{ marginTop: 'var(--space-5)' }} variants={staggerItem} initial="hidden" animate="visible">
+        <div className="sec-title"><CalendarClock size={18} /><h3>Pruebas por vencer</h3></div>
+        <p className="admin-plan-hint" style={{ marginTop: 4 }}>
+          Negocios cuya prueba termina en los próximos 15 días. Oportunidades de conversión.
+        </p>
+        <table className="table">
+          <thead><tr><th>Negocio</th><th>Vence</th></tr></thead>
+          <tbody>
+            {(trialsEnding.data ?? []).map((t) => (
+              <tr key={t.businessId}>
+                <td>{t.name}</td>
+                <td>{t.trialEndsAt ? fmtDate(t.trialEndsAt) : '—'}</td>
+              </tr>
+            ))}
+            {trialsEnding.data?.length === 0 && (
+              <tr><td colSpan={2} className="empty">No hay pruebas por vencer en los próximos 15 días.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </motion.div>
+
+      {/* Análisis inteligente (IA) de la plataforma */}
+      <InsightsPanel insights={insights.data ?? []} />
+
       {/* Calendario de vencimientos de prueba */}
       <h3 className="dash-section">Calendario de vencimientos</h3>
       <p className="admin-plan-hint" style={{ marginTop: 4 }}>
@@ -190,8 +255,10 @@ export function SuperAdminDashboardPage() {
 }
 
 function MetricCard({ label, value, hint, accent, tone }:
-  { label: string; value: string; hint?: string; accent?: boolean;
-    tone?: 'success' | 'warning' | 'danger' }) {
+  {
+    label: string; value: string; hint?: string; accent?: boolean;
+    tone?: 'success' | 'warning' | 'danger'
+  }) {
   return (
     <motion.div className={`metric-card ${accent ? 'metric-accent' : ''} ${tone ? `metric-tone-${tone}` : ''}`}
       variants={staggerItem}>

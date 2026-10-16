@@ -4,11 +4,13 @@ import {
   Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  Receipt, TrendingUp, CreditCard, Package, Trophy, ArrowUpRight,
+  Receipt, TrendingUp, TrendingDown, CreditCard, Package, Trophy, ArrowUpRight, LineChart, Wallet,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { staggerContainer, staggerItem } from '@/lib/motion';
+import { SalesTrendChart, PaymentMixChart, type TrendPoint, type PaymentMixDatum } from '@/components/BiCharts';
+import { InsightsPanel, type Insight } from '@/components/InsightsPanel';
 import './dashboard.css';
 
 interface DashboardSummary {
@@ -26,6 +28,18 @@ interface ProductRanking {
   revenue: number;
 }
 
+interface PeriodDelta {
+  current: number;
+  previous: number;
+  changePct: number | null;
+}
+
+interface PeriodComparison {
+  today: PeriodDelta;
+  week: PeriodDelta;
+  month: PeriodDelta;
+}
+
 const money = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
 const int = (n: number) => new Intl.NumberFormat('es-MX').format(n || 0);
@@ -37,23 +51,41 @@ function cssVar(name: string, fallback: string): string {
 }
 
 /**
- * Panel principal del dueño, nivel enterprise: una métrica HÉROE (total vendido) más KPIs de
- * apoyo con icono, y el ranking de productos (gráfica + tabla con barra de participación).
- * Patrón 2026: 1 hero + 4-6 KPIs, una decisión por pantalla.
+ * Panel principal del dueño, nivel enterprise: una métrica HÉROE (total vendido), KPIs de apoyo,
+ * serie de ventas, comparativa de periodos con variación %, mezcla por método de pago, ranking de
+ * productos y el panel de "Análisis inteligente" (insights de IA). Consume el BI de negocio
+ * (/api/v1/bi) protegido por el módulo 'bi' en el backend.
  */
 export function DashboardPage() {
   const summary = useQuery({
     queryKey: ['dashboard', 'today'],
     queryFn: async () => (await api.get<DashboardSummary>('/bi/dashboard/today')).data,
   });
+  const series = useQuery({
+    queryKey: ['dashboard', 'series'],
+    queryFn: async () => (await api.get<TrendPoint[]>('/bi/sales/series?days=30')).data,
+  });
+  const comparison = useQuery({
+    queryKey: ['dashboard', 'comparison'],
+    queryFn: async () => (await api.get<PeriodComparison>('/bi/comparison')).data,
+  });
+  const paymentMix = useQuery({
+    queryKey: ['dashboard', 'payments-mix'],
+    queryFn: async () => (await api.get<PaymentMixDatum[]>('/bi/payments/mix?days=30')).data,
+  });
   const top = useQuery({
     queryKey: ['dashboard', 'top'],
     queryFn: async () => (await api.get<ProductRanking[]>('/bi/products/top?days=30&limit=5')).data,
+  });
+  const insights = useQuery({
+    queryKey: ['dashboard', 'insights'],
+    queryFn: async () => (await api.get<Insight[]>('/bi/insights')).data,
   });
 
   const s = summary.data;
   const topData = top.data ?? [];
   const maxRevenue = topData.reduce((m, p) => Math.max(m, p.revenue), 0);
+  const cmp = comparison.data;
 
   return (
     <div>
@@ -93,6 +125,30 @@ export function DashboardPage() {
         </div>
       </motion.div>
 
+      {/* Comparativa de periodos con variación % */}
+      <h3 className="dash-section">Comparativa de periodos</h3>
+      <motion.div className="metrics" style={{ marginTop: 'var(--space-3)' }}
+        variants={staggerContainer} initial="hidden" animate="visible">
+        <DeltaCard label="Hoy vs ayer" delta={cmp?.today} />
+        <DeltaCard label="Esta semana vs anterior" delta={cmp?.week} />
+        <DeltaCard label="Este mes vs anterior" delta={cmp?.month} />
+      </motion.div>
+
+      {/* Serie de ventas + mezcla por método de pago */}
+      <motion.div className="dash-two-col" variants={staggerContainer} initial="hidden" animate="visible">
+        <motion.div className="card" variants={staggerItem}>
+          <div className="sec-title"><LineChart size={18} /><h3>Ventas (30 días)</h3></div>
+          <p className="admin-plan-hint" style={{ marginTop: 4 }}>Ingreso diario del último mes</p>
+          <SalesTrendChart data={series.data ?? []} />
+        </motion.div>
+
+        <motion.div className="card" variants={staggerItem}>
+          <div className="sec-title"><Wallet size={18} /><h3>Mezcla por método de pago</h3></div>
+          <p className="admin-plan-hint" style={{ marginTop: 4 }}>Monto cobrado por forma de pago (30 días)</p>
+          <PaymentMixChart data={paymentMix.data ?? []} />
+        </motion.div>
+      </motion.div>
+
       <div className="dash-two-col">
         <motion.div className="card" variants={staggerItem} initial="hidden" animate="visible">
           <div className="sec-title"><Trophy size={18} /><h3>Más vendidos (30 días)</h3></div>
@@ -124,6 +180,9 @@ export function DashboardPage() {
           </div>
         </motion.div>
       </div>
+
+      {/* Análisis inteligente (IA) */}
+      <InsightsPanel insights={insights.data ?? []} />
     </div>
   );
 }
@@ -138,6 +197,36 @@ function Kpi({ icon, label, value, tint, hint }: {
         <span className="kpi-label">{label}</span>
         <span className="kpi-value">{value}</span>
         {hint && <span className="kpi-hint">{hint}</span>}
+      </div>
+    </motion.div>
+  );
+}
+
+/** Tarjeta de comparativa de periodo: valor actual + variación % con flecha/color por signo. */
+function DeltaCard({ label, delta }: { label: string; delta?: PeriodDelta }) {
+  const pct = delta?.changePct ?? null;
+  const up = pct !== null && pct >= 0;
+  const toneClass = pct === null ? '' : up ? 'metric-tone-success' : 'metric-tone-danger';
+
+  return (
+    <motion.div className={`metric-card ${toneClass}`} variants={staggerItem}>
+      <div className="metric-label">{label}</div>
+      <div className="metric-value">{money(delta?.current ?? 0)}</div>
+      <div className="metric-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {pct === null ? (
+          <span>Sin periodo anterior comparable</span>
+        ) : (
+          <>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 700,
+              color: up ? 'var(--success)' : 'var(--danger)',
+            }}>
+              {up ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              {Math.abs(pct).toFixed(1)}%
+            </span>
+            <span>vs {money(delta?.previous ?? 0)}</span>
+          </>
+        )}
       </div>
     </motion.div>
   );
