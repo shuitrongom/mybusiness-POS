@@ -67,8 +67,12 @@ public class SaleService {
 
         Sale saved = saleRepository.insert(sale);
 
-        // Descuenta inventario por cada renglón.
+        // Descuenta inventario por cada renglón. Los artículos libres (producto rápido,
+        // sin producto del catálogo) no mueven stock.
         for (SaleLine line : saved.getLines()) {
+            if (line.productId() == null) {
+                continue;
+            }
             inventoryPort.applyMovement(
                     line.productId(), saved.getBranchId(), MovementType.SALE,
                     line.quantity(), "SALE:" + saved.getId(), saved.getCashier());
@@ -103,8 +107,12 @@ public class SaleService {
         }
         long branchId = saleRepository.branchOf(saleId).orElseThrow();
 
-        // Reingresa el inventario de cada renglón (movimiento de tipo RETURN).
+        // Reingresa el inventario de cada renglón (movimiento de tipo RETURN). Los artículos
+        // libres (sin producto) no movieron stock, así que se omiten.
         for (SaleRepository.SaleLineRow line : saleRepository.linesOf(saleId)) {
+            if (line.productId() == null) {
+                continue;
+            }
             inventoryPort.applyMovement(line.productId(), branchId, MovementType.RETURN,
                     line.quantity(), "VOID:" + saleId, actor);
         }

@@ -1862,3 +1862,35 @@
   font-size: var(--fs-lg);
   margin-left: 6px;
 }
+
+/* Badge "libre" para artículos capturados con Producto rápido (sin catálogo). */
+.pos-line-free {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #7c5cff;
+  background: color-mix(in srgb, #7c5cff 14%, transparent);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-right: 4px;
+}
+
+.pos-line-free svg {
+  flex: 0 0 auto;
+}
+
+/* Modal Producto rápido: fila de precio + cantidad y nota de IVA. */
+.pos-quick-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.pos-quick-hint {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm, 12px);
+  color: var(--text-muted);
+  line-height: 1.4;
+}

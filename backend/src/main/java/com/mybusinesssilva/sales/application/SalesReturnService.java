@@ -59,7 +59,9 @@ public class SalesReturnService {
             customerId = detail.customerId();
             for (ReturnItem item : command.items()) {
                 var soldLine = detail.lines().stream()
-                        .filter(l -> l.productId() == item.productId())
+                        // Los renglones de artículo libre (productId null) no son devolvibles por
+                        // producto; se omiten para no desreferenciar null al comparar.
+                        .filter(l -> l.productId() != null && l.productId() == item.productId())
                         .findFirst()
                         .orElseThrow(() -> new IllegalArgumentException(
                                 "El producto " + item.productId() + " no pertenece a la venta"));

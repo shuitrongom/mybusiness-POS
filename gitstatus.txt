@@ -1,0 +1,12 @@
+## feature/producto-rapido
+ M backend/src/main/java/com/mybusinesssilva/bi/application/BiService.java
+ M backend/src/main/java/com/mybusinesssilva/sales/adapters/in/rest/SaleController.java
+ M backend/src/main/java/com/mybusinesssilva/sales/adapters/out/persistence/JdbcSaleRepository.java
+ M backend/src/main/java/com/mybusinesssilva/sales/application/SaleService.java
+ M backend/src/main/java/com/mybusinesssilva/sales/application/SalesReturnService.java
+ M backend/src/main/java/com/mybusinesssilva/sales/domain/model/SaleLine.java
+ M backend/src/main/java/com/mybusinesssilva/sales/domain/port/out/SaleRepository.java
+ M backend/src/test/java/com/mybusinesssilva/sales/domain/SaleTest.java
+?? _commit.bat
+?? backend/src/main/resources/db/migration/tenant/V31__sale_line_free_item.sql
+?? gitstatus.txt

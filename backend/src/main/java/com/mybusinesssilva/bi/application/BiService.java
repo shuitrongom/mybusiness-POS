@@ -74,15 +74,16 @@ public class BiService {
      */
     public List<ProductRanking> topProducts(int days, int limit) {
         return jdbc.sql("""
-                SELECT p.id AS product_id, p.name,
+                SELECT COALESCE(p.id,-1) AS product_id,
+                       COALESCE(p.name, sl.description, 'Producto libre') AS name,
                        COALESCE(sum(sl.quantity),0) AS quantity,
                        COALESCE(sum(sl.line_total),0) AS revenue,
-                       COALESCE(sum(sl.line_total - (p.cost * sl.quantity)),0) AS profit
+                       COALESCE(sum(sl.line_total - COALESCE(p.cost,0) * sl.quantity),0) AS profit
                 FROM sale_line sl
                 JOIN sale s ON s.id = sl.sale_id
-                JOIN product p ON p.id = sl.product_id
+                LEFT JOIN product p ON p.id = sl.product_id
                 WHERE s.status='COMPLETED' AND s.created_at >= now() - make_interval(days => :days)
-                GROUP BY p.id, p.name
+                GROUP BY COALESCE(p.id,-1), COALESCE(p.name, sl.description, 'Producto libre')
                 ORDER BY revenue DESC
                 LIMIT :limit
                 """)
@@ -101,15 +102,16 @@ public class BiService {
      */
     public List<ProductRanking> abcAnalysis(int days) {
         List<ProductRanking> ranked = jdbc.sql("""
-                SELECT p.id AS product_id, p.name,
+                SELECT COALESCE(p.id,-1) AS product_id,
+                       COALESCE(p.name, sl.description, 'Producto libre') AS name,
                        COALESCE(sum(sl.quantity),0) AS quantity,
                        COALESCE(sum(sl.line_total),0) AS revenue,
-                       COALESCE(sum(sl.line_total - (p.cost * sl.quantity)),0) AS profit
+                       COALESCE(sum(sl.line_total - COALESCE(p.cost,0) * sl.quantity),0) AS profit
                 FROM sale_line sl
                 JOIN sale s ON s.id = sl.sale_id
-                JOIN product p ON p.id = sl.product_id
+                LEFT JOIN product p ON p.id = sl.product_id
                 WHERE s.status='COMPLETED' AND s.created_at >= now() - make_interval(days => :days)
-                GROUP BY p.id, p.name
+                GROUP BY COALESCE(p.id,-1), COALESCE(p.name, sl.description, 'Producto libre')
                 ORDER BY revenue DESC
                 """)
                 .param("days", days)

@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Store, ScanBarcode, Search, ShoppingCart, Minus, Plus, X,
   Banknote, CreditCard, Landmark, RefreshCw, Ticket as TicketIcon,
-  User, Users, UserPlus, Tag, Percent, Trash2, ChevronDown,
+  User, Users, UserPlus, Tag, Percent, Trash2, ChevronDown, Sparkles,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
@@ -67,12 +67,19 @@ interface Customer {
 }
 
 interface CartLine {
-  productId: number;
+  /** Identificador estable por renglón (permite varios renglones libres sin colisionar). */
+  id: string;
+  /** Producto del catálogo, o null para un artículo libre (producto rápido). */
+  productId: number | null;
   categoryId: number | null;
   description: string;
   quantity: number;
   unitPrice: number;
   discount: number;
+  /** IVA informativo del renglón (precios con IVA incluido; no suma al total). */
+  taxRate?: number;
+  /** true si es un artículo libre capturado con "Producto rápido". */
+  free?: boolean;
 }
 
 type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER' | 'VOUCHER';
@@ -146,23 +153,31 @@ export function PosPage() {
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [now, setNow] = useState(new Date());
   const [shift, setShift] = useState<ActiveShift | null>(cachedShift());
-  const [lastProductId, setLastProductId] = useState<number | null>(null);
+  const [lastLineId, setLastLineId] = useState<string | null>(null);
   const [qtyInput, setQtyInput] = useState('1');
+  const [quickOpen, setQuickOpen] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const token = useSession((s) => s.token);
   const sellAllowed = canSell(decodeToken(token));
 
-  // Descuentos automáticos por promociones vigentes, recalculados con el carrito.
+  // Descuentos automáticos por promociones vigentes, recalculados con el carrito. Los artículos
+  // libres (sin productId) no participan en promociones.
   const promoResult = useMemo(
-    () => applyPromotions(promos, cart.map((l) => ({
-      productId: l.productId, categoryId: l.categoryId, quantity: l.quantity, unitPrice: l.unitPrice,
-    }))),
+    () => applyPromotions(promos, cart
+      .filter((l): l is CartLine & { productId: number } => l.productId != null)
+      .map((l) => ({
+        productId: l.productId, categoryId: l.categoryId, quantity: l.quantity, unitPrice: l.unitPrice,
+      }))),
     [promos, cart],
   );
 
+  /** Descuento por promoción de un renglón (0 para artículos libres o sin promoción). */
+  const promoDiscountOf = (l: CartLine) =>
+    l.productId != null ? (promoResult.discountByProduct[l.productId] || 0) : 0;
+
   const linesSubtotal = cart.reduce(
-    (sum, l) => sum + l.quantity * l.unitPrice - (promoResult.discountByProduct[l.productId] || 0), 0);
+    (sum, l) => sum + l.quantity * l.unitPrice - promoDiscountOf(l), 0);
   const total = Math.max(linesSubtotal - globalDiscount, 0);
   const itemCount = cart.reduce((sum, l) => sum + l.quantity, 0);
   const activeBranch = branches.find((b) => b.id === branchId);
@@ -215,6 +230,7 @@ export function PosPage() {
   // manualmente (se toma el precio del producto para la nueva lista).
   useEffect(() => {
     setCart((prev) => prev.map((l) => {
+      if (l.productId == null) return l; // los artículos libres conservan su precio capturado
       const prod = products.find((p) => p.id === l.productId);
       if (!prod) return l;
       return { ...l, unitPrice: priceForList(prod, priceListId) };
@@ -259,39 +275,45 @@ export function PosPage() {
 
   const addProduct = (p: Product, qty = 1) => {
     addLine({
-      productId: p.id, categoryId: p.categoryId, description: p.name, quantity: qty,
-      unitPrice: priceForList(p, priceListId), discount: 0,
+      id: crypto.randomUUID(), productId: p.id, categoryId: p.categoryId, description: p.name,
+      quantity: qty, unitPrice: priceForList(p, priceListId), discount: 0,
     });
-    setLastProductId(p.id);
     setMessage(null);
   };
 
   const addLine = (line: CartLine) => {
     setCart((prev) => {
-      const existing = prev.find((l) => l.productId === line.productId);
-      if (existing) {
-        return prev.map((l) =>
-          l.productId === line.productId ? { ...l, quantity: l.quantity + line.quantity } : l,
-        );
+      // Los productos del catálogo se agrupan por productId; los artículos libres (productId
+      // null) siempre crean un renglón nuevo e independiente.
+      if (line.productId != null) {
+        const existing = prev.find((l) => l.productId === line.productId);
+        if (existing) {
+          setLastLineId(existing.id);
+          return prev.map((l) =>
+            l.id === existing.id ? { ...l, quantity: l.quantity + line.quantity } : l,
+          );
+        }
       }
+      setLastLineId(line.id);
       return [...prev, line];
     });
   };
 
-  const setQuantity = (productId: number, quantity: number) => {
+  const setQuantity = (id: string, quantity: number) => {
     // La cantidad nunca baja de 1: ajustar piezas y eliminar son acciones distintas. Para quitar
-    // el renglón se usa el botón Eliminar (bote), no bajando la cantidad a 0.
+    // el renglón se usa el botón Eliminar (bote), no bajando la cantidad a 0. Se identifica por
+    // id estable para que los artículos libres (sin productId) también funcionen.
     const q = Math.max(1, Math.floor(quantity) || 1);
-    setCart((prev) => prev.map((l) => (l.productId === productId ? { ...l, quantity: q } : l)));
+    setCart((prev) => prev.map((l) => (l.id === id ? { ...l, quantity: q } : l)));
   };
 
-  const setUnitPrice = (productId: number, unitPrice: number) => {
-    setCart((prev) => prev.map((l) => (l.productId === productId ? { ...l, unitPrice: Math.max(unitPrice, 0) } : l)));
+  const setUnitPrice = (id: string, unitPrice: number) => {
+    setCart((prev) => prev.map((l) => (l.id === id ? { ...l, unitPrice: Math.max(unitPrice, 0) } : l)));
   };
 
-  const removeLine = (productId: number) => {
-    setCart((prev) => prev.filter((l) => l.productId !== productId));
-    setLastProductId((cur) => (cur === productId ? null : cur));
+  const removeLine = (id: string) => {
+    setCart((prev) => prev.filter((l) => l.id !== id));
+    setLastLineId((cur) => (cur === id ? null : cur));
   };
 
   const clearCart = () => {
@@ -321,13 +343,13 @@ export function PosPage() {
   // Ajusta la cantidad del último renglón agregado (para +/- rápidos con teclado).
   const bumpLast = useCallback((delta: number) => {
     setCart((prev) => {
-      const id = lastProductId ?? prev[prev.length - 1]?.productId;
+      const id = lastLineId ?? prev[prev.length - 1]?.id;
       if (id == null) return prev;
       return prev
-        .map((l) => (l.productId === id ? { ...l, quantity: l.quantity + delta } : l))
+        .map((l) => (l.id === id ? { ...l, quantity: l.quantity + delta } : l))
         .filter((l) => l.quantity > 0);
     });
-  }, [lastProductId]);
+  }, [lastLineId]);
 
   // Atajos de teclado del cajero (flujo rápido sin mouse):
   //   F2 enfocar código · F4 cliente · F9 o Enter cobrar · +/- cantidad del último ·
@@ -338,11 +360,12 @@ export function PosPage() {
       const typingInField = !!el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA');
       const inBarcode = el === barcodeRef.current;
       // No interferir si hay un modal abierto (cada modal maneja su propio teclado).
-      const modalOpen = checkoutOpen || customerOpen || discountOpen || ticket != null;
+      const modalOpen = checkoutOpen || customerOpen || discountOpen || quickOpen || ticket != null;
 
       if (e.key === 'F2') { e.preventDefault(); barcodeRef.current?.focus(); return; }
       if (e.key === 'F3') { e.preventDefault(); searchRef.current?.focus(); return; }
       if (e.key === 'F4') { e.preventDefault(); if (!modalOpen) setCustomerOpen(true); return; }
+      if (e.key === 'F7') { e.preventDefault(); if (!modalOpen) setQuickOpen(true); return; }
       if (e.key === 'F9') { e.preventDefault(); if (!modalOpen) openCheckout(); return; }
       // Enter con carrito lleno (y no escribiendo en un campo que no sea el código) → cobrar.
       if (e.key === 'Enter' && !modalOpen && !typingInField && cart.length > 0) {
@@ -356,7 +379,20 @@ export function PosPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [openCheckout, bumpLast, checkoutOpen, customerOpen, discountOpen, ticket, cart.length]);
+  }, [openCheckout, bumpLast, checkoutOpen, customerOpen, discountOpen, quickOpen, ticket, cart.length]);
+
+  /** Agrega al carrito un artículo libre capturado en el modal "Producto rápido". */
+  const addQuickItem = useCallback((item: { description: string; unitPrice: number; quantity: number; taxRate: number }) => {
+    addLine({
+      id: crypto.randomUUID(), productId: null, categoryId: null,
+      description: item.description.trim(), quantity: item.quantity,
+      unitPrice: item.unitPrice, discount: 0, taxRate: item.taxRate, free: true,
+    });
+    setQuickOpen(false);
+    setMessage(null);
+    barcodeRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const finishSale = async (payments: PaymentSplit[], onCredit: boolean, cashReceived?: number) => {
     if (cart.length === 0) return;
@@ -375,7 +411,7 @@ export function PosPage() {
         description: l.description,
         quantity: l.quantity,
         unitPrice: l.unitPrice,
-        discount: promoResult.discountByProduct[l.productId] || 0,
+        discount: promoDiscountOf(l),
       })),
       payments: payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: p.amount })),
       idempotencyKey,
@@ -394,7 +430,7 @@ export function PosPage() {
       lines: cart.map((l) => ({
         description: l.description, quantity: l.quantity,
         unitPrice: l.unitPrice,
-        lineTotal: l.quantity * l.unitPrice - (promoResult.discountByProduct[l.productId] || 0),
+        lineTotal: l.quantity * l.unitPrice - promoDiscountOf(l),
       })),
       total,
       methodLabel,
@@ -528,6 +564,15 @@ export function PosPage() {
               placeholder="Buscar producto por nombre (F3)"
             />
           </div>
+          <button
+            type="button"
+            className="pos-quick-btn"
+            onClick={() => setQuickOpen(true)}
+            aria-label="Agregar producto rápido (venta aislada)"
+            title="Producto rápido: agrega un artículo que no está en el catálogo (F7)"
+          >
+            <Sparkles size={16} /> Producto rápido <kbd className="pos-quick-kbd">F7</kbd>
+          </button>
         </div>
 
         <div className="pos-cats">
@@ -635,55 +680,68 @@ export function PosPage() {
 
         <div className="pos-lines">
           <AnimatePresence initial={false}>
-            {cart.map((l) => (
-              <motion.div key={l.productId} className="pos-line" layout
-                initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20, height: 0 }} transition={springSoft}>
-                <span className="pos-line-avatar" style={{ background: colorFor(l.description) }}>
-                  {initials(l.description)}
-                </span>
-                <div className="pos-line-info">
-                  <div className="pos-line-name"><span className="pos-line-code">#{l.productId}</span> {l.description}</div>
-                  <div className="pos-line-price">
-                    <input className="pos-line-price-input" type="number" min={0} step="0.01"
-                      value={l.unitPrice}
-                      onChange={(e) => setUnitPrice(l.productId, Number(e.target.value) || 0)} />
-                    <span> c/u</span>
+            {cart.map((l) => {
+              const promoLabel = l.productId != null ? promoResult.labelByProduct[l.productId] : undefined;
+              const promoDisc = l.productId != null ? (promoResult.discountByProduct[l.productId] || 0) : 0;
+              return (
+                <motion.div key={l.id} className="pos-line" layout
+                  initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20, height: 0 }} transition={springSoft}>
+                  <span className="pos-line-avatar" style={{ background: colorFor(l.description) }}>
+                    {initials(l.description)}
+                  </span>
+                  <div className="pos-line-info">
+                    <div className="pos-line-name">
+                      {l.free ? (
+                        <span className="pos-line-free"><Sparkles size={11} /> libre</span>
+                      ) : (
+                        <span className="pos-line-code">#{l.productId}</span>
+                      )}{' '}
+                      {l.description}
+                    </div>
+                    <div className="pos-line-price">
+                      <input className="pos-line-price-input" type="number" min={0} step="0.01"
+                        value={l.unitPrice}
+                        onChange={(e) => setUnitPrice(l.id, Number(e.target.value) || 0)} />
+                      <span> c/u</span>
+                    </div>
+                    {promoLabel && (
+                      <span className="pos-line-promo">
+                        <Tag size={11} /> {promoLabel} · -{money(promoDisc)}
+                      </span>
+                    )}
                   </div>
-                  {promoResult.labelByProduct[l.productId] && (
-                    <span className="pos-line-promo">
-                      <Tag size={11} /> {promoResult.labelByProduct[l.productId]} · -{money(promoResult.discountByProduct[l.productId])}
-                    </span>
-                  )}
-                </div>
-                <div className="pos-qty">
-                  <button onClick={() => setQuantity(l.productId, l.quantity - 1)} aria-label="Menos"
-                    disabled={l.quantity <= 1}>
-                    <Minus size={14} />
+                  <div className="pos-qty">
+                    <button onClick={() => setQuantity(l.id, l.quantity - 1)} aria-label="Menos"
+                      disabled={l.quantity <= 1}>
+                      <Minus size={14} />
+                    </button>
+                    <input
+                      value={l.quantity}
+                      onChange={(e) => setQuantity(l.id, Number(e.target.value) || 1)}
+                      inputMode="numeric"
+                    />
+                    <button onClick={() => setQuantity(l.id, l.quantity + 1)} aria-label="Más">
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <div className="pos-line-total">{money(l.quantity * l.unitPrice - promoDisc)}</div>
+                  <button className="pos-line-remove" onClick={() => removeLine(l.id)} aria-label="Quitar">
+                    <X size={15} />
                   </button>
-                  <input
-                    value={l.quantity}
-                    onChange={(e) => setQuantity(l.productId, Number(e.target.value) || 1)}
-                    inputMode="numeric"
-                  />
-                  <button onClick={() => setQuantity(l.productId, l.quantity + 1)} aria-label="Más">
-                    <Plus size={14} />
-                  </button>
-                </div>
-                <div className="pos-line-total">{money(l.quantity * l.unitPrice - (promoResult.discountByProduct[l.productId] || 0))}</div>
-                <button className="pos-line-remove" onClick={() => removeLine(l.productId)} aria-label="Quitar">
-                  <X size={15} />
-                </button>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          {cart.length === 0 && (
-            <div className="pos-empty">
-              <div className="pos-empty-icon"><ShoppingCart size={44} strokeWidth={1.5} /></div>
-              <p>Agrega productos tocando la cuadrícula o escaneando su código.</p>
-            </div>
-          )}
-        </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence >
+          {
+            cart.length === 0 && (
+              <div className="pos-empty">
+                <div className="pos-empty-icon"><ShoppingCart size={44} strokeWidth={1.5} /></div>
+                <p>Agrega productos tocando la cuadrícula o escaneando su código.</p>
+              </div>
+            )
+          }
+        </div >
 
         <div className="pos-summary">
           <div className="pos-summary-line">
@@ -730,7 +788,7 @@ export function PosPage() {
             </button>
           </div>
         </div>
-      </aside>
+      </aside >
 
       <AnimatePresence>
         {customerOpen && (
@@ -748,6 +806,15 @@ export function PosPage() {
             current={globalDiscount}
             onCancel={() => setDiscountOpen(false)}
             onApply={(d) => { setGlobalDiscount(d); setDiscountOpen(false); }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {quickOpen && (
+          <QuickItemModal
+            onCancel={() => setQuickOpen(false)}
+            onConfirm={addQuickItem}
           />
         )}
       </AnimatePresence>
@@ -801,7 +868,7 @@ export function PosPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </div >
   );
 }
 
@@ -997,6 +1064,96 @@ function DiscountModal({ subtotal, current, onCancel, onApply }:
         <div className="pos-modal-actions">
           <button className="btn-ghost" onClick={() => onApply(0)}><Trash2 size={15} /> Quitar</button>
           <button className="pos-confirm" onClick={() => onApply(computed)}>Aplicar</button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/**
+ * Modal "Producto rápido": captura un artículo libre (sin catálogo) para venderlo al instante.
+ * El precio se maneja con IVA incluido (igual que el POS); el selector de IVA es informativo y
+ * no suma al total. Se habilita el confirmar solo con descripción y precio > 0.
+ */
+function QuickItemModal({ onCancel, onConfirm }:
+  {
+    onCancel: () => void;
+    onConfirm: (item: { description: string; unitPrice: number; quantity: number; taxRate: number }) => void;
+  }) {
+  const [description, setDescription] = useState('');
+  const [priceInput, setPriceInput] = useState('');
+  const [qtyInput, setQtyInput] = useState('1');
+  const [taxRate, setTaxRate] = useState(0.16);
+
+  const unitPrice = round2(Number(priceInput) || 0);
+  const quantity = Math.max(Number(qtyInput) || 0, 0);
+  const lineTotal = round2(unitPrice * quantity);
+  const canConfirm = description.trim().length > 0 && unitPrice > 0 && quantity > 0;
+
+  const confirm = () => {
+    if (!canConfirm) return;
+    onConfirm({ description: description.trim(), unitPrice, quantity, taxRate });
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+      else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canConfirm, description, priceInput, qtyInput, taxRate]);
+
+  return (
+    <motion.div className="pos-modal-overlay" onClick={onCancel}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+      <motion.div className="pos-modal pos-modal-sm" onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97 }} transition={springSoft}>
+        <div className="pos-modal-head">
+          <h3><Sparkles size={18} /> Producto rápido</h3>
+          <button className="modal-close" onClick={onCancel} aria-label="Cerrar">×</button>
+        </div>
+
+        <label className="pos-received">
+          <span>Descripción del artículo</span>
+          <input type="text" value={description} autoFocus maxLength={120}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Ej. Servicio especial, artículo sin código…" />
+        </label>
+
+        <div className="pos-quick-row">
+          <label className="pos-received">
+            <span>Precio unitario</span>
+            <input type="number" min={0} step="0.01" value={priceInput} placeholder="0.00"
+              onChange={(e) => setPriceInput(e.target.value)} />
+          </label>
+          <label className="pos-received">
+            <span>Cantidad</span>
+            <input type="number" min={0} step="0.001" value={qtyInput}
+              onChange={(e) => setQtyInput(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="pos-methods">
+          <button type="button" className={`pos-method ${taxRate === 0.16 ? 'is-active' : ''}`}
+            onClick={() => setTaxRate(0.16)}>IVA 16%</button>
+          <button type="button" className={`pos-method ${taxRate === 0 ? 'is-active' : ''}`}
+            onClick={() => setTaxRate(0)}>Exento 0%</button>
+        </div>
+        <p className="pos-quick-hint">El precio se registra con IVA incluido. El IVA es informativo y no se suma al total.</p>
+
+        <div className="pos-change">
+          <span>Importe del renglón</span>
+          <strong>{money(lineTotal)}</strong>
+        </div>
+
+        <div className="pos-modal-actions">
+          <button className="btn-ghost" onClick={onCancel}>Cancelar</button>
+          <button className="pos-confirm" disabled={!canConfirm} onClick={confirm}>
+            <Plus size={15} /> Agregar al carrito <span className="pos-key-hint">Enter</span>
+          </button>
         </div>
       </motion.div>
     </motion.div>
