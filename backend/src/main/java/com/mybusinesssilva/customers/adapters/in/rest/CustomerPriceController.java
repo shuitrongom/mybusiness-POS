@@ -18,10 +18,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Precios especiales por cliente. Al asignar a un cliente un precio distinto para un producto,
- * el punto de venta lo usa como fuente de verdad cuando ese cliente está seleccionado.
+ * Precios especiales por cliente. Al asignar a un cliente un precio distinto
+ * para un producto,
+ * el punto de venta lo usa como fuente de verdad cuando ese cliente está
+ * seleccionado.
  *
- * <p>Requiere el módulo {@code customers} habilitado (igual que {@link CustomerController}); los
+ * <p>
+ * Requiere el módulo {@code customers} habilitado (igual que
+ * {@link CustomerController}); los
  * GET además admiten a quien pueda vender ({@code canReadCustomers()}).
  */
 @RestController
@@ -35,22 +39,36 @@ public class CustomerPriceController {
         this.customerService = customerService;
     }
 
-    /** Lista los precios especiales del cliente, con el precio normal del producto para comparar. */
+    /**
+     * Lista los precios especiales del cliente, con el precio normal del producto
+     * para comparar.
+     */
     @GetMapping
     @PreAuthorize("@moduleAccess.canReadCustomers()")
     public List<Map<String, Object>> list(@PathVariable long customerId) {
         return customerService.listSpecialPrices(customerId);
     }
 
-    /** Mapa producto -> precio especial, para que el POS resuelva el precio del cliente. */
+    /**
+     * Mapa producto -> precio especial, para que el POS resuelva el precio del
+     * cliente.
+     */
     @GetMapping("/map")
     @PreAuthorize("@moduleAccess.canReadCustomers()")
     public Map<Long, BigDecimal> map(@PathVariable long customerId) {
         return customerService.specialPriceMap(customerId);
     }
 
-    /** Crea o actualiza el precio especial de un producto para el cliente (idempotente). */
+    /**
+     * Crea o actualiza el precio especial de un producto para el cliente
+     * (idempotente).
+     * Lo puede hacer tanto administración (módulo {@code customers}) como el
+     * CAJERO, que
+     * negocia el precio pactado al vender ({@code canReadCustomers()} incluye a
+     * quien puede vender).
+     */
     @PutMapping
+    @PreAuthorize("@moduleAccess.canReadCustomers()")
     public ResponseEntity<?> upsert(
             @PathVariable long customerId, @Valid @RequestBody UpsertRequest request) {
         try {
@@ -61,16 +79,21 @@ public class CustomerPriceController {
         }
     }
 
-    /** Elimina el precio especial de un producto para el cliente. */
+    /**
+     * Elimina el precio especial de un producto para el cliente (admin o cajero).
+     */
     @DeleteMapping("/{productId}")
+    @PreAuthorize("@moduleAccess.canReadCustomers()")
     public ResponseEntity<Void> delete(@PathVariable long customerId, @PathVariable long productId) {
         customerService.deleteSpecialPrice(customerId, productId);
         return ResponseEntity.noContent().build();
     }
 
     /**
-     * Un cliente/producto inexistente es un 404; un precio inválido es un 400. Se distingue por el
-     * texto del mensaje porque el servicio lanza la misma excepción para ambos casos.
+     * Un cliente/producto inexistente es un 404; un precio inválido es un 400. Se
+     * distingue por el
+     * texto del mensaje porque el servicio lanza la misma excepción para ambos
+     * casos.
      */
     private static int statusFor(IllegalArgumentException ex) {
         String message = ex.getMessage() == null ? "" : ex.getMessage();
