@@ -8,6 +8,8 @@ import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fileToThumbnailDataUrl } from '@/lib/image';
 import { fadeInUp, pressable, staggerContainer, staggerItem } from '@/lib/motion';
+import { useSession } from '@/store/session';
+import { decodeToken, hasModule } from '@/lib/jwt';
 import '@/pages/dashboard.css';
 import './products.css';
 
@@ -22,6 +24,7 @@ interface ProductExtras {
   price3: number;
   price4: number;
   price5: number;
+  wastePrice: number;
   lastCost: number;
   avgCost: number;
   minStock: number;
@@ -101,6 +104,7 @@ interface DraftForm {
   price3: string;
   price4: string;
   price5: string;
+  wastePrice: string;
   taxRate: string; // en porcentaje visible (16)
   iepsRate: string;
   // inventario
@@ -122,7 +126,7 @@ function emptyDraft(): DraftForm {
   return {
     name: '', sku: '', description: '', brand: '', categoryId: '', unit: 'pieza', soldByWeight: false,
     barcode: '', imageUrl: '', active: true,
-    price: '', cost: '', lastCost: '', price2: '', price3: '', price4: '', price5: '',
+    price: '', cost: '', lastCost: '', price2: '', price3: '', price4: '', price5: '', wastePrice: '',
     taxRate: '16', iepsRate: '0',
     minStock: '', maxStock: '', reorderPoint: '',
     forSale: true, trackInventory: true, trackLots: false, allowBelowCost: false,
@@ -140,6 +144,7 @@ function draftFromProduct(p: Product): DraftForm {
     price: String(p.price ?? 0), cost: String(p.cost ?? 0), lastCost: String(x.lastCost ?? 0),
     price2: String(x.price2 ?? 0), price3: String(x.price3 ?? 0),
     price4: String(x.price4 ?? 0), price5: String(x.price5 ?? 0),
+    wastePrice: String(x.wastePrice ?? 0),
     taxRate: String((x.taxRate ?? 0.16) * 100), iepsRate: String((x.iepsRate ?? 0) * 100),
     minStock: String(x.minStock ?? 0), maxStock: String(x.maxStock ?? 0),
     reorderPoint: String(x.reorderPoint ?? 0),
@@ -170,6 +175,7 @@ function draftToPayload(d: DraftForm) {
     price3: num(d.price3),
     price4: num(d.price4),
     price5: num(d.price5),
+    wastePrice: num(d.wastePrice),
     taxRate: num(d.taxRate) / 100,
     iepsRate: num(d.iepsRate) / 100,
     minStock: num(d.minStock),
@@ -193,6 +199,7 @@ function draftToPayload(d: DraftForm) {
  */
 export function ProductsPage() {
   const queryClient = useQueryClient();
+  const isBakery = hasModule(decodeToken(useSession((s) => s.token)), 'bakery');
   const [query, setQuery] = useState('');
   const [deleting, setDeleting] = useState<Product | null>(null);
 
@@ -497,6 +504,13 @@ export function ProductsPage() {
                           onChange={(e) => set('price5', e.target.value)} placeholder="0.00" />
                       </label>
                     </div>
+                    {isBakery && (
+                      <label className="field">
+                        <span>Precio de merma</span>
+                        <input type="number" step="0.01" value={draft.wastePrice}
+                          onChange={(e) => set('wastePrice', e.target.value)} placeholder="0.00" />
+                      </label>
+                    )}
                     <div className="grid-2">
                       <label className="field">
                         <span>IVA (%)</span>
