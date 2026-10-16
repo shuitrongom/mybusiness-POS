@@ -1,5 +1,5 @@
 -- =====================================================================
--- MyBusiness Silva — V32 (tenant): clasificación de VENTA ESPECIAL.
+-- MyBusiness Silva — V33 (tenant): clasificación de VENTA ESPECIAL.
 --
 -- sale.sale_type: 'NORMAL' (solo catálogo) o 'SPECIAL' (al menos un artículo
 --   libre, product_id NULL). Se calcula en backend; NO se confía en el front.
