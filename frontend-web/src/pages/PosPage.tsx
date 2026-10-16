@@ -145,6 +145,9 @@ export function PosPage() {
   const [qtyModalProduct, setQtyModalProduct] = useState<Product | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [customerOpen, setCustomerOpen] = useState(false);
+  // Precios especiales del cliente seleccionado (producto -> precio pactado). Tienen prioridad
+  // sobre la lista de precios y el precio normal. Vacio = el cliente no tiene precios especiales.
+  const [specialPrices, setSpecialPrices] = useState<Record<number, number>>({});
   const [globalDiscount, setGlobalDiscount] = useState(0);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -232,17 +235,43 @@ export function PosPage() {
     localStorage.setItem(PRICELIST_KEY, String(priceListId));
   }, [priceListId]);
 
-  // Al cambiar de lista de precio, recalcula el precio de los renglones que no fueron editados
-  // manualmente (se toma el precio del producto para la nueva lista).
+  // Carga los precios especiales del cliente seleccionado (o los limpia al quitarlo). Es la
+  // fuente de verdad del precio pactado por cliente; el POS lo resuelve con effectivePrice.
+  useEffect(() => {
+    if (!customer || customer.id <= 0) {
+      setSpecialPrices({});
+      return;
+    }
+    let cancelado = false;
+    api.get<Record<number, number>>(`/customers/${customer.id}/prices/map`)
+      .then((r) => { if (!cancelado) setSpecialPrices(r.data || {}); })
+      .catch(() => { if (!cancelado) setSpecialPrices({}); });
+    return () => { cancelado = true; };
+  }, [customer]);
+
+  /**
+   * Precio efectivo de un producto con la prioridad del negocio:
+   *   1) precio ESPECIAL pactado para el cliente seleccionado (si existe),
+   *   2) precio de la LISTA de precios elegida,
+   *   3) precio NORMAL del producto (respaldo dentro de priceForList).
+   */
+  const effectivePrice = useCallback((p: Product): number => {
+    const especial = specialPrices[p.id];
+    if (especial != null && especial >= 0) return especial;
+    return priceForList(p, priceListId);
+  }, [specialPrices, priceListId]);
+
+  // Al cambiar de lista de precio O de cliente (precios especiales), recalcula el precio de los
+  // renglones de catálogo. Los artículos libres conservan su precio capturado.
   useEffect(() => {
     setCart((prev) => prev.map((l) => {
-      if (l.productId == null) return l; // los artículos libres conservan su precio capturado
+      if (l.productId == null) return l;
       const prod = products.find((p) => p.id === l.productId);
       if (!prod) return l;
-      return { ...l, unitPrice: priceForList(prod, priceListId) };
+      return { ...l, unitPrice: effectivePrice(prod) };
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceListId]);
+  }, [priceListId, specialPrices]);
 
   const visibleProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -282,7 +311,7 @@ export function PosPage() {
   const addProduct = (p: Product, qty = 1) => {
     addLine({
       id: crypto.randomUUID(), productId: p.id, categoryId: p.categoryId, description: p.name,
-      quantity: qty, unitPrice: priceForList(p, priceListId), discount: 0,
+      quantity: qty, unitPrice: effectivePrice(p), discount: 0,
     });
     setMessage(null);
   };
@@ -641,11 +670,13 @@ export function PosPage() {
 
         <motion.div className="pos-grid" variants={staggerContainer} initial="hidden" animate="visible">
           {visibleProducts.map((p) => {
-            const shownPrice = priceForList(p, priceListId);
+            const shownPrice = effectivePrice(p);
+            const esEspecial = specialPrices[p.id] != null;
             return (
               <motion.button key={p.id} className="pos-tile" onClick={() => setQtyModalProduct(p)} title={p.name}
                 variants={staggerItem} whileHover={{ y: -3 }} whileTap={{ scale: 0.96 }} transition={springSoft}>
-                {p.extras?.onSale && <span className="pos-tile-sale">Oferta</span>}
+                {esEspecial && <span className="pos-tile-special"><Tag size={11} /> Precio cliente</span>}
+                {!esEspecial && p.extras?.onSale && <span className="pos-tile-sale">Oferta</span>}
                 {p.imageUrl ? (
                   <img src={p.imageUrl} alt={p.name} className="pos-tile-img" />
                 ) : (
@@ -869,7 +900,7 @@ export function PosPage() {
         {qtyModalProduct && (
           <QuantityModal
             product={qtyModalProduct}
-            price={priceForList(qtyModalProduct, priceListId)}
+            price={effectivePrice(qtyModalProduct)}
             onCancel={() => setQtyModalProduct(null)}
             onConfirm={(qty) => {
               addProduct(qtyModalProduct, qty);

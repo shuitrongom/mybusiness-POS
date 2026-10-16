@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Users, UserPlus, Search, X, Info, ReceiptText, CreditCard, MapPin,
-  Camera, Trash2, Pencil, Upload, Plus, Phone, Mail,
+  Camera, Trash2, Pencil, Upload, Plus, Phone, Mail, Tag, Check,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
@@ -178,7 +178,7 @@ function emptyAddress(): Address {
   };
 }
 
-type Tab = 'general' | 'fiscal' | 'credit' | 'addresses';
+type Tab = 'general' | 'fiscal' | 'credit' | 'addresses' | 'prices';
 
 /**
  * Módulo de Clientes ENTERPRISE: tabla premium con búsqueda + editor slide-over con pestañas
@@ -388,6 +388,10 @@ export function CustomersPage() {
                   onClick={() => setTab('credit')}><CreditCard size={15} /> Crédito</button>
                 <button className={`drawer-tab ${tab === 'addresses' ? 'is-active' : ''}`}
                   onClick={() => setTab('addresses')}><MapPin size={15} /> Direcciones</button>
+                {editingId && (
+                  <button className={`drawer-tab ${tab === 'prices' ? 'is-active' : ''}`}
+                    onClick={() => setTab('prices')}><Tag size={15} /> Precios especiales</button>
+                )}
               </div>
 
               <div className="drawer-body">
@@ -599,6 +603,10 @@ export function CustomersPage() {
                     <button className="btn-ghost" onClick={addAddress}><Plus size={15} /> Agregar dirección</button>
                   </div>
                 )}
+
+                {tab === 'prices' && editingId && (
+                  <CustomerSpecialPrices customerId={editingId} />
+                )}
               </div>
 
               <div className="drawer-foot">
@@ -693,6 +701,262 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
             </div>
           </div>
         </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/** Fila de precio especial que devuelve el backend (GET /customers/{id}/prices). */
+interface SpecialPriceRow {
+  id: number;
+  productId: number;
+  productName: string;
+  normalPrice: number;
+  specialPrice: number;
+}
+
+/** Producto del catálogo (para el buscador de alta de precio especial). */
+interface ProductLite {
+  id: number;
+  name: string;
+  price: number;
+}
+
+/**
+ * Sección "Precios especiales" de la ficha del cliente. Permite asignar a un cliente un precio
+ * fijo por producto (precio pactado), con prioridad sobre la lista de precios y el precio normal
+ * en el punto de venta. Muestra la comparación precio normal vs especial y el ahorro, con
+ * búsqueda premium del catálogo para agregar nuevos.
+ */
+function CustomerSpecialPrices({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [picking, setPicking] = useState(false);
+
+  const { data: prices = [], isLoading } = useQuery({
+    queryKey: ['customer-prices', customerId],
+    queryFn: async () =>
+      (await api.get<SpecialPriceRow[]>(`/customers/${customerId}/prices`)).data,
+  });
+
+  const upsert = useMutation({
+    mutationFn: async (p: { productId: number; price: number }) =>
+      api.put(`/customers/${customerId}/prices`, p),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customer-prices', customerId] });
+    },
+    onError: () => toast.error('No se pudo guardar el precio especial', 'Revisa el valor e inténtalo de nuevo.'),
+  });
+
+  const remove = useMutation({
+    mutationFn: async (productId: number) =>
+      api.delete(`/customers/${customerId}/prices/${productId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customer-prices', customerId] });
+      toast.success('Precio especial eliminado', 'El cliente vuelve a pagar el precio normal.');
+    },
+    onError: () => toast.error('No se pudo eliminar el precio especial'),
+  });
+
+  // Ids ya asignados, para excluirlos del buscador de alta.
+  const assigned = useMemo(() => new Set(prices.map((p) => p.productId)), [prices]);
+
+  return (
+    <div className="drawer-section cust-prices">
+      <p className="drawer-note" style={{ marginTop: 0 }}>
+        Precios pactados para este cliente. En el punto de venta tienen prioridad sobre la lista de
+        precios y el precio normal cuando el cliente está seleccionado.
+      </p>
+
+      <button className="btn-accent cust-prices-add" onClick={() => setPicking(true)}>
+        <Plus size={15} /> Asignar precio a un producto
+      </button>
+
+      {isLoading && <p className="drawer-note">Cargando precios…</p>}
+
+      {!isLoading && prices.length === 0 && (
+        <div className="cust-prices-empty">
+          <Tag size={28} strokeWidth={1.5} />
+          <p>Este cliente no tiene precios especiales. Usa el botón de arriba para asignar uno.</p>
+        </div>
+      )}
+
+      {prices.length > 0 && (
+        <div className="cust-prices-table-wrap">
+          <table className="cust-prices-table">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th className="num">Precio normal</th>
+                <th className="num">Precio especial</th>
+                <th className="num">Diferencia</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {prices.map((p) => (
+                <SpecialPriceRowEditor
+                  key={p.id}
+                  row={p}
+                  onSave={(price) => upsert.mutate({ productId: p.productId, price })}
+                  onRemove={() => remove.mutate(p.productId)}
+                  saving={upsert.isPending}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {picking && (
+          <ProductPricePicker
+            search={search}
+            setSearch={setSearch}
+            excludeIds={assigned}
+            onClose={() => setPicking(false)}
+            onPick={(prod, price) => {
+              upsert.mutate({ productId: prod.id, price });
+              setPicking(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/** Fila editable de la tabla de precios especiales: permite ajustar el precio en línea. */
+function SpecialPriceRowEditor({ row, onSave, onRemove, saving }:
+  {
+    row: SpecialPriceRow;
+    onSave: (price: number) => void;
+    onRemove: () => void;
+    saving: boolean;
+  }) {
+  const [value, setValue] = useState<string>(String(row.specialPrice));
+  const current = Number(value);
+  const valid = value.trim() !== '' && Number.isFinite(current) && current >= 0;
+  const changed = valid && current !== row.specialPrice;
+  const diff = (valid ? current : row.specialPrice) - row.normalPrice;
+
+  return (
+    <tr>
+      <td>{row.productName}</td>
+      <td className="num">{money(row.normalPrice)}</td>
+      <td className="num">
+        <div className="cust-price-input">
+          <span>$</span>
+          <input type="number" min={0} step="0.01" value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && changed) onSave(current); }} />
+        </div>
+      </td>
+      <td className={`num ${diff < 0 ? 'is-down' : diff > 0 ? 'is-up' : ''}`}>
+        {diff === 0 ? '—' : `${diff < 0 ? '-' : '+'}${money(Math.abs(diff))}`}
+      </td>
+      <td className="cust-price-actions">
+        {changed && (
+          <button className="icon-btn icon-btn-ok" onClick={() => onSave(current)}
+            disabled={saving} aria-label="Guardar"><Check size={15} /></button>
+        )}
+        <button className="icon-btn icon-btn-danger" onClick={onRemove} aria-label="Quitar">
+          <Trash2 size={14} />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * Selector de producto para asignar un precio especial: busca en el catálogo (excluye los ya
+ * asignados), y al elegir uno pide el precio pactado antes de confirmar.
+ */
+function ProductPricePicker({ search, setSearch, excludeIds, onClose, onPick }:
+  {
+    search: string;
+    setSearch: (v: string) => void;
+    excludeIds: Set<number>;
+    onClose: () => void;
+    onPick: (product: ProductLite, price: number) => void;
+  }) {
+  const [selected, setSelected] = useState<ProductLite | null>(null);
+  const [price, setPrice] = useState('');
+
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ['catalog-products-lite'],
+    queryFn: async () => (await api.get<ProductLite[]>('/catalog/products')).data,
+  });
+
+  const results = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return products
+      .filter((p) => !excludeIds.has(p.id))
+      .filter((p) => q === '' || p.name.toLowerCase().includes(q) || String(p.id) === q)
+      .slice(0, 40);
+  }, [products, search, excludeIds]);
+
+  const priceNum = Number(price);
+  const canConfirm = selected != null && price.trim() !== '' && Number.isFinite(priceNum) && priceNum >= 0;
+
+  return (
+    <motion.div className="pos-modal-overlay" onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+      <motion.div className="pos-modal pos-modal-picker" onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97 }} transition={{ type: 'spring', stiffness: 260, damping: 22 }}>
+        <div className="pos-modal-head">
+          <h3><Tag size={18} /> Asignar precio especial</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button>
+        </div>
+
+        {!selected ? (
+          <>
+            <div className="pos-field pos-picker-search">
+              <span className="pos-field-icon"><Search size={16} /></span>
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar producto por nombre o código…" autoFocus />
+            </div>
+            <div className="pos-picker-list">
+              {isLoading && <div className="pos-picker-empty">Cargando catálogo…</div>}
+              {!isLoading && results.map((p) => (
+                <button key={p.id} className="pos-picker-item"
+                  onClick={() => { setSelected(p); setPrice(String(p.price)); }}>
+                  <span className="pos-picker-info">
+                    <span className="pos-picker-name">{p.name}</span>
+                    <span className="pos-picker-sub">#{p.id} · Precio normal {money(p.price)}</span>
+                  </span>
+                </button>
+              ))}
+              {!isLoading && results.length === 0 && (
+                <div className="pos-picker-empty">Sin productos disponibles para asignar.</div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div style={{ padding: 'var(--space-5)' }}>
+            <div className="cust-price-selected">
+              <span className="pos-picker-name">{selected.name}</span>
+              <span className="pos-picker-sub">#{selected.id} · Precio normal {money(selected.price)}</span>
+            </div>
+            <label className="field" style={{ marginTop: 'var(--space-3)' }}>
+              <span>Precio especial para este cliente</span>
+              <div className="cust-price-input cust-price-input-lg">
+                <span>$</span>
+                <input type="number" min={0} step="0.01" value={price} autoFocus
+                  onChange={(e) => setPrice(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && canConfirm) onPick(selected, priceNum); }} />
+              </div>
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
+              <button className="btn-ghost" onClick={() => setSelected(null)}>← Elegir otro</button>
+              <button className="btn-accent" disabled={!canConfirm}
+                onClick={() => canConfirm && onPick(selected, priceNum)}>
+                <Check size={15} /> Asignar precio
+              </button>
+            </div>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );

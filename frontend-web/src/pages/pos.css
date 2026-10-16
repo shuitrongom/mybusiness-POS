@@ -2275,3 +2275,27 @@
   flex: 1;
   justify-content: center;
 }
+
+/* Badge "Precio cliente" en el tile de producto cuando el cliente seleccionado
+   tiene un precio especial pactado para ese producto. */
+.pos-tile-special {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, #7c5cff, #5b8cff);
+  padding: 2px 7px;
+  border-radius: 999px;
+  box-shadow: 0 3px 8px rgba(124, 92, 255, 0.35);
+  z-index: 2;
+}
+
+.pos-tile-special svg {
+  flex: 0 0 auto;
+}

@@ -1,5 +1,5 @@
 -- =====================================================================
--- MyBusiness Silva — V31 (tenant): PRECIOS ESPECIALES POR CLIENTE.
+-- MyBusiness Silva — V32 (tenant): PRECIOS ESPECIALES POR CLIENTE.
 --
 -- Permite asignar a un cliente un precio especial por producto, que el POS
 -- usa como fuente de verdad cuando ese cliente está seleccionado. Es la base
