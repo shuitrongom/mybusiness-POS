@@ -26,16 +26,54 @@
  * al inyectar bytes crudos.
  */
 
-import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
-import { info, error } from './logger.js';
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const { info, error } = require('./logger.js');
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WORKER_PATH = path.join(__dirname, 'raw-print-worker.ps1');
+// __dirname/__filename son nativos de CommonJS (no se necesita import.meta).
+// En DEV __dirname es print-agent/src. Empaquetado con pkg apunta al snapshot
+// virtual de solo lectura (C:\snapshot\print-agent\src): fs.readFileSync SI
+// puede leer de ahi (el .ps1 va como asset en package.json), pero PowerShell
+// NO puede abrir una ruta del snapshot con -File. Por eso NO se le pasa a
+// PowerShell una ruta dentro del snapshot: se COPIA el .ps1 a disco real.
+
+// Carpeta de datos REAL en disco (escribible) usada para dejar la copia del
+// worker .ps1 que PowerShell si puede ejecutar. Igual en dev y en .exe.
+const DATA_DIR = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'PuntoNubePrint');
+
+// Ruta de origen del worker: en dev y bajo pkg se LEE con fs desde el
+// directorio del modulo (asset empacado). Nunca se pasa directa a PowerShell.
+const WORKER_SRC_PATH = path.join(__dirname, 'raw-print-worker.ps1');
+
+// Ruta REAL del worker ya copiado a disco (cacheada tras la primera copia).
+let rutaWorkerReal = null;
+
+/**
+ * Resuelve el worker raw-print-worker.ps1 a una ruta REAL en disco que
+ * PowerShell pueda ejecutar con -File.
+ *
+ * Por que: empaquetado con pkg el .ps1 vive dentro del snapshot virtual
+ * (C:\snapshot\...). fs.readFileSync lo lee sin problema, pero powershell.exe
+ * no puede abrir rutas del snapshot. La solucion robusta es leer el contenido
+ * del asset con fs y escribirlo a %LOCALAPPDATA%\PuntoNubePrint (o os.tmpdir()
+ * como respaldo). Funciona identico en dev (node src/server.js) y empaquetado.
+ * Se sobrescribe siempre para tomar versiones nuevas tras actualizar el .exe.
+ * @returns {string} ruta absoluta del .ps1 en disco real
+ */
+function resolverWorkerEnDisco() {
+  // (a) Leer el contenido del worker empacado (funciona en dev y en snapshot).
+  const contenido = fs.readFileSync(WORKER_SRC_PATH, 'utf8');
+  // (b) Asegurar la carpeta de datos real.
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  // (c) Escribir la copia a disco real (sobrescribe para tomar nuevas versiones).
+  const destino = path.join(DATA_DIR, 'raw-print-worker.ps1');
+  fs.writeFileSync(destino, contenido, 'utf8');
+  // (d) Devolver la ruta real que si puede abrir PowerShell.
+  return destino;
+}
 
 // Timeout por trabajo de impresion (ms). Si un trabajo no responde en este
 // tiempo se rechaza con error legible y la cola continua con el siguiente.
@@ -109,10 +147,23 @@ function asegurarWorker() {
     return worker;
   }
 
+  // Resolver (una sola vez) la copia REAL en disco del worker .ps1. Si la copia
+  // falla, se lanza: el trabajo actual se rechaza con mensaje legible sin
+  // tumbar el proceso (enviarTrabajo captura el throw de asegurarWorker).
+  if (rutaWorkerReal === null) {
+    try {
+      rutaWorkerReal = resolverWorkerEnDisco();
+      info(`rawPrint: worker copiado a disco real -> ${rutaWorkerReal}`);
+    } catch (err) {
+      error('rawPrint: no se pudo copiar raw-print-worker.ps1 a disco real', err);
+      throw new Error(`No se pudo preparar el worker de impresion: ${err.message}`);
+    }
+  }
+
   info('rawPrint: lanzando worker PowerShell persistente');
   const ps = spawn(
     'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', WORKER_PATH],
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', rutaWorkerReal],
     { windowsHide: true }
   );
 
@@ -218,7 +269,7 @@ function enviarTrabajo(id, printer, file) {
  * @param {Buffer} buffer bytes ESC/POS a imprimir
  * @returns {Promise<void>}
  */
-export async function printRaw(printerName, buffer) {
+async function printRaw(printerName, buffer) {
   if (!printerName || typeof printerName !== 'string') {
     throw new Error('Nombre de impresora invalido');
   }
@@ -357,7 +408,7 @@ async function refrescarCache() {
  * cada ~5 min. Idempotente (no crea intervalos duplicados). El intervalo se
  * desreferencia para no mantener vivo el proceso.
  */
-export function startPrinterCache() {
+function startPrinterCache() {
   // Refresco inicial (no bloquea; corre en background).
   refrescarCache();
   if (!refreshTimer) {
@@ -373,8 +424,8 @@ export function startPrinterCache() {
  * el contrato de server.js.
  * @returns {Promise<string[]>}
  */
-export async function listPrinters() {
+async function listPrinters() {
   return printerCache;
 }
 
-export default { printRaw, listPrinters, startPrinterCache };
+module.exports = { printRaw, listPrinters, startPrinterCache };

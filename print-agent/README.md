@@ -20,46 +20,53 @@ de cajon opcional.
 
 ---
 
-## Instalacion para el cliente
+## Instalacion para el cliente (un solo clic)
 
-### Opcion A — Ejecutable (recomendada, sin instalar Node)
+El agente se entrega como un **ejecutable unico** `puntonube-print.exe` (no hace
+falta instalar Node en la caja). El instalador lo copia y lo deja arrancando
+solo con Windows.
 
-1. Copia `puntonube-print.exe` (generado con `npm run build:exe`) a una carpeta
-   fija, por ejemplo `C:\PuntoNube\`.
-2. Haz doble clic. Se abre una ventana que indica que esta escuchando en
-   `http://127.0.0.1:9100`.
+### Pasos
 
-### Opcion B — Con Node.js instalado
+1. En la carpeta del agente ejecuta **`instalar-agente.bat`** (de preferencia
+   clic derecho ▸ **Ejecutar como administrador**, porque registra una tarea de
+   Windows).
+2. Eso es todo. El `.bat`:
+   - copia `puntonube-print.exe` y `config.json` a `%LOCALAPPDATA%\PuntoNubePrint\`,
+   - registra una **Tarea Programada** llamada `PuntoNube Print` que arranca el
+     agente **cada vez que se inicia sesion en Windows**,
+   - y arranca el agente de inmediato.
 
-Requiere Node.js v18 o superior (probado con v24).
+> **La "pregunta del millon" (¿se apaga y ya no funciona?):** NO. Gracias a la
+> tarea programada `onlogon`, el agente **vuelve a arrancar solo** cada vez que
+> se prende el equipo / se inicia sesion. No es una ejecucion unica: queda
+> instalado como tarea de Windows. El cliente no tiene que abrir nada a mano.
+
+Para verificar que esta corriendo, abre en el navegador de esa maquina:
+`http://127.0.0.1:9100/status` (debe responder un JSON con `ok: true`).
+
+### Desinstalar
+
+Ejecuta **`desinstalar-agente.bat`** (como administrador). Detiene el agente,
+borra la tarea programada y elimina la carpeta `%LOCALAPPDATA%\PuntoNubePrint\`.
+
+### Para desarrollo (con Node.js instalado)
+
+Requiere Node.js v18 o superior (probado con v24). El agente **no tiene
+dependencias de runtime** (solo modulos nativos de Node):
 
 ```cmd
 cd C:\ruta\a\print-agent
-npm install
 npm start
 ```
-
-> El agente **no tiene dependencias de runtime**: usa solo modulos nativos de
-> Node. `npm install` no descarga nada obligatorio. `pkg` (para el `.exe`) es
-> opcional; instalalo con `npm install -g pkg` solo si vas a empaquetar.
-
----
-
-## Dejarlo iniciando con Windows
-
-Para que el agente este siempre disponible al prender la caja:
-
-- **Carpeta de Inicio**: presiona `Win + R`, escribe `shell:startup` y Enter.
-  Pega ahi un acceso directo a `puntonube-print.exe` (o a un `.bat` que haga
-  `cd` + `npm start`).
-- **Programador de tareas**: crea una tarea que ejecute el `.exe` al iniciar
-  sesion, con "Ejecutar aunque el usuario no haya iniciado sesion" si aplica.
 
 ---
 
 ## Configuracion
 
-El agente lee `config.json` (misma carpeta que el ejecutable / el proyecto):
+Cuando corre como `.exe` instalado, el agente lee `config.json` desde
+`%LOCALAPPDATA%\PuntoNubePrint\config.json` (el instalador deja ahi una copia
+editable). En desarrollo (`npm start`) lee el `config.json` del proyecto.
 
 ```json
 {
@@ -221,15 +228,41 @@ Para abrir solo el cajon: `{ "openDrawerOnly": true, "printer": "POS-80" }`.
 
 ---
 
-## Empaquetado a .exe (opcional, no bloqueante)
+## Empaquetado a .exe
+
+El agente esta escrito en **CommonJS** (no ESM) para que `pkg` pueda generar un
+`.exe` de un solo archivo 100% funcional. Se empaqueta con
+**[@yao-pkg/pkg](https://www.npmjs.com/package/@yao-pkg/pkg)** (el fork
+mantenido del `pkg` de Vercel, con soporte para Node 20/22; el `pkg` original
+quedo en Node 18). Esta declarado como `devDependency`, asi que:
 
 ```cmd
-npm install -g pkg
+npm install
 npm run build:exe
 ```
 
-Genera `dist/puntonube-print.exe`. El `.exe`, la carpeta `logs/`, los `.prn` y
-`node_modules/` **no se versionan** (ver `.gitignore`).
+Genera `dist/puntonube-print.exe` con target **node22-win-x64**. El `.exe`, la
+carpeta `logs/`, los `.prn` y `node_modules/` **no se versionan**
+(ver `.gitignore`); el ejecutable se regenera con el comando de arriba.
+
+### Arquitectura CommonJS + pkg + asset del worker
+
+- **CommonJS:** todos los `.js` usan `require`/`module.exports` y `__dirname`
+  nativo (sin `import`/`export` ni `import.meta.url`). Esto evita los errores
+  `ERR_MODULE_NOT_FOUND` que daba el `.exe` cuando el codigo era ESM.
+- **Asset `raw-print-worker.ps1` bajo pkg:** empaquetado, los assets viven en un
+  "snapshot" virtual de solo lectura (`C:\snapshot\...`) que `fs` puede leer
+  pero `powershell.exe -File` **no** puede ejecutar. Por eso, al necesitar el
+  worker por primera vez, el agente **lee** el `.ps1` del snapshot con `fs` y lo
+  **copia a disco real** (`%LOCALAPPDATA%\PuntoNubePrint\raw-print-worker.ps1`),
+  y lanza PowerShell apuntando a esa copia real. Funciona igual en desarrollo
+  (`npm start`) y empaquetado.
+- **Logs y config:** cuando corre como `.exe` se escriben/leen en
+  `%LOCALAPPDATA%\PuntoNubePrint\` (carpeta real escribible), no en el snapshot.
+- **Arranque automatico:** `instalar-agente.bat` registra una Tarea Programada
+  `onlogon`, de modo que el agente arranca solo al iniciar sesion. El reinicio
+  del worker PowerShell si muere ya es interno (`rawPrint.js` lo relanza en la
+  siguiente impresion).
 
 ---
 
@@ -247,5 +280,7 @@ fisica del cliente.
 
 ## Logs
 
-El agente escribe a consola y a `logs/agent-YYYY-MM-DD.log`. Util para
-diagnosticar impresiones fallidas en la caja del cliente.
+El agente escribe a consola y a un archivo diario `agent-YYYY-MM-DD.log`. En
+desarrollo (`npm start`) vive en `print-agent/logs/`; como `.exe` instalado vive
+en `%LOCALAPPDATA%\PuntoNubePrint\logs\`. Util para diagnosticar impresiones
+fallidas en la caja del cliente.

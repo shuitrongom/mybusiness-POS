@@ -11,31 +11,46 @@
  * Sin dependencias runtime: solo modulos nativos de Node.
  */
 
-import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { buildTicketBuffer, buildOpenDrawerBuffer } from './escpos.js';
-import { printRaw, listPrinters, startPrinterCache } from './rawPrint.js';
-import { info, error } from './logger.js';
+const http = require('node:http');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { buildTicketBuffer, buildOpenDrawerBuffer } = require('./escpos.js');
+const { printRaw, listPrinters, startPrinterCache } = require('./rawPrint.js');
+const { info, error } = require('./logger.js');
 
 const VERSION = '1.0.0';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// __dirname es nativo de CommonJS (no se necesita import.meta/fileURLToPath).
+
+// Carpeta de datos REAL en disco. Bajo pkg (process.pkg) el config.json
+// empacado vive en el snapshot de solo lectura, por lo que el cliente no podria
+// editarlo; para permitirlo se busca primero un config.json en esta carpeta.
+const DATA_DIR = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'PuntoNubePrint');
 
 /**
- * Carga config.json (un nivel arriba de src/) si existe. Nunca lanza.
+ * Carga config.json. Nunca lanza; cae a valores por defecto.
+ * En DEV lee print-agent/config.json (un nivel arriba de src/).
+ * Empaquetado con pkg: primero intenta %LOCALAPPDATA%\PuntoNubePrint\config.json
+ * (editable por el cliente, lo deja instalar-agente.bat), y si no existe cae al
+ * config.json empacado en el snapshot (leido con fs, que si puede).
  * @returns {{ port:number, defaultPrinter:string, widthMm:number }}
  */
 function cargarConfig() {
   const defaults = { port: 9100, defaultPrinter: 'POS-80', widthMm: 80 };
-  try {
-    const ruta = path.join(__dirname, '..', 'config.json');
-    if (fs.existsSync(ruta)) {
-      const raw = JSON.parse(fs.readFileSync(ruta, 'utf8'));
-      return { ...defaults, ...raw };
+  // Orden de busqueda: config editable en disco (solo bajo pkg) y luego el
+  // empacado/del proyecto como respaldo.
+  const candidatos = [];
+  if (process.pkg) candidatos.push(path.join(DATA_DIR, 'config.json'));
+  candidatos.push(path.join(__dirname, '..', 'config.json'));
+  for (const ruta of candidatos) {
+    try {
+      if (fs.existsSync(ruta)) {
+        const raw = JSON.parse(fs.readFileSync(ruta, 'utf8'));
+        return { ...defaults, ...raw };
+      }
+    } catch (err) {
+      error(`No se pudo leer ${ruta}, intentando siguiente/valores por defecto`, err);
     }
-  } catch (err) {
-    error('No se pudo leer config.json, usando valores por defecto', err);
   }
   return defaults;
 }
@@ -220,4 +235,4 @@ server.listen(PORT, HOST, () => {
   startPrinterCache();
 });
 
-export { server, origenPermitido };
+module.exports = { server, origenPermitido };

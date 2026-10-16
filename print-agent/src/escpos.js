@@ -48,7 +48,7 @@ const LF = [0x0a];
  * @param {number} widthMm
  * @returns {number}
  */
-export function colsFor(widthMm) {
+function colsFor(widthMm) {
   return widthMm === 58 ? 32 : 48;
 }
 
@@ -160,7 +160,7 @@ function sep(cols) {
  * @param {number} widthMm 58 o 80
  * @returns {Buffer}
  */
-export function buildTicketBuffer(ticket, widthMm) {
+function buildTicketBuffer(ticket, widthMm) {
   const cols = colsFor(widthMm);
   const t = ticket && typeof ticket === 'object' ? ticket : {};
   const header = t.header && typeof t.header === 'object' ? t.header : {};
@@ -247,11 +247,11 @@ export function buildTicketBuffer(ticket, widthMm) {
  * necesario; se omite el corte para no desperdiciar papel).
  * @returns {Buffer}
  */
-export function buildOpenDrawerBuffer() {
+function buildOpenDrawerBuffer() {
   const w = new Writer();
   w.cmd(INIT);
   w.cmd(OPEN_DRAWER);
   return w.toBuffer();
 }
 
-export default { buildTicketBuffer, buildOpenDrawerBuffer, colsFor };
+module.exports = { buildTicketBuffer, buildOpenDrawerBuffer, colsFor };
