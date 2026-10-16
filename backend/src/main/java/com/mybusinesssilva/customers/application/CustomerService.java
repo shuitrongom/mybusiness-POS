@@ -743,4 +743,129 @@ public class CustomerService {
                 .param("balance", balanceAfter).param("ref", reference)
                 .update();
     }
+
+    // ---------------------------------------------------------------------
+    // Precios especiales por cliente (fuente de verdad del precio en el POS).
+    // ---------------------------------------------------------------------
+
+    /**
+     * Lista los precios especiales de un cliente junto al precio normal del producto, para
+     * mostrarlos en la administración del cliente.
+     *
+     * @param customerId cliente
+     * @return lista de precios especiales con las keys
+     *         {@code id, productId, productName, normalPrice, specialPrice}
+     */
+    public java.util.List<java.util.Map<String, Object>> listSpecialPrices(long customerId) {
+        return jdbc.sql("""
+                SELECT cp.id, cp.product_id, p.name AS product_name,
+                       p.price AS normal_price, cp.price AS special_price
+                FROM customer_price cp
+                JOIN product p ON p.id = cp.product_id
+                WHERE cp.customer_id = :cust
+                ORDER BY p.name
+                """)
+                .param("cust", customerId)
+                .query((rs, n) -> {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id", rs.getLong("id"));
+                    m.put("productId", rs.getLong("product_id"));
+                    m.put("productName", rs.getString("product_name"));
+                    m.put("normalPrice", rs.getBigDecimal("normal_price"));
+                    m.put("specialPrice", rs.getBigDecimal("special_price"));
+                    return m;
+                })
+                .list();
+    }
+
+    /**
+     * Crea o actualiza el precio especial de un producto para un cliente (idempotente por
+     * {@code (customer_id, product_id)}). Valida que el precio sea no negativo y que existan
+     * tanto el cliente como el producto.
+     *
+     * @param customerId cliente
+     * @param productId  producto
+     * @param price      precio especial (no negativo)
+     * @return el registro resultante con la misma forma que {@link #listSpecialPrices(long)}
+     * @throws IllegalArgumentException si el precio es inválido o no existe el cliente/producto
+     */
+    @Transactional
+    public java.util.Map<String, Object> upsertSpecialPrice(long customerId, long productId,
+                                                            BigDecimal price) {
+        if (price == null || price.signum() < 0) {
+            throw new IllegalArgumentException("El precio especial debe ser mayor o igual a cero");
+        }
+        boolean customerExists = jdbc.sql("SELECT 1 FROM customer WHERE id = :cust")
+                .param("cust", customerId)
+                .query(Integer.class).optional().isPresent();
+        if (!customerExists) {
+            throw new IllegalArgumentException("No existe el cliente con id " + customerId);
+        }
+        boolean productExists = jdbc.sql("SELECT 1 FROM product WHERE id = :prod")
+                .param("prod", productId)
+                .query(Integer.class).optional().isPresent();
+        if (!productExists) {
+            throw new IllegalArgumentException("No existe el producto con id " + productId);
+        }
+
+        long id = jdbc.sql("""
+                INSERT INTO customer_price (customer_id, product_id, price)
+                VALUES (:cust, :prod, :price)
+                ON CONFLICT (customer_id, product_id) DO UPDATE SET price = EXCLUDED.price
+                RETURNING id
+                """)
+                .param("cust", customerId).param("prod", productId).param("price", price)
+                .query(Long.class).single();
+
+        return jdbc.sql("""
+                SELECT cp.id, cp.product_id, p.name AS product_name,
+                       p.price AS normal_price, cp.price AS special_price
+                FROM customer_price cp
+                JOIN product p ON p.id = cp.product_id
+                WHERE cp.id = :id
+                """)
+                .param("id", id)
+                .query((rs, n) -> {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id", rs.getLong("id"));
+                    m.put("productId", rs.getLong("product_id"));
+                    m.put("productName", rs.getString("product_name"));
+                    m.put("normalPrice", rs.getBigDecimal("normal_price"));
+                    m.put("specialPrice", rs.getBigDecimal("special_price"));
+                    return m;
+                })
+                .single();
+    }
+
+    /**
+     * Elimina el precio especial de un producto para un cliente. No falla si no existe.
+     *
+     * @param customerId cliente
+     * @param productId  producto
+     */
+    @Transactional
+    public void deleteSpecialPrice(long customerId, long productId) {
+        jdbc.sql("DELETE FROM customer_price WHERE customer_id = :cust AND product_id = :prod")
+                .param("cust", customerId).param("prod", productId)
+                .update();
+    }
+
+    /**
+     * Devuelve el mapa producto -> precio especial del cliente, para que el POS resuelva el
+     * precio al seleccionar al cliente.
+     *
+     * @param customerId cliente
+     * @return mapa {@code {productId: price}} (vacío si no tiene precios especiales)
+     */
+    public java.util.Map<Long, BigDecimal> specialPriceMap(long customerId) {
+        java.util.Map<Long, BigDecimal> map = new java.util.LinkedHashMap<>();
+        jdbc.sql("SELECT product_id, price FROM customer_price WHERE customer_id = :cust")
+                .param("cust", customerId)
+                .query((rs, n) -> {
+                    map.put(rs.getLong("product_id"), rs.getBigDecimal("price"));
+                    return null;
+                })
+                .list();
+        return map;
+    }
 }
