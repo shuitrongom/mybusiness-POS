@@ -194,7 +194,13 @@ export function TicketSettingsPage() {
               whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
               <Save size={16} /> {save.isPending ? 'Guardando…' : 'Guardar configuración'}
             </motion.button>
-            <button className="btn-ghost" onClick={() => { setPaperWidth(form.paperWidthMm); printSale(form, SAMPLE); }}>
+            <button className="btn-ghost" onClick={() => {
+              setPaperWidth(form.paperWidthMm);
+              void printSale(form, SAMPLE).then((r) => {
+                if (r === 'printed') toast.success('Prueba enviada', 'Salió un ticket de prueba por la impresora.');
+                else toast.error('No se pudo imprimir la prueba', 'No se detectó impresora. Verifica que esté conectada y encendida.');
+              });
+            }}>
               <Printer size={16} /> Imprimir prueba
             </button>
           </div>

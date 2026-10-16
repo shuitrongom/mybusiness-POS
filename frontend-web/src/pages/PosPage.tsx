@@ -151,6 +151,10 @@ export function PosPage() {
   const [pending, setPending] = useState(pendingCount());
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [ticket, setTicket] = useState<TicketData | null>(null);
+  // Estado de la impresión directa del ticket recién vendido (controla el modal post-venta):
+  //  'printing'  = enviando al agente ; 'printed' = impreso ; 'no-printer' = sin impresora
+  //  (la venta igual quedó guardada y se puede reimprimir desde Reimpresión).
+  const [printState, setPrintState] = useState<'printing' | 'printed' | 'no-printer' | null>(null);
   const [ticketSettings, setTicketSettings] = useState<TicketSettings>(defaultTicketSettings);
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [now, setNow] = useState(new Date());
@@ -331,16 +335,39 @@ export function PosPage() {
     if (cart.length > 0) setCheckoutOpen(true);
   }, [cart.length, shift]);
 
-  // Cuando se muestra el ticket tras cobrar: Enter/P imprime, Esc cierra e inicia nueva venta.
+  // Cierra el modal post-venta y deja la caja lista para la siguiente venta.
+  const cerrarTicket = useCallback(() => {
+    setTicket(null);
+    setPrintState(null);
+    barcodeRef.current?.focus();
+  }, []);
+
+  // Reimprime (fuerza) el ticket mostrado por el agente directo.
+  const reimprimirTicket = useCallback(() => {
+    if (!ticket) return;
+    setPrintState('printing');
+    void printSale(ticketSettings, ticket).then((r) => setPrintState(r));
+  }, [ticket, ticketSettings]);
+
+  // Modal post-venta: Enter/Esc cierran (siguiente venta); P reimprime. Y autocierre: en cuanto la
+  // impresión directa termina (impreso o sin impresora), el modal se cierra solo tras 4 s para que
+  // el cajero alcance a leer el cambio a entregar. Un cierre manual cancela el temporizador.
   useEffect(() => {
     if (!ticket) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === 'p' || e.key === 'P') { e.preventDefault(); if (ticket) printSale(ticketSettings, ticket); }
-      else if (e.key === 'Escape') { e.preventDefault(); setTicket(null); barcodeRef.current?.focus(); }
+      if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); cerrarTicket(); }
+      else if (e.key === 'p' || e.key === 'P') { e.preventDefault(); reimprimirTicket(); }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ticket, ticketSettings]);
+    // Autocierre solo cuando la impresión ya resolvió (no mientras está 'printing').
+    const t = (printState === 'printed' || printState === 'no-printer')
+      ? setTimeout(cerrarTicket, 4000)
+      : undefined;
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (t) clearTimeout(t);
+    };
+  }, [ticket, printState, cerrarTicket, reimprimirTicket]);
 
   // Ajusta la cantidad del último renglón agregado (para +/- rápidos con teclado).
   const bumpLast = useCallback((delta: number) => {
@@ -442,24 +469,28 @@ export function PosPage() {
       change,
     };
 
+    let ticketData: TicketData;
     try {
       const { data } = await api.post<{ saleId: number }>('/sales', payload);
-      setTicket({ ...ticketBase, folio: data?.saleId ? `V-${data.saleId}` : idempotencyKey.slice(-6), offline: false });
-      toast.success(
-        onCredit ? 'Venta a crédito registrada' : 'Venta registrada',
-        onCredit ? `Saldo a crédito: ${money(total - paid)}.`
-          : change > 0 ? `Cambio a entregar: ${money(change)}.` : 'Se descontó el inventario.',
-      );
+      ticketData = { ...ticketBase, folio: data?.saleId ? `V-${data.saleId}` : idempotencyKey.slice(-6), offline: false };
     } catch {
       queueSale(payload);
       setPending(pendingCount());
-      setTicket({ ...ticketBase, folio: idempotencyKey.slice(-6), offline: true });
+      ticketData = { ...ticketBase, folio: idempotencyKey.slice(-6), offline: true };
       toast.info('Venta guardada sin conexión', 'Se sincronizará automáticamente al reconectar.');
     }
+
+    // Muestra el modal post-venta y lanza la impresión DIRECTA por el agente (sin diálogo). El
+    // modal reacciona al resultado: 'printed' (impreso) o 'no-printer' (sin impresora -> queda
+    // para reimprimir). La venta ya está guardada pase lo que pase con la impresión.
+    setTicket(ticketData);
+    setPrintState('printing');
     clearCart();
     setCustomer(null);
     setCheckoutOpen(false);
     barcodeRef.current?.focus();
+
+    void printSale(ticketSettings, ticketData).then((result) => setPrintState(result));
   };
 
   const sync = async () => {
@@ -850,22 +881,53 @@ export function PosPage() {
 
       <AnimatePresence>
         {ticket && (
-          <motion.div className="pos-modal-overlay" onClick={() => setTicket(null)}
+          <motion.div className="pos-modal-overlay" onClick={cerrarTicket}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <motion.div className="ticket-modal" onClick={(e) => e.stopPropagation()}
+            <motion.div className="ticket-modal pos-sale-done" onClick={(e) => e.stopPropagation()}
               initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.97 }} transition={springSoft}>
-              <div className="ticket-modal-head">
-                <h3>Venta registrada</h3>
-                <button className="modal-close" onClick={() => setTicket(null)} aria-label="Cerrar">×</button>
+
+              {/* Cabecera: cambio a entregar en grande (lo que importa al cajero en el momento) */}
+              <div className="pos-done-hero">
+                <button className="pos-done-close" onClick={cerrarTicket} aria-label="Cerrar"><X size={18} /></button>
+                <span className="pos-done-badge">✓ Venta registrada · {ticket.folio}</span>
+                {ticket.change != null && ticket.change > 0 ? (
+                  <>
+                    <span className="pos-done-change-label">Cambio a entregar</span>
+                    <strong className="pos-done-change">{money(ticket.change)}</strong>
+                  </>
+                ) : (
+                  <>
+                    <span className="pos-done-change-label">Total cobrado</span>
+                    <strong className="pos-done-change pos-done-change-ok">{money(ticket.total)}</strong>
+                    <span className="pos-done-change-sub">Pago exacto, sin cambio</span>
+                  </>
+                )}
               </div>
+
+              {/* Banda de estado de impresión directa */}
+              <div className={`pos-done-print pos-done-print-${printState ?? 'printing'}`}>
+                {printState === 'printing' && (
+                  <><RefreshCw size={15} className="pos-done-spin" /> Imprimiendo ticket…</>
+                )}
+                {printState === 'printed' && (
+                  <><TicketIcon size={15} /> Ticket impreso</>
+                )}
+                {printState === 'no-printer' && (
+                  <><TicketIcon size={15} /> Sin impresora. La venta quedó guardada: puedes reimprimir el ticket desde <strong>Reimpresión</strong> cuando la impresora esté lista.</>
+                )}
+              </div>
+
               <div className="ticket-modal-body">
                 <Ticket settings={ticketSettings} data={ticket} />
               </div>
+
               <div className="ticket-actions">
-                <button className="btn-ghost" onClick={() => setTicket(null)}>Cerrar</button>
-                <button className="pos-confirm" onClick={() => { if (ticket) printSale(ticketSettings, ticket); }}>
-                  <TicketIcon size={16} /> Imprimir ticket <span className="pos-key-hint">P / Enter</span>
+                <button className="pos-confirm pos-done-next" onClick={cerrarTicket}>
+                  Siguiente venta <span className="pos-key-hint">Enter</span>
+                </button>
+                <button className="btn-ghost" onClick={reimprimirTicket} disabled={printState === 'printing'}>
+                  <TicketIcon size={16} /> Reimprimir <span className="pos-key-hint">P</span>
                 </button>
               </div>
             </motion.div>

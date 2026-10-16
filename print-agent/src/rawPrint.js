@@ -260,11 +260,69 @@ function enviarTrabajo(id, printer, file) {
 }
 
 /**
+ * Verifica el ESTADO REAL de una impresora en Windows antes de imprimir, para
+ * NO encolar un trabajo que nunca saldra (el spooler acepta trabajos aunque el
+ * equipo este apagado/desconectado o el driver exista sin equipo fisico).
+ *
+ * Consulta Win32_Printer por nombre y evalua:
+ *   - Que la impresora EXISTA (si no, no hay nada que imprimir).
+ *   - WorkOffline = true  -> offline (apagada, desconectada o "usar sin conexion").
+ *   - DetectedErrorState > 1 (p.ej. 2=sin papel... segun CIM; 0/1 = sin error).
+ * Devuelve { ready, reason }. Nunca lanza: ante cualquier fallo de la consulta
+ * devuelve ready=true para NO bloquear impresiones por un problema de WMI (el
+ * worker/spooler sigue siendo la ultima linea de defensa y reporta su propio
+ * error). Asi evitamos falsos negativos: solo marcamos NO lista cuando Windows
+ * lo dice con claridad.
+ * @param {string} printerName
+ * @returns {Promise<{ ready: boolean, reason?: string }>}
+ */
+async function checkPrinterReady(printerName) {
+  // Script PS: busca la impresora por nombre y emite una linea JSON con su
+  // estado. Si no existe, emite {"exists":false}.
+  const safe = String(printerName).replace(/'/g, "''");
+  const script =
+    `$p = Get-CimInstance Win32_Printer -Filter "Name='${safe}'" -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
+    `if (-not $p) { '{"exists":false}' } else { ` +
+    `$o = [ordered]@{ exists=$true; offline=[bool]$p.WorkOffline; errorState=[int]$p.DetectedErrorState; status=[int]$p.PrinterStatus }; ` +
+    `$o | ConvertTo-Json -Compress }`;
+
+  try {
+    const r = await runPowerShell(script, 4000);
+    if (r.code !== 0 || !r.stdout) {
+      // No se pudo determinar: no bloquear (ready=true), el spooler decidira.
+      return { ready: true };
+    }
+    let st;
+    try { st = JSON.parse(r.stdout.split(/\r?\n/).filter(Boolean).pop()); }
+    catch { return { ready: true }; }
+
+    if (st && st.exists === false) {
+      return { ready: false, reason: `La impresora '${printerName}' no esta instalada en este equipo.` };
+    }
+    if (st && st.offline === true) {
+      return { ready: false, reason: `La impresora '${printerName}' esta sin conexion (apagada o desconectada).` };
+    }
+    // DetectedErrorState: 0=desconocido, 1=otro, 2=sin papel, 3=atascada, 4=sin servicio,
+    // 5=sin toner/papel, 6=puerta abierta, etc. Tratar >1 como no lista con motivo.
+    if (st && typeof st.errorState === 'number' && st.errorState > 1) {
+      const motivos = { 2: 'sin papel', 3: 'con papel atascado', 4: 'no disponible', 5: 'sin suministros', 6: 'con la tapa abierta' };
+      return { ready: false, reason: `La impresora '${printerName}' esta ${motivos[st.errorState] || 'con un error'}.` };
+    }
+    return { ready: true };
+  } catch {
+    // WMI fallo/expiro: no bloquear por eso (evitar falsos negativos).
+    return { ready: true };
+  }
+}
+
+/**
  * Envia un buffer RAW a la impresora de Windows por nombre.
- * Escribe el buffer a un .prn temporal, lo encola, se procesa en serie por el
- * worker persistente y se espera la respuesta de ese trabajo con timeout. En
- * finally borra el temporal. Rechaza con error legible si la impresora no
- * existe, esta apagada o sin papel (errores del spooler) o si expira.
+ * ANTES de encolar verifica el estado real de la impresora (checkPrinterReady):
+ * si Windows la reporta inexistente, offline o en error, rechaza de inmediato
+ * con mensaje legible SIN encolar un trabajo que no saldria. Si esta lista (o
+ * el estado no se pudo determinar), escribe el buffer a un .prn temporal, lo
+ * encola, se procesa en serie por el worker persistente y se espera la
+ * respuesta con timeout. En finally borra el temporal.
  * @param {string} printerName nombre de la impresora en Windows (p.ej. 'POS-80')
  * @param {Buffer} buffer bytes ESC/POS a imprimir
  * @returns {Promise<void>}
@@ -275,6 +333,14 @@ async function printRaw(printerName, buffer) {
   }
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
     throw new Error('Buffer de impresion vacio');
+  }
+
+  // Verificacion de estado REAL antes de encolar: no mandamos trabajos a una
+  // impresora apagada/desconectada/inexistente (saldria "impreso" en falso).
+  const estado = await checkPrinterReady(printerName);
+  if (!estado.ready) {
+    info(`printRaw: impresora '${printerName}' NO lista -> ${estado.reason}`);
+    throw new Error(estado.reason || `La impresora '${printerName}' no esta lista.`);
   }
 
   const id = randomUUID();
