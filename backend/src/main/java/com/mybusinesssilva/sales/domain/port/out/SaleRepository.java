@@ -43,10 +43,10 @@ public interface SaleRepository {
     /**
      * Proyección de un renglón para reposición de inventario.
      *
-     * @param productId producto
+     * @param productId producto; {@code null} para un artículo libre (no mueve inventario)
      * @param quantity  cantidad vendida
      */
-    record SaleLineRow(long productId, BigDecimal quantity) {
+    record SaleLineRow(Long productId, BigDecimal quantity) {
     }
 
     /**
@@ -64,8 +64,8 @@ public interface SaleRepository {
                       BigDecimal total, List<SaleDetailLine> lines) {
     }
 
-    /** Renglón detallado de una venta. */
-    record SaleDetailLine(long productId, String description, BigDecimal quantity,
+    /** Renglón detallado de una venta. {@code productId} es {@code null} para un artículo libre. */
+    record SaleDetailLine(Long productId, String description, BigDecimal quantity,
                           BigDecimal unitPrice) {
     }
 }

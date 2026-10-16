@@ -205,9 +205,12 @@ public class SaleController {
             String idempotencyKey) {
     }
 
-    /** Renglón de venta. */
+    /**
+     * Renglón de venta. {@code productId} es opcional: {@code null} para un artículo libre
+     * (producto rápido / venta aislada), en cuyo caso la descripción identifica el renglón.
+     */
     public record LineRequest(
-            @NotNull Long productId,
+            Long productId,
             String description,
             @NotNull BigDecimal quantity,
             @NotNull BigDecimal unitPrice,

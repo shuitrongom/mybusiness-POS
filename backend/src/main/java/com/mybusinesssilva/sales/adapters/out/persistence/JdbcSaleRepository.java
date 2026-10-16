@@ -138,7 +138,7 @@ public class JdbcSaleRepository implements SaleRepository {
         return jdbc.sql("SELECT product_id, quantity FROM sale_line WHERE sale_id = :id")
                 .param("id", saleId)
                 .query((rs, n) -> new SaleLineRow(
-                        rs.getLong("product_id"), rs.getBigDecimal("quantity")))
+                        (Long) rs.getObject("product_id"), rs.getBigDecimal("quantity")))
                 .list();
     }
 
@@ -164,7 +164,7 @@ public class JdbcSaleRepository implements SaleRepository {
                 """)
                 .param("id", saleId)
                 .query((rs, n) -> new SaleDetailLine(
-                        rs.getLong("product_id"), rs.getString("description"),
+                        (Long) rs.getObject("product_id"), rs.getString("description"),
                         rs.getBigDecimal("quantity"), rs.getBigDecimal("unit_price")))
                 .list();
         return java.util.Optional.of(new SaleDetail(

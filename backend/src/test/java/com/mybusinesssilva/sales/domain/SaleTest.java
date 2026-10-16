@@ -69,4 +69,40 @@ class SaleTest {
                 List.of(), List.of(), null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void buildsFreeLineWithoutProduct() {
+        SaleLine free = new SaleLine(null, "Servicio", new BigDecimal("1"),
+                new BigDecimal("50.00"), BigDecimal.ZERO);
+
+        assertThat(free.productId()).isNull();
+        assertThat(free.lineTotal()).isEqualByComparingTo("50.00");
+
+        Sale sale = Sale.complete(1L, null, null, "cajero", null,
+                List.of(free),
+                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("50.00"))),
+                null);
+        assertThat(sale.total()).isEqualByComparingTo("50.00");
+    }
+
+    @Test
+    void rejectsFreeLineWithoutDescription() {
+        assertThatThrownBy(() -> new SaleLine(null, null, new BigDecimal("1"),
+                new BigDecimal("50.00"), BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("descripción");
+
+        assertThatThrownBy(() -> new SaleLine(null, "   ", new BigDecimal("1"),
+                new BigDecimal("50.00"), BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("descripción");
+    }
+
+    @Test
+    void rejectsFreeLineWithNonPositiveQuantity() {
+        assertThatThrownBy(() -> new SaleLine(null, "Servicio", BigDecimal.ZERO,
+                new BigDecimal("50.00"), BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cantidad");
+    }
 }
