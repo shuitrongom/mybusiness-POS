@@ -120,7 +120,7 @@ export function PosShift({ branchId, onShiftChange }: { branchId: number; onShif
 function OpenShiftModal({ open, branchId, onOpened }: { open: boolean; branchId: number; onOpened: (s: ActiveShift) => void }) {
   const [registers, setRegisters] = useState<CashRegister[]>([]);
   const [registerId, setRegisterId] = useState<number>(0);
-  const [float, setFloat] = useState('0');
+  const [float, setFloat] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -174,7 +174,14 @@ function OpenShiftModal({ open, branchId, onOpened }: { open: boolean; branchId:
                 </select>
               </label>
               <label className="field" style={{ marginTop: 'var(--space-3)' }}><span>Fondo inicial de caja</span>
-                <input type="number" step="0.01" min={0} value={float} onChange={(e) => setFloat(e.target.value)} autoFocus />
+                <input type="number" step="0.01" min={0} value={float} placeholder="0.00"
+                  onChange={(e) => {
+                    // Quita ceros a la izquierda (ej. "0100" -> "100", "01" -> "1") para que no
+                    // se quede pegado el 0 inicial al teclear. Conserva decimales ("0.5").
+                    let v = e.target.value;
+                    if (/^0\d/.test(v)) v = v.replace(/^0+/, '');
+                    setFloat(v);
+                  }} autoFocus />
               </label>
               <div className="pos-float-presets">
                 {[0, 100, 200, 500, 1000].map((v) => (
@@ -242,7 +249,7 @@ function CloseShiftModal({ open, shift, onClose, onClosed }:
         docType: 'CUT_Z', folio: `Z-${shift.shiftId}`, title: 'Corte de caja Z',
         shiftId: shift.shiftId, branchId: shift.branchId, amount: data.expectedCash, reprint: false,
         payload: { ...data, registerName: shift.registerName },
-      }).catch(() => {});
+      }).catch(() => { });
       toast.success('Caja cerrada', 'Se generó e imprimió tu corte Z. Ya no podrás vender más hoy.');
     } catch {
       toast.error('No se pudo cerrar la caja', 'Inténtalo de nuevo.');

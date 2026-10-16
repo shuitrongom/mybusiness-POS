@@ -132,6 +132,8 @@ export function PosPage() {
   const [search, setSearch] = useState('');
   const [barcode, setBarcode] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
+  // Producto seleccionado en la cuadrícula que espera que el cajero confirme la cantidad en el modal.
+  const [qtyModalProduct, setQtyModalProduct] = useState<Product | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [globalDiscount, setGlobalDiscount] = useState(0);
@@ -277,11 +279,10 @@ export function PosPage() {
   };
 
   const setQuantity = (productId: number, quantity: number) => {
-    if (quantity <= 0) {
-      removeLine(productId);
-      return;
-    }
-    setCart((prev) => prev.map((l) => (l.productId === productId ? { ...l, quantity } : l)));
+    // La cantidad nunca baja de 1: ajustar piezas y eliminar son acciones distintas. Para quitar
+    // el renglón se usa el botón Eliminar (bote), no bajando la cantidad a 0.
+    const q = Math.max(1, Math.floor(quantity) || 1);
+    setCart((prev) => prev.map((l) => (l.productId === productId ? { ...l, quantity: q } : l)));
   };
 
   const setUnitPrice = (productId: number, unitPrice: number) => {
@@ -562,7 +563,7 @@ export function PosPage() {
           {visibleProducts.map((p) => {
             const shownPrice = priceForList(p, priceListId);
             return (
-              <motion.button key={p.id} className="pos-tile" onClick={() => addProduct(p)} title={p.name}
+              <motion.button key={p.id} className="pos-tile" onClick={() => setQtyModalProduct(p)} title={p.name}
                 variants={staggerItem} whileHover={{ y: -3 }} whileTap={{ scale: 0.96 }} transition={springSoft}>
                 {p.extras?.onSale && <span className="pos-tile-sale">Oferta</span>}
                 {p.imageUrl ? (
@@ -656,12 +657,13 @@ export function PosPage() {
                   )}
                 </div>
                 <div className="pos-qty">
-                  <button onClick={() => setQuantity(l.productId, l.quantity - 1)} aria-label="Menos">
+                  <button onClick={() => setQuantity(l.productId, l.quantity - 1)} aria-label="Menos"
+                    disabled={l.quantity <= 1}>
                     <Minus size={14} />
                   </button>
                   <input
                     value={l.quantity}
-                    onChange={(e) => setQuantity(l.productId, Number(e.target.value) || 0)}
+                    onChange={(e) => setQuantity(l.productId, Number(e.target.value) || 1)}
                     inputMode="numeric"
                   />
                   <button onClick={() => setQuantity(l.productId, l.quantity + 1)} aria-label="Más">
@@ -757,6 +759,20 @@ export function PosPage() {
             customer={customer}
             onCancel={() => setCheckoutOpen(false)}
             onConfirm={finishSale}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {qtyModalProduct && (
+          <QuantityModal
+            product={qtyModalProduct}
+            price={priceForList(qtyModalProduct, priceListId)}
+            onCancel={() => setQtyModalProduct(null)}
+            onConfirm={(qty) => {
+              addProduct(qtyModalProduct, qty);
+              setQtyModalProduct(null);
+            }}
           />
         )}
       </AnimatePresence>
@@ -860,6 +876,83 @@ function CustomerPicker({ onClose, onPick }:
               <UserPlus size={20} /> Sin coincidencias. Da de alta al cliente en la sección Clientes.
             </div>
           )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/**
+ * Modal de CANTIDAD: al tocar un producto en la cuadrícula, el cajero confirma cuántas piezas
+ * agregar. Mínimo 1 (nunca 0; para quitar se usa el botón Eliminar del carrito). Botones −/+ a los
+ * lados y campo editable en medio. Enter confirma.
+ */
+function QuantityModal({ product, price, onCancel, onConfirm }:
+  { product: Product; price: number; onCancel: () => void; onConfirm: (qty: number) => void }) {
+  // La cantidad se maneja como TEXTO para permitir el campo vacío mientras el cajero teclea.
+  // El mínimo 1 se aplica solo al CONFIRMAR, no en cada tecla (así no "rebota" a 1).
+  const [qtyText, setQtyText] = useState('1');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const qtyNum = Number(qtyText) || 0;
+
+  useEffect(() => {
+    // Selecciona el valor al abrir para que el cajero pueda teclear la cantidad de inmediato.
+    const t = setTimeout(() => inputRef.current?.select(), 60);
+    return () => clearTimeout(t);
+  }, []);
+
+  const dec = () => setQtyText(String(Math.max(1, (Number(qtyText) || 1) - 1)));
+  const inc = () => setQtyText(String((Number(qtyText) || 0) + 1));
+  // Al confirmar: mínimo 1 (si quedó vacío o 0, se toma 1).
+  const confirmar = () => onConfirm(Math.max(1, Math.floor(Number(qtyText) || 1)));
+
+  const money2 = (n: number) =>
+    new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
+
+  return (
+    <motion.div className="pos-modal-overlay" onClick={onCancel}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <motion.div className="pos-modal pos-qty-modal" onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }} transition={{ duration: 0.16 }}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmar(); } }}>
+        <div className="pos-modal-head">
+          <h3>{product.name}</h3>
+          <button className="pos-modal-close" onClick={onCancel} aria-label="Cerrar"><X size={18} /></button>
+        </div>
+        <div className="pos-qty-modal-body">
+          <div className="pos-qty-modal-price">{money2(price)} <span>c/u</span></div>
+          <div className="pos-qty-modal-stepper">
+            <button className="pos-qty-modal-btn" onClick={dec} disabled={qtyNum <= 1} aria-label="Menos">
+              <Minus size={22} />
+            </button>
+            <input
+              ref={inputRef}
+              className="pos-qty-modal-input"
+              value={qtyText}
+              inputMode="numeric"
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => {
+                // Solo dígitos. Permite vacío (el cajero puede borrar y teclear de nuevo).
+                // Quita ceros a la izquierda para que no quede "05" ni empiece en 0.
+                let v = e.target.value.replace(/[^\d]/g, '');
+                v = v.replace(/^0+/, '');
+                setQtyText(v);
+              }}
+              onBlur={() => { if (qtyText === '') setQtyText('1'); }}
+              aria-label="Cantidad"
+            />
+            <button className="pos-qty-modal-btn" onClick={inc} aria-label="Más">
+              <Plus size={22} />
+            </button>
+          </div>
+          <div className="pos-qty-modal-total">Importe: <strong>{money2(price * Math.max(1, qtyNum))}</strong></div>
+        </div>
+        <div className="pos-modal-actions">
+          <button className="btn-ghost" onClick={onCancel}>Cancelar</button>
+          <button className="pos-confirm" onClick={confirmar}>
+            Agregar {Math.max(1, qtyNum)} {Math.max(1, qtyNum) === 1 ? 'pieza' : 'piezas'}
+          </button>
         </div>
       </motion.div>
     </motion.div>
