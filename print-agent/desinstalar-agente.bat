@@ -5,7 +5,7 @@ REM
 REM Que hace (tolerante a que algo ya no exista; no falla si falta algo):
 REM   1. Detiene la tarea programada y el proceso en ejecucion.
 REM   2. Borra la tarea programada "PuntoNube Print".
-REM   3. Borra la carpeta %LOCALAPPDATA%\PuntoNubePrint (exe, config, logs).
+REM   3. Borra la carpeta %LOCALAPPDATA%\PuntoNubePrint (exe, vbs, config, logs).
 REM
 REM NOTA: borrar la tarea puede requerir ejecutar este .bat como Administrador.
 REM ===========================================================================
