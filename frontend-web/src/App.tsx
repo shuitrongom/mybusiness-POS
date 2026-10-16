@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSession } from '@/store/session';
-import { decodeToken, isSuperAdmin, isCashier } from '@/lib/jwt';
+import { decodeToken, isSuperAdmin, isCashier, hasModule } from '@/lib/jwt';
 import { LoginPage } from '@/pages/LoginPage';
 import { LandingPage } from '@/pages/LandingPage';
 import { AppLayout } from '@/components/AppLayout';
@@ -61,6 +61,10 @@ import { SalesByCashierPage } from '@/pages/SalesByCashierPage';
 import { CashierDashboardPage } from '@/pages/CashierDashboardPage';
 import { DocumentsPage } from '@/pages/DocumentsPage';
 import { BranchesPage } from '@/pages/BranchesPage';
+import { BakeryModulePage } from '@/pages/BakeryModulePage';
+import { BakeryProductionPage } from '@/pages/BakeryProductionPage';
+import { BakeryStockPage } from '@/pages/BakeryStockPage';
+import { BakeryWastePage } from '@/pages/BakeryWastePage';
 import { SuperAdminPage } from '@/pages/SuperAdminPage';
 import { SuperAdminDashboardPage } from '@/pages/SuperAdminDashboardPage';
 
@@ -78,6 +82,7 @@ export function App() {
   const claims = decodeToken(token);
   const superAdmin = isSuperAdmin(claims);
   const cashier = isCashier(claims);
+  const bakery = hasModule(claims, 'bakery');
 
   if (!isAuthenticated) {
     return (
@@ -129,6 +134,15 @@ export function App() {
             <Route path="inventory-physical" element={<InventoryPhysicalPage />} />
             <Route path="inventory-stockapp" element={<InventoryStockAppPage />} />
             <Route path="inventory-kardex" element={<InventoryKardexPage />} />
+            {/* Panadería: solo cuando el negocio tiene habilitado el módulo 'bakery'. */}
+            {bakery && (
+              <>
+                <Route path="panaderia" element={<BakeryModulePage />} />
+                <Route path="panaderia-entradas" element={<BakeryProductionPage />} />
+                <Route path="panaderia-existencias" element={<BakeryStockPage />} />
+                <Route path="panaderia-merma" element={<BakeryWastePage />} />
+              </>
+            )}
             <Route path="compras" element={<PurchasingModulePage />} />
             <Route path="purchases" element={<PurchasesPage />} />
             <Route path="purchase-orders" element={<PurchaseOrdersPage />} />

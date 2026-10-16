@@ -15,8 +15,9 @@ import { PosShift, cachedShift, type ActiveShift } from '@/components/PosShift';
 import { setPaperWidth } from '@/lib/thermalPrint';
 import { printSale } from '@/lib/printRouter';
 import { useSession } from '@/store/session';
-import { decodeToken, canSell } from '@/lib/jwt';
+import { decodeToken, canSell, hasModule } from '@/lib/jwt';
 import { ShieldAlert } from 'lucide-react';
+import type { AxiosError } from 'axios';
 import './pos.css';
 
 /** Precios profesionales del producto (coinciden con ProductExtras del backend). */
@@ -82,6 +83,22 @@ interface CartLine {
   unit?: string;
   /** true si es un artículo libre capturado con "Producto rápido". */
   free?: boolean;
+  /**
+   * true si el renglón se vende como MERMA (solo artículos de panadería). El precio se puede
+   * editar a la baja; el renglón viaja en la venta con waste=true y entryPrice (precio de entrada).
+   */
+  waste?: boolean;
+  /** Precio de entrada del artículo de pan (base para calcular la merma); solo renglones de pan. */
+  entryPrice?: number;
+}
+
+/** Detalle del ProblemDetail 409 INSUFFICIENT_STOCK que devuelve el backend al sobrevender. */
+interface InsufficientStock {
+  title?: string;
+  productId?: number;
+  productName?: string | null;
+  available?: number;
+  requested?: number;
 }
 
 type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER' | 'VOUCHER';
@@ -168,7 +185,12 @@ export function PosPage() {
   const barcodeRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const token = useSession((s) => s.token);
-  const sellAllowed = canSell(decodeToken(token));
+  const claims = decodeToken(token);
+  const sellAllowed = canSell(claims);
+  const bakeryEnabled = hasModule(claims, 'bakery');
+  // IDs de los artículos de panadería (del endpoint gateado /bakery/items). Un renglón cuyo
+  // productId está en este conjunto puede marcarse como MERMA en el carrito.
+  const [bakeryIds, setBakeryIds] = useState<Set<number>>(new Set());
 
   // Descuentos automáticos por promociones vigentes, recalculados con el carrito. Los artículos
   // libres (sin productId) no participan en promociones.
@@ -230,6 +252,17 @@ export function PosPage() {
   useEffect(() => {
     if (branchId) localStorage.setItem(BRANCH_KEY, String(branchId));
   }, [branchId]);
+
+  // Carga los IDs de artículos de panadería de la sucursal activa (solo si el negocio tiene el
+  // módulo 'bakery'). Permite identificar en el carrito qué renglones admiten venta como merma.
+  useEffect(() => {
+    if (!bakeryEnabled || !branchId) { setBakeryIds(new Set()); return; }
+    let cancelled = false;
+    api.get<{ id: number }[]>('/bakery/items', { params: { branchId } })
+      .then((r) => { if (!cancelled) setBakeryIds(new Set(r.data.map((i) => i.id))); })
+      .catch(() => { if (!cancelled) setBakeryIds(new Set()); });
+    return () => { cancelled = true; };
+  }, [bakeryEnabled, branchId]);
 
   useEffect(() => {
     localStorage.setItem(PRICELIST_KEY, String(priceListId));
@@ -344,6 +377,22 @@ export function PosPage() {
 
   const setUnitPrice = (id: string, unitPrice: number) => {
     setCart((prev) => prev.map((l) => (l.id === id ? { ...l, unitPrice: Math.max(unitPrice, 0) } : l)));
+  };
+
+  /**
+   * Marca/desmarca un renglón de pan como MERMA. Al activarla, el precio actual pasa a ser el
+   * precio de entrada (entryPrice) y el precio del renglón queda editable a la baja (es el precio
+   * de merma que viaja como unitPrice). Al desactivarla, se restaura el precio de entrada.
+   */
+  const toggleWaste = (id: string) => {
+    setCart((prev) => prev.map((l) => {
+      if (l.id !== id) return l;
+      if (l.waste) {
+        const restored = l.entryPrice ?? l.unitPrice;
+        return { ...l, waste: false, entryPrice: undefined, unitPrice: restored };
+      }
+      return { ...l, waste: true, entryPrice: l.unitPrice };
+    }));
   };
 
   const removeLine = (id: string) => {
@@ -472,6 +521,10 @@ export function PosPage() {
         unitPrice: l.unitPrice,
         discount: promoDiscountOf(l),
         unit: l.unit ?? null,
+        // Merma de panadería: el renglón viaja con waste=true y su precio de entrada; el backend
+        // registra la merma (wastePrice ≡ unitPrice) y descuenta la existencia.
+        waste: l.waste ? true : null,
+        entryPrice: l.waste ? (l.entryPrice ?? null) : null,
       })),
       payments: payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: p.amount })),
       idempotencyKey,
@@ -502,7 +555,29 @@ export function PosPage() {
     try {
       const { data } = await api.post<{ saleId: number }>('/sales', payload);
       ticketData = { ...ticketBase, folio: data?.saleId ? `V-${data.saleId}` : idempotencyKey.slice(-6), offline: false };
-    } catch {
+    } catch (err) {
+      const ax = err as AxiosError<InsufficientStock>;
+      const problem = ax.response?.data;
+      // 409 INSUFFICIENT_STOCK: el backend NO guardó la venta (rollback). No se encola offline:
+      // es un rechazo de negocio. Se avisa al cajero y se topa la cantidad vendible a 'available'.
+      if (ax.response?.status === 409 && problem?.title === 'INSUFFICIENT_STOCK') {
+        const available = problem.available ?? 0;
+        const name = problem.productName
+          ?? (problem.productId != null
+            ? cart.find((l) => l.productId === problem.productId)?.description
+            : undefined)
+          ?? 'el producto';
+        setCart((prev) => prev.map((l) =>
+          (problem.productId != null && l.productId === problem.productId)
+            ? { ...l, quantity: Math.max(1, Math.floor(available)) }
+            : l));
+        toast.error(
+          'Sin existencia suficiente',
+          `Solo hay ${available} de ${name}. Ajustamos la cantidad a lo disponible.`,
+        );
+        return; // la venta no se registró; el cajero reintenta con la cantidad topada
+      }
+      // Cualquier otro error (sin conexión): se encola para sincronizar más tarde.
       queueSale(payload);
       setPending(pendingCount());
       ticketData = { ...ticketBase, folio: idempotencyKey.slice(-6), offline: true };
@@ -749,6 +824,7 @@ export function PosPage() {
             {cart.map((l) => {
               const promoLabel = l.productId != null ? promoResult.labelByProduct[l.productId] : undefined;
               const promoDisc = l.productId != null ? (promoResult.discountByProduct[l.productId] || 0) : 0;
+              const isBakery = l.productId != null && bakeryIds.has(l.productId);
               return (
                 <motion.div key={l.id} className="pos-line" layout
                   initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
@@ -775,6 +851,20 @@ export function PosPage() {
                       <span className="pos-line-promo">
                         <Tag size={11} /> {promoLabel} · -{money(promoDisc)}
                       </span>
+                    )}
+                    {isBakery && (
+                      <button
+                        type="button"
+                        className={`pos-line-waste ${l.waste ? 'is-active' : ''}`}
+                        onClick={() => toggleWaste(l.id)}
+                        title={l.waste
+                          ? 'Vendiendo como merma (precio editable a la baja). Toca para quitar.'
+                          : 'Marcar como merma: baja el precio por pan del día anterior.'}
+                      >
+                        <Trash2 size={11} /> {l.waste
+                          ? `Merma · entrada ${money(l.entryPrice ?? 0)}`
+                          : 'Vender como merma'}
+                      </button>
                     )}
                   </div>
                   <div className="pos-qty">

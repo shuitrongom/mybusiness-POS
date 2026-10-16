@@ -2,12 +2,12 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import {
-  ShoppingCart, ShoppingBag, Boxes, Wallet, FileText, Settings,
+  ShoppingCart, ShoppingBag, Boxes, Wallet, FileText, Settings, Croissant,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { useSession } from '@/store/session';
-import { decodeToken, canUseModule } from '@/lib/jwt';
+import { decodeToken, canUseModule, hasModule } from '@/lib/jwt';
 import { staggerContainer, staggerItem } from '@/lib/motion';
 import './home.css';
 
@@ -57,12 +57,15 @@ export function HomePage() {
     { to: '/ventas', label: 'Ventas', sub: 'Punto de venta, devoluciones, clientes, cobranza y cortes', icon: <ShoppingCart size={30} color="#fff" />, from: '#16a34a', to2: '#22c55e', live: salesLive, module: 'sales' },
     { to: '/compras', label: 'Compras', sub: 'Órdenes, proveedores, cuentas por pagar y CFDI', icon: <ShoppingBag size={30} color="#fff" />, from: '#ea580c', to2: '#f97316', module: 'purchasing' },
     { to: '/inventario', label: 'Inventario', sub: 'Existencias, productos, series, lotes y etiquetas', icon: <Boxes size={30} color="#fff" />, from: '#0891b2', to2: '#06b6d4', live: stockLive, module: 'inventory' },
+    { to: '/panaderia', label: 'Panadería', sub: 'Producción del día, existencias y merma vendible', icon: <Croissant size={30} color="#fff" />, from: '#b45309', to2: '#d97706', module: 'bakery' },
     { to: '/facturacion', label: 'Facturación electrónica', sub: 'CFDI 4.0, pagos, carta porte y catálogos SAT', icon: <FileText size={30} color="#fff" />, from: '#0d9488', to2: '#14b8a6', module: 'invoicing' },
     { to: '/pagos', label: 'Recargas y servicios', sub: 'Tiempo aire, servicios, saldo y comisiones', icon: <Wallet size={30} color="#fff" />, from: '#9333ea', to2: '#a855f7', module: 'payments' },
     { to: '/branches', label: 'Administración', sub: 'Sucursales, usuarios, tickets y configuración', icon: <Settings size={30} color="#fff" />, from: '#475569', to2: '#64748b', module: 'settings' },
   ];
   // Solo se muestran los módulos que el rol del usuario puede usar (igual que el menú lateral).
-  const tiles = allTiles.filter((t) => canUseModule(claims, t.module));
+  // Panadería se gatea por giro del negocio (módulo 'bakery' en el claim), no por permiso de rol.
+  const tiles = allTiles.filter((t) =>
+    t.module === 'bakery' ? hasModule(claims, 'bakery') : canUseModule(claims, t.module));
 
   return (
     <div>
