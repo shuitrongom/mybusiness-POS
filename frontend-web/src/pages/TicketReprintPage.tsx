@@ -84,9 +84,13 @@ export function TicketReprintPage() {
     change: 0,
   } : null;
 
-  // Impresión térmica: sale al rollo (58/80mm) con el tamaño correcto, sin hoja gigante.
+  // Reimpresión térmica directa por el agente (sin diálogo). Avisa el resultado por toast.
   const doPrint = () => {
-    if (ticketData) printSale(settings.data ?? defaultTicketSettings, ticketData);
+    if (!ticketData) return;
+    void printSale(settings.data ?? defaultTicketSettings, ticketData).then((r) => {
+      if (r === 'printed') toast.success('Ticket reimpreso', 'Salió por la impresora de tickets.');
+      else toast.error('No se pudo reimprimir', 'No se detectó impresora. Verifica que esté conectada y encendida.');
+    });
   };
   const reprint = () => { if (canReprintDirectly) doPrint(); else setAuthOpen(true); };
 

@@ -2149,3 +2149,129 @@
   flex: 1;
   justify-content: center;
 }
+
+/* =====================================================================
+   Modal POST-VENTA premium: cambio a entregar + estado de impresion
+   ===================================================================== */
+.pos-sale-done {
+  overflow: hidden;
+}
+
+/* Cabecera con el cambio a entregar en grande */
+.pos-done-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 22px 20px;
+  text-align: center;
+  background:
+    radial-gradient(120% 150% at 50% 0%, color-mix(in srgb, #12b886 22%, transparent) 0%, transparent 65%),
+    linear-gradient(135deg, color-mix(in srgb, #12b886 16%, var(--surface)) 0%, var(--surface) 72%);
+  border-bottom: 1px solid var(--border);
+}
+
+.pos-done-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  padding: 6px;
+  border: none;
+  border-radius: 10px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-2, #0003) 60%, transparent);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.pos-done-close:hover {
+  color: var(--heading);
+  background: var(--surface-2, rgba(255, 255, 255, 0.08));
+}
+
+.pos-done-badge {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #12b886;
+  background: color-mix(in srgb, #12b886 14%, transparent);
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-bottom: 6px;
+}
+
+.pos-done-change-label {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.pos-done-change {
+  font-size: 46px;
+  font-weight: 900;
+  line-height: 1.05;
+  color: #12b886;
+}
+
+.pos-done-change-ok {
+  color: var(--heading);
+}
+
+.pos-done-change-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Banda de estado de impresion */
+.pos-done-print {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.pos-done-print strong {
+  font-weight: 800;
+}
+
+.pos-done-print-printing {
+  color: var(--brand-600, #2563eb);
+  background: color-mix(in srgb, var(--brand-600, #2563eb) 10%, transparent);
+}
+
+.pos-done-print-printed {
+  color: #12b886;
+  background: color-mix(in srgb, #12b886 10%, transparent);
+}
+
+.pos-done-print-no-printer {
+  color: #d97706;
+  background: color-mix(in srgb, #d97706 12%, transparent);
+}
+
+.pos-done-spin {
+  animation: pos-done-spin 0.9s linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes pos-done-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* El boton principal del modal post-venta ocupa el ancho; reimprimir es secundario */
+.pos-done-next {
+  flex: 1;
+  justify-content: center;
+}

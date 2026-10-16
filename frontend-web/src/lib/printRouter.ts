@@ -1,23 +1,22 @@
 /**
- * Enrutador ÚNICO de impresión (ENTREGABLE 2).
+ * Enrutador ÚNICO de impresión.
  *
- * Cada punto de impresión del POS llama aquí. La estrategia es:
- *  1) Si el agente local está disponible, imprime vía agente (RAW ESC/POS, SIN diálogo).
- *  2) Si el agente no está o la impresión por agente falla, cae al método por navegador
- *     (printTicketHtml), que es el fallback existente e intacto.
+ * TICKET DE VENTA (printSale): SOLO imprime por el agente local (RAW ESC/POS, SIN diálogo). Si el
+ * agente no está o no hay impresora disponible, NO cae al diálogo del navegador (decisión de
+ * producto: ese diálogo confunde al cajero). En su lugar DEVUELVE el resultado para que el POS
+ * muestre su propio modal premium ("cambio a entregar" + reimprimir después desde Reimpresión).
  *
- * NO BLOQUEANTE (FEAT-002): la impresión es "fire-and-forget". Las funciones públicas
- * (printSale/printVoucher) devuelven void DE INMEDIATO y hacen la detección + envío al agente en
- * segundo plano. Así la caja NUNCA se congela esperando al agente ni al diálogo del navegador. El
- * resultado se comunica por toast; un fallo de impresión jamás afecta a la venta (que ya se
- * registró antes con await api.post('/sales')).
+ * COMPROBANTES (printVoucher: cortes, movimientos, devoluciones): conservan el fallback por
+ * navegador intacto, porque los usa administración y no es el flujo de caja del cajero.
  *
- * Este módulo NO elimina ni modifica thermalPrint.ts ni ticketHtml.ts: solo los orquesta.
+ * La impresión del ticket de venta ya NO es fire-and-forget: printSale es async y el llamador
+ * puede await-earlo para decidir el modal. Aun así nunca lanza ni bloquea la venta (que se
+ * registró antes con await api.post('/sales')); cualquier error se resuelve a un PrintResult.
  */
 import type { TicketSettings, TicketData } from '@/components/Ticket';
 import type { VoucherData } from '@/components/Voucher';
 import { getPaperWidth, printTicketHtml } from '@/lib/thermalPrint';
-import { saleTicketHtml, voucherHtml } from '@/lib/ticketHtml';
+import { voucherHtml } from '@/lib/ticketHtml';
 import {
   isAgentAvailable,
   printViaAgent,
@@ -26,14 +25,22 @@ import {
 } from '@/lib/localPrint';
 import { toast } from '@/store/toast';
 
+/**
+ * Resultado de imprimir el ticket de venta por el agente:
+ *  - 'printed'    : el agente imprimió correctamente (impresora conectada y lista).
+ *  - 'no-printer' : no se pudo imprimir (agente ausente, impresora apagada/desconectada o error
+ *                   del spooler). La venta ya quedó guardada; el ticket se puede reimprimir luego.
+ */
+export type PrintResult = 'printed' | 'no-printer';
+
 /** Normaliza el ancho actual del rollo (58/80) para el agente. */
 function anchoActual(): 58 | 80 {
   return getPaperWidth() === 58 ? 58 : 80;
 }
 
 /**
- * Fallback por navegador NO bloqueante: abre la ventana aislada de impresión. Si un bloqueador de
- * pop-ups lo impide, avisa con un toast y la caja sigue usable. Nunca lanza.
+ * Fallback por navegador NO bloqueante (SOLO comprobantes): abre la ventana aislada de impresión.
+ * Si un bloqueador de pop-ups lo impide, avisa con un toast y la caja sigue usable. Nunca lanza.
  */
 function fallbackNavegador(html: string): void {
   const abierta = printTicketHtml(html);
@@ -46,51 +53,43 @@ function fallbackNavegador(html: string): void {
 }
 
 /**
- * Ejecuta la impresión en segundo plano: intenta el agente local; si no está o falla, cae al
- * navegador. Toda la lógica async queda encapsulada aquí para que los llamadores no la esperen.
+ * Imprime el ticket de VENTA SOLO por el agente local y devuelve el resultado. Nunca lanza: ante
+ * cualquier error/timeout o ausencia de impresora, resuelve 'no-printer' para que el POS muestre
+ * el modal de "cambio a entregar". NO usa el diálogo del navegador.
  */
-async function ejecutarEnSegundoPlano(
-  intentarAgente: () => Promise<boolean>,
-  htmlFallback: () => string,
-): Promise<void> {
-  try {
-    if (await isAgentAvailable()) {
-      const ok = await intentarAgente();
-      if (ok) return; // Impresión directa por el agente: silenciosa (sin diálogo ni toast).
-      // El agente estaba disponible pero el envío falló/expiró: avisar y seguir al fallback.
-      toast.error('Falló la impresión directa', 'Se intentará imprimir por el navegador.');
-    } else {
-      toast.info('Impresión por el navegador', 'No se detectó el agente de impresión directa.');
-    }
-  } catch {
-    // isAgentAvailable/printViaAgent no lanzan, pero por robustez tratamos cualquier error como
-    // "sin agente" y caemos al navegador. La caja nunca se bloquea por esto.
-    toast.info('Impresión por el navegador', 'No se detectó el agente de impresión directa.');
-  }
-  fallbackNavegador(htmlFallback());
-}
-
-/**
- * Imprime un ticket de VENTA en segundo plano (fire-and-forget). Retorna void de inmediato: la
- * detección del agente y el envío ocurren sin que la UI los espere, así la caja nunca se congela.
- */
-export function printSale(
+export async function printSale(
   settings: TicketSettings,
   d: TicketData,
   opts?: { cashDrawer?: boolean },
-): void {
-  void ejecutarEnSegundoPlano(
-    () => printViaAgent(mapSaleToAgent(settings, d), anchoActual(), { cashDrawer: opts?.cashDrawer }),
-    () => saleTicketHtml(settings, d),
-  );
+): Promise<PrintResult> {
+  try {
+    if (!(await isAgentAvailable())) return 'no-printer';
+    const ok = await printViaAgent(mapSaleToAgent(settings, d), anchoActual(), { cashDrawer: opts?.cashDrawer });
+    return ok ? 'printed' : 'no-printer';
+  } catch {
+    // isAgentAvailable/printViaAgent no lanzan, pero por robustez cualquier error = sin impresora.
+    return 'no-printer';
+  }
 }
 
 /**
- * Imprime un COMPROBANTE genérico en segundo plano (fire-and-forget). Retorna void de inmediato.
+ * Imprime un COMPROBANTE genérico (corte, movimiento, devolución, traspaso). Intenta el agente y,
+ * si no está disponible o falla, cae al navegador (flujo de administración, intacto). Retorna
+ * void de inmediato (fire-and-forget).
  */
 export function printVoucher(v: VoucherData): void {
-  void ejecutarEnSegundoPlano(
-    () => printViaAgent(mapVoucherToAgent(v), anchoActual()),
-    () => voucherHtml(v),
-  );
+  void (async () => {
+    try {
+      if (await isAgentAvailable()) {
+        const ok = await printViaAgent(mapVoucherToAgent(v), anchoActual());
+        if (ok) return;
+        toast.error('Falló la impresión directa', 'Se intentará imprimir por el navegador.');
+      } else {
+        toast.info('Impresión por el navegador', 'No se detectó el agente de impresión directa.');
+      }
+    } catch {
+      toast.info('Impresión por el navegador', 'No se detectó el agente de impresión directa.');
+    }
+    fallbackNavegador(voucherHtml(v));
+  })();
 }
