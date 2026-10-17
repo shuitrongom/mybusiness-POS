@@ -96,7 +96,8 @@ public class SaleController {
 
                 List<SaleLine> lines = request.lines().stream()
                                 .map(l -> new SaleLine(l.productId(), l.description(), l.quantity(),
-                                                l.unitPrice(), l.discount(), l.unit()))
+                                                l.unitPrice(), l.discount(), l.unit(),
+                                                Boolean.TRUE.equals(l.waste())))
                                 .toList();
 
                 List<Payment> payments = request.payments() == null ? List.of()
@@ -115,22 +116,14 @@ public class SaleController {
                                 request.globalDiscount(), request.note(), onCredit,
                                 lines, payments, request.idempotencyKey());
 
-                // Renglones marcados como merma de panadería: wastePrice = unitPrice del
-                // renglón,
-                // entryPrice = entryPrice del renglón (puede ser null -> lo resuelve el
-                // backend).
-                List<com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase.WasteLineCommand> wasteLines = request
-                                .lines().stream()
-                                .filter(l -> l.productId() != null
-                                                && Boolean.TRUE.equals(l.waste()))
-                                .map(l -> new com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase.WasteLineCommand(
-                                                l.productId(), l.quantity(), l.entryPrice(),
-                                                l.unitPrice()))
-                                .toList();
-
-                SaleService.SaleResult result = wasteLines.isEmpty()
-                                ? saleService.registerSale(sale)
-                                : saleService.registerSaleWithWaste(sale, wasteLines);
+                // La venta de merma se detecta por los propios renglones (SaleLine.waste). El
+                // precio de merma lo aplica el backend desde product.waste_price; el POS no lo
+                // teclea. registerSaleWithWaste descuenta esos renglones de la existencia de
+                // merma.
+                boolean hasWaste = lines.stream().anyMatch(SaleLine::waste);
+                SaleService.SaleResult result = hasWaste
+                                ? saleService.registerSaleWithWaste(sale)
+                                : saleService.registerSale(sale);
                 HttpStatus status = result.duplicated() ? HttpStatus.OK : HttpStatus.CREATED;
                 return ResponseEntity.status(status).body(result);
         }
@@ -230,8 +223,7 @@ public class SaleController {
                         @NotNull BigDecimal unitPrice,
                         BigDecimal discount,
                         @Size(max = 16) String unit,
-                        Boolean waste,
-                        BigDecimal entryPrice) {
+                        Boolean waste) {
         }
 
         /** Pago de venta. */

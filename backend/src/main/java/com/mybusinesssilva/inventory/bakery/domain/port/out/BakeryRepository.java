@@ -35,32 +35,80 @@ public interface BakeryRepository {
      */
     long upsertEntryStatus(String code, String label);
 
-    // --- Merma ---
+    // --- Merma (existencia + trazabilidad) ---
 
     /**
-     * Upsert de la trazabilidad de merma por (saleId, productId), consolidando
-     * cantidad y
-     * recalculando importes con los precios capturados.
+     * Suma {@code quantity} a la existencia de merma del producto/sucursal (upsert
+     * atómico
+     * sobre {@code bakery_waste_stock}). Crea el renglón si no existe.
      */
-    void upsertWasteSale(long saleId, long productId, BigDecimal quantity,
-            BigDecimal entryPrice, BigDecimal wastePrice, BigDecimal difference, String cashier);
-
-    List<Map<String, Object>> listWasteSales(LocalDate from, LocalDate to, Long productId);
+    void addWasteStock(long productId, long branchId, BigDecimal quantity);
 
     /**
-     * Sucursal de una venta (para resolver el entry_price por defecto de la merma).
+     * Descuenta {@code quantity} de la existencia de merma del producto/sucursal de
+     * forma
+     * atómica, sin dejarla negativa.
+     *
+     * @return {@code true} si había existencia suficiente y se descontó;
+     *         {@code false} si no
+     *         (el llamador traduce el {@code false} a no-sobreventa de merma)
      */
+    boolean deductWasteStock(long productId, long branchId, BigDecimal quantity);
+
+    /** Existencia actual EN MERMA (0 si no hay registro). */
+    BigDecimal wasteStock(long productId, long branchId);
+
+    /**
+     * Inserta una fila de trazabilidad en {@code bakery_waste_movement}.
+     *
+     * @param origin      uno de CIERRE/MANUAL/VENTA/REPARTO
+     * @param quantity    cantidad del movimiento (positiva)
+     * @param normalPrice precio normal de referencia del artículo
+     * @param wastePrice  precio de merma aplicado/registrado
+     * @param difference  pérdida: {@code (normalPrice - wastePrice) * quantity}
+     * @param saleId      venta ligada (solo VENTA; null en otros)
+     * @param shiftId     turno ligado (CIERRE/MANUAL; null si no aplica)
+     */
+    void insertWasteMovement(long productId, long branchId, String origin, BigDecimal quantity,
+            BigDecimal normalPrice, BigDecimal wastePrice, BigDecimal difference,
+            String cashier, Long saleId, Long shiftId);
+
+    /** Historial de movimientos de merma por rango (todos los orígenes). */
+    List<Map<String, Object>> listWasteMovements(LocalDate from, LocalDate to, Long productId);
+
+    /**
+     * Productos de pan con existencia normal &gt; 0 en una sucursal, con su
+     * cantidad actual.
+     * Usado por el cierre de caja para pasar el sobrante a merma (origen CIERRE).
+     *
+     * @return lista de mapas {@code {productId, quantity}} con existencia normal
+     *         positiva
+     */
+    List<Map<String, Object>> productsWithNormalStock(long branchId);
+
+    /**
+     * Productos de pan ACTIVOS con existencia &gt; 0 del tipo pedido, para el
+     * selector de Salidas.
+     *
+     * @param kind {@code "waste"} = existencia en merma; cualquier otro = stock
+     *             normal
+     * @return mapas {@code {productId, productName, unit, quantity}}
+     */
+    List<Map<String, Object>> productsWithStock(long branchId, String kind);
+
+    /** Sucursal de una venta. */
     Optional<Long> saleBranch(long saleId);
 
     /**
-     * entry_price por defecto: el del bakery_production_line más reciente del
-     * producto/sucursal;
-     * {@link Optional#empty()} si no hay producción previa.
+     * Precio normal del producto en el catálogo (referencia de la diferencia de
+     * merma).
      */
-    Optional<BigDecimal> latestEntryPrice(long productId, long branchId);
-
-    /** Precio del producto en el catálogo (respaldo de entry_price). */
     Optional<BigDecimal> productPrice(long productId);
+
+    /**
+     * Precio de merma FIJO del producto en el catálogo (0 si no está configurado).
+     */
+    BigDecimal productWastePrice(long productId);
 
     // --- Existencia por día/rango ---
 
@@ -77,6 +125,20 @@ public interface BakeryRepository {
 
     /** Serie diaria producido/vendido por fecha natural dentro del rango. */
     List<Map<String, Object>> dailySeries(long productId, long branchId, LocalDate from, LocalDate to);
+
+    /**
+     * Existencias del día para TODOS los productos de pan de una sucursal, en una
+     * sola consulta.
+     * Por producto devuelve un mapa con: {@code productId}, {@code productName},
+     * {@code unit},
+     * {@code price}, {@code produced} (producido ese día), {@code sold} (vendido
+     * normal ese día),
+     * {@code waste} (existencia actual de merma) y {@code currentStock} (existencia
+     * normal actual).
+     * Incluye los productos con producción, venta o existencia (normal o merma)
+     * relevantes.
+     */
+    List<Map<String, Object>> dailyStockAll(long branchId, LocalDate date);
 
     /** Existencia actual acumulada (inventory_stock) del producto/sucursal. */
     BigDecimal currentStock(long productId, long branchId);

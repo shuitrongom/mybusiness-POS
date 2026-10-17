@@ -3,6 +3,7 @@ package com.mybusinesssilva.inventory.bakery.adapters.in.rest;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryEntryStatus;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProduction;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProductionLine;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteOrigin;
 import com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase;
 import com.mybusinesssilva.platform.security.AuthenticatedUser;
 import com.mybusinesssilva.platform.security.Roles;
@@ -30,7 +31,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Endpoints del subsistema de panadería. Requieren el módulo {@code bakery} habilitado
+ * Endpoints del subsistema de panadería. Requieren el módulo {@code bakery}
+ * habilitado
  * (aislamiento por giro: un negocio de otro giro recibe 403).
  */
 @RestController
@@ -114,6 +116,19 @@ public class BakeryController {
         return bakery.rangeStock(productId, branchId, from, to, groupBy);
     }
 
+    /**
+     * Existencias del DÍA para TODOS los artículos de pan de la sucursal (una sola
+     * vista):
+     * producido / vendido / en merma / restante / valor por producto. Si no se
+     * envía fecha, hoy.
+     */
+    @GetMapping("/stock/day")
+    public List<Map<String, Object>> stockDay(
+            @RequestParam("branchId") long branchId,
+            @RequestParam(value = "date", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return bakery.dailyStockAll(branchId, date);
+    }
+
     // ---- Artículos de pan ----
 
     @GetMapping("/items/search")
@@ -136,7 +151,60 @@ public class BakeryController {
             @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(value = "productId", required = false) Long productId) {
-        return bakery.listWasteSales(from, to, productId);
+        return bakery.listWasteMovements(from, to, productId);
+    }
+
+    /**
+     * Existencia actual EN MERMA de un producto en una sucursal (para que Salidas
+     * muestre cuánta
+     * merma hay disponible antes de registrar un reparto).
+     */
+    @GetMapping("/waste/stock")
+    public Map<String, Object> wasteStock(
+            @RequestParam("productId") long productId,
+            @RequestParam("branchId") long branchId) {
+        return Map.of("productId", productId, "branchId", branchId,
+                "quantity", bakery.wasteStock(productId, branchId));
+    }
+
+    /**
+     * Transición de merma desde Salidas: merma MANUAL anticipada (del stock normal
+     * a merma) o
+     * salida por REPARTO (de la existencia de merma a un repartidor). Los orígenes
+     * CIERRE
+     * (automático al cerrar caja) y VENTA (POS) NO se aceptan aquí.
+     */
+    /**
+     * Productos de pan con existencia &gt; 0 para el selector de Salidas.
+     * {@code kind=normal}
+     * (merma manual / salida normal) o {@code kind=waste} (reparto de merma). Así
+     * el cajero solo
+     * ve lo que SÍ tiene inventario y no elige panes sin existencia.
+     */
+    @GetMapping("/stock/available")
+    public List<Map<String, Object>> stockAvailable(
+            @RequestParam("branchId") long branchId,
+            @RequestParam(value = "kind", required = false, defaultValue = "normal") String kind) {
+        return bakery.productsWithStock(branchId, kind);
+    }
+
+    @PostMapping("/waste/transfer")
+    public ResponseEntity<Void> transferWaste(
+            @AuthenticationPrincipal AuthenticatedUser actor,
+            @Valid @RequestBody WasteTransferRequest r) {
+        WasteOrigin origin;
+        try {
+            origin = WasteOrigin.valueOf(r.origin());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Origen de merma inválido: " + r.origin());
+        }
+        if (origin != WasteOrigin.MANUAL && origin != WasteOrigin.REPARTO) {
+            throw new IllegalArgumentException(
+                    "Desde Salidas solo se permite merma MANUAL o salida por REPARTO.");
+        }
+        bakery.transferToWaste(r.productId(), r.branchId(), r.quantity(),
+                origin, actorOf(actor), null, null);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
     // =====================================================================
@@ -148,8 +216,10 @@ public class BakeryController {
     }
 
     /**
-     * Rol operativo principal del actor por precedencia OWNER > ADMIN > SUPERVISOR > CASHIER;
-     * {@code null} si no coincide ninguno (lista de roles vacía o solo roles no operativos).
+     * Rol operativo principal del actor por precedencia OWNER > ADMIN > SUPERVISOR
+     * > CASHIER;
+     * {@code null} si no coincide ninguno (lista de roles vacía o solo roles no
+     * operativos).
      */
     private static String createdRole(AuthenticatedUser a) {
         if (a == null) {
@@ -191,5 +261,17 @@ public class BakeryController {
             String unit,
             @PositiveOrZero BigDecimal entryPrice,
             @PositiveOrZero BigDecimal unitCost) {
+    }
+
+    /**
+     * Transición de merma desde Salidas. {@code origin} debe ser {@code MANUAL}
+     * (pasar pan del
+     * stock normal a merma) o {@code REPARTO} (sacar merma hacia un repartidor).
+     */
+    public record WasteTransferRequest(
+            @NotNull Long productId,
+            @NotNull Long branchId,
+            @NotNull @Positive @DecimalMax("999999999.999") BigDecimal quantity,
+            @NotBlank String origin) {
     }
 }

@@ -10,6 +10,9 @@ import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp, pressable, staggerContainer, staggerItem } from '@/lib/motion';
+import { useSession } from '@/store/session';
+import { decodeToken, hasModule } from '@/lib/jwt';
+import { BakeryDayStockPage } from '@/pages/BakeryDayStockPage';
 import '@/pages/dashboard.css';
 import './inventory.css';
 
@@ -42,6 +45,16 @@ type Op = 'IN' | 'OUT' | 'ADJUST' | 'TRANSFER';
  * (entrada, salida, ajuste, traspaso) mediante un panel — sin capturar IDs a mano.
  */
 export function InventoryPage() {
+  // En giro panadería, Existencias es la vista del DÍA (producido/vendido/merma/restante), una sola
+  // pantalla. En los demás giros se conserva la vista genérica de existencias de abajo.
+  const bakeryEnabled = hasModule(decodeToken(useSession((s) => s.token)), 'bakery');
+  if (bakeryEnabled) {
+    return <BakeryDayStockPage />;
+  }
+  return <GenericInventoryPage />;
+}
+
+function GenericInventoryPage() {
   const queryClient = useQueryClient();
   const [branchId, setBranchId] = useState<number | 'all'>('all');
   const [query, setQuery] = useState('');
@@ -240,7 +253,7 @@ function OpModal({ op, row, branches, onClose, onDone }: {
 
   const title = op === 'IN' ? 'Entrada al inventario'
     : op === 'OUT' ? 'Salida del inventario'
-    : op === 'ADJUST' ? 'Ajuste de inventario' : 'Traspaso entre sucursales';
+      : op === 'ADJUST' ? 'Ajuste de inventario' : 'Traspaso entre sucursales';
 
   const run = useMutation({
     mutationFn: async () => {

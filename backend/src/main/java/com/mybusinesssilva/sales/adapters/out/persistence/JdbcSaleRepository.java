@@ -57,8 +57,8 @@ public class JdbcSaleRepository implements SaleRepository {
                 for (SaleLine line : sale.getLines()) {
                         jdbc.sql("""
                                         INSERT INTO sale_line
-                                            (sale_id, product_id, description, quantity, unit_price, discount, line_total, unit)
-                                        VALUES (:sale, :product, :desc, :qty, :price, :discount, :total, :unit)
+                                            (sale_id, product_id, description, quantity, unit_price, discount, line_total, unit, waste)
+                                        VALUES (:sale, :product, :desc, :qty, :price, :discount, :total, :unit, :waste)
                                         """)
                                         .param("sale", saleId)
                                         .param("product", line.productId())
@@ -68,6 +68,7 @@ public class JdbcSaleRepository implements SaleRepository {
                                         .param("discount", line.discount())
                                         .param("total", line.lineTotal())
                                         .param("unit", line.unit())
+                                        .param("waste", line.waste())
                                         .update();
                 }
 
@@ -138,10 +139,11 @@ public class JdbcSaleRepository implements SaleRepository {
 
         @Override
         public java.util.List<SaleLineRow> linesOf(long saleId) {
-                return jdbc.sql("SELECT product_id, quantity FROM sale_line WHERE sale_id = :id")
+                return jdbc.sql("SELECT product_id, quantity, waste FROM sale_line WHERE sale_id = :id")
                                 .param("id", saleId)
                                 .query((rs, n) -> new SaleLineRow(
-                                                (Long) rs.getObject("product_id"), rs.getBigDecimal("quantity")))
+                                                (Long) rs.getObject("product_id"), rs.getBigDecimal("quantity"),
+                                                rs.getBoolean("waste")))
                                 .list();
         }
 

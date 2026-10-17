@@ -98,7 +98,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 FROM bakery_production p
                 JOIN bakery_production_line l ON l.production_id = p.id
                 JOIN product pr ON pr.id = l.product_id
-                WHERE (:branch IS NULL OR p.branch_id = :branch)
+                WHERE (CAST(:branch AS bigint) IS NULL OR p.branch_id = CAST(:branch AS bigint))
                   AND (CAST(:from AS date) IS NULL OR p.production_date >= CAST(:from AS date))
                   AND (CAST(:to   AS date) IS NULL OR p.production_date <= CAST(:to   AS date))
                 ORDER BY p.production_date DESC, p.id DESC, l.id ASC
@@ -168,47 +168,90 @@ public class JdbcBakeryRepository implements BakeryRepository {
     }
 
     @Override
-    public void upsertWasteSale(long saleId, long productId, BigDecimal quantity,
-            BigDecimal entryPrice, BigDecimal wastePrice, BigDecimal difference,
-            String cashier) {
-        // Consolida por (sale_id, product_id): si el mismo producto ya tiene merma en
-        // la venta,
-        // suma la cantidad y conserva los precios/diferencia capturados en este
-        // registro.
+    public void addWasteStock(long productId, long branchId, BigDecimal quantity) {
+        // Upsert atómico: crea el renglón de merma o le suma la cantidad.
         jdbc.sql("""
-                INSERT INTO bakery_waste_sale
-                    (sale_id, product_id, quantity, entry_price, waste_price, difference, cashier)
-                VALUES (:sale, :product, :qty, :entry, :waste, :diff, :cashier)
-                ON CONFLICT (sale_id, product_id) DO UPDATE SET
-                    quantity    = bakery_waste_sale.quantity + EXCLUDED.quantity,
-                    entry_price = EXCLUDED.entry_price,
-                    waste_price = EXCLUDED.waste_price,
-                    difference  = EXCLUDED.difference,
-                    cashier     = EXCLUDED.cashier
+                INSERT INTO bakery_waste_stock (product_id, branch_id, quantity)
+                VALUES (:pid, :bid, :qty)
+                ON CONFLICT (product_id, branch_id) DO UPDATE SET
+                    quantity   = bakery_waste_stock.quantity + EXCLUDED.quantity,
+                    updated_at = now()
                 """)
-                .param("sale", saleId)
-                .param("product", productId)
+                .param("pid", productId)
+                .param("bid", branchId)
                 .param("qty", quantity)
-                .param("entry", entryPrice)
-                .param("waste", wastePrice)
-                .param("diff", difference)
-                .param("cashier", cashier)
                 .update();
     }
 
     @Override
-    public List<Map<String, Object>> listWasteSales(LocalDate from, LocalDate to, Long productId) {
+    public boolean deductWasteStock(long productId, long branchId, BigDecimal quantity) {
+        // Descuento atómico que no deja negativo: el WHERE exige saldo suficiente, de
+        // modo que
+        // dos salidas de merma concurrentes nunca sobrevendan. 0 filas => existencia
+        // insuficiente.
+        int updated = jdbc.sql("""
+                UPDATE bakery_waste_stock
+                SET quantity = quantity - :qty, updated_at = now()
+                WHERE product_id = :pid AND branch_id = :bid AND quantity >= :qty
+                """)
+                .param("pid", productId)
+                .param("bid", branchId)
+                .param("qty", quantity)
+                .update();
+        return updated > 0;
+    }
+
+    @Override
+    public BigDecimal wasteStock(long productId, long branchId) {
         return jdbc.sql("""
-                SELECT w.id, w.sale_id, s.folio AS sale_folio, w.product_id, pr.name AS product_name,
-                       w.quantity, w.entry_price, w.waste_price, w.difference, w.cashier, w.created_at
-                FROM bakery_waste_sale w
+                SELECT COALESCE(quantity, 0)
+                FROM bakery_waste_stock
+                WHERE product_id = :pid AND branch_id = :bid
+                """)
+                .param("pid", productId)
+                .param("bid", branchId)
+                .query(BigDecimal.class)
+                .optional()
+                .orElse(BigDecimal.ZERO);
+    }
+
+    @Override
+    public void insertWasteMovement(long productId, long branchId, String origin, BigDecimal quantity,
+            BigDecimal normalPrice, BigDecimal wastePrice, BigDecimal difference,
+            String cashier, Long saleId, Long shiftId) {
+        jdbc.sql("""
+                INSERT INTO bakery_waste_movement
+                    (product_id, branch_id, origin, quantity, normal_price, waste_price,
+                     difference, cashier, sale_id, shift_id)
+                VALUES (:pid, :bid, :origin, :qty, :normal, :waste, :diff, :cashier, :sale, :shift)
+                """)
+                .param("pid", productId)
+                .param("bid", branchId)
+                .param("origin", origin)
+                .param("qty", quantity)
+                .param("normal", normalPrice)
+                .param("waste", wastePrice)
+                .param("diff", difference)
+                .param("cashier", cashier)
+                .param("sale", saleId)
+                .param("shift", shiftId)
+                .update();
+    }
+
+    @Override
+    public List<Map<String, Object>> listWasteMovements(LocalDate from, LocalDate to, Long productId) {
+        return jdbc.sql("""
+                SELECT w.id, w.product_id, pr.name AS product_name, w.origin, w.quantity,
+                       w.normal_price, w.waste_price, w.difference, w.cashier,
+                       w.sale_id, s.folio AS sale_folio, w.shift_id, w.created_at
+                FROM bakery_waste_movement w
                 JOIN product pr ON pr.id = w.product_id
                 LEFT JOIN sale s ON s.id = w.sale_id
                 WHERE (CAST(:from AS date) IS NULL
                        OR w.created_at >= (CAST(:from AS date)) AT TIME ZONE '%s')
                   AND (CAST(:to AS date) IS NULL
                        OR w.created_at < (CAST(:to AS date) + 1) AT TIME ZONE '%s')
-                  AND (:product IS NULL OR w.product_id = :product)
+                  AND (CAST(:product AS bigint) IS NULL OR w.product_id = CAST(:product AS bigint))
                 ORDER BY w.created_at DESC, w.id DESC
                 """.formatted(TZ, TZ))
                 .param("from", from)
@@ -217,16 +260,67 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 .query((rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", rs.getLong("id"));
-                    m.put("saleId", rs.getLong("sale_id"));
-                    m.put("saleFolio", rs.getString("sale_folio"));
                     m.put("productId", rs.getLong("product_id"));
                     m.put("productName", rs.getString("product_name"));
+                    m.put("origin", rs.getString("origin"));
                     m.put("quantity", rs.getBigDecimal("quantity"));
-                    m.put("entryPrice", rs.getBigDecimal("entry_price"));
+                    m.put("normalPrice", rs.getBigDecimal("normal_price"));
                     m.put("wastePrice", rs.getBigDecimal("waste_price"));
                     m.put("difference", rs.getBigDecimal("difference"));
                     m.put("cashier", rs.getString("cashier"));
+                    long saleId = rs.getLong("sale_id");
+                    m.put("saleId", rs.wasNull() ? null : saleId);
+                    m.put("saleFolio", rs.getString("sale_folio"));
+                    long shiftId = rs.getLong("shift_id");
+                    m.put("shiftId", rs.wasNull() ? null : shiftId);
                     m.put("createdAt", rs.getTimestamp("created_at").toInstant());
+                    return m;
+                })
+                .list();
+    }
+
+    @Override
+    public List<Map<String, Object>> productsWithNormalStock(long branchId) {
+        return jdbc.sql("""
+                SELECT st.product_id, st.quantity
+                FROM inventory_stock st
+                JOIN product p ON p.id = st.product_id
+                WHERE st.branch_id = :bid AND st.quantity > 0 AND p.active = TRUE
+                ORDER BY st.product_id
+                """)
+                .param("bid", branchId)
+                .query((rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("productId", rs.getLong("product_id"));
+                    m.put("quantity", rs.getBigDecimal("quantity"));
+                    return m;
+                })
+                .list();
+    }
+
+    @Override
+    public List<Map<String, Object>> productsWithStock(long branchId, String kind) {
+        // kind = 'waste' -> existencia EN MERMA (bakery_waste_stock); cualquier otro ->
+        // stock normal.
+        // Devuelve solo productos de pan ACTIVOS con existencia > 0 del tipo pedido,
+        // para que el
+        // selector de Salidas muestre únicamente lo que SÍ tiene inventario (evita
+        // confundir al cajero).
+        String table = "waste".equalsIgnoreCase(kind) ? "bakery_waste_stock" : "inventory_stock";
+        return jdbc.sql(("""
+                SELECT s.product_id, p.name AS product_name, p.unit, s.quantity
+                FROM %s s
+                JOIN product p ON p.id = s.product_id
+                WHERE s.branch_id = :bid AND s.quantity > 0 AND p.active = TRUE
+                ORDER BY p.name
+                """).formatted(table))
+                .param("bid", branchId)
+                .query((rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("productId", rs.getLong("product_id"));
+                    m.put("productName", rs.getString("product_name"));
+                    m.put("unit", rs.getString("unit"));
+                    m.put("quantity", rs.getBigDecimal("quantity"));
                     return m;
                 })
                 .list();
@@ -241,27 +335,20 @@ public class JdbcBakeryRepository implements BakeryRepository {
     }
 
     @Override
-    public Optional<BigDecimal> latestEntryPrice(long productId, long branchId) {
-        return jdbc.sql("""
-                SELECT l.entry_price
-                FROM bakery_production_line l
-                JOIN bakery_production p ON l.production_id = p.id
-                WHERE l.product_id = :pid AND p.branch_id = :bid
-                ORDER BY p.production_date DESC, p.id DESC
-                LIMIT 1
-                """)
-                .param("pid", productId)
-                .param("bid", branchId)
-                .query(BigDecimal.class)
-                .optional();
-    }
-
-    @Override
     public Optional<BigDecimal> productPrice(long productId) {
         return jdbc.sql("SELECT price FROM product WHERE id = :id")
                 .param("id", productId)
                 .query(BigDecimal.class)
                 .optional();
+    }
+
+    @Override
+    public BigDecimal productWastePrice(long productId) {
+        return jdbc.sql("SELECT COALESCE(waste_price, 0) FROM product WHERE id = :id")
+                .param("id", productId)
+                .query(BigDecimal.class)
+                .optional()
+                .orElse(BigDecimal.ZERO);
     }
 
     @Override
@@ -355,6 +442,80 @@ public class JdbcBakeryRepository implements BakeryRepository {
     }
 
     @Override
+    public List<Map<String, Object>> dailyStockAll(long branchId, LocalDate date) {
+        // Una sola consulta: por cada producto de pan (activo), producido y vendido del
+        // día natural,
+        // existencia normal actual y existencia de merma actual. El filtro de "vendido"
+        // usa el rango
+        // crudo sobre created_at (sargable). Se incluyen productos con producción/venta
+        // ese día o con
+        // existencia (normal o merma) distinta de cero, para no listar ruido con todo
+        // en cero.
+        return jdbc.sql("""
+                WITH prod AS (
+                    SELECT l.product_id, SUM(l.quantity) AS produced
+                    FROM bakery_production_line l
+                    JOIN bakery_production p ON l.production_id = p.id
+                    WHERE p.branch_id = :bid AND p.production_date = CAST(:date AS date)
+                    GROUP BY l.product_id
+                ),
+                sold AS (
+                    SELECT m.product_id, -SUM(m.quantity) AS sold
+                    FROM inventory_movement m
+                    WHERE m.branch_id = :bid AND m.movement_type = 'SALE' AND m.reference LIKE 'SALE:%%'
+                      AND m.created_at >= (CAST(:date AS date)) AT TIME ZONE '%s'
+                      AND m.created_at <  (CAST(:date AS date) + 1) AT TIME ZONE '%s'
+                    GROUP BY m.product_id
+                ),
+                norm AS (
+                    SELECT product_id, quantity FROM inventory_stock WHERE branch_id = :bid
+                ),
+                merma AS (
+                    SELECT product_id, quantity FROM bakery_waste_stock WHERE branch_id = :bid
+                )
+                SELECT p.id, p.name, p.unit, p.price,
+                       COALESCE(prod.produced, 0)   AS produced,
+                       COALESCE(sold.sold, 0)       AS sold,
+                       COALESCE(norm.quantity, 0)   AS current_stock,
+                       COALESCE(merma.quantity, 0)  AS waste
+                FROM product p
+                LEFT JOIN prod  ON prod.product_id  = p.id
+                LEFT JOIN sold  ON sold.product_id  = p.id
+                LEFT JOIN norm  ON norm.product_id  = p.id
+                LEFT JOIN merma ON merma.product_id = p.id
+                WHERE p.active = TRUE
+                  AND (prod.produced IS NOT NULL OR sold.sold IS NOT NULL
+                       OR COALESCE(norm.quantity, 0) <> 0 OR COALESCE(merma.quantity, 0) <> 0)
+                ORDER BY p.name
+                """.formatted(TZ, TZ))
+                .param("bid", branchId)
+                .param("date", date)
+                .query((rs, n) -> {
+                    BigDecimal produced = rs.getBigDecimal("produced");
+                    BigDecimal sold = rs.getBigDecimal("sold");
+                    BigDecimal waste = rs.getBigDecimal("waste");
+                    BigDecimal current = rs.getBigDecimal("current_stock");
+                    BigDecimal price = rs.getBigDecimal("price");
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("productId", rs.getLong("id"));
+                    m.put("productName", rs.getString("name"));
+                    m.put("unit", rs.getString("unit"));
+                    m.put("price", price);
+                    m.put("produced", produced);
+                    m.put("sold", sold);
+                    m.put("waste", waste);
+                    m.put("currentStock", current);
+                    // Restante del día = producido - vendido (lo que quedó de la producción del
+                    // día).
+                    m.put("remaining", produced.subtract(sold));
+                    // Valor = existencia normal actual * precio.
+                    m.put("value", current.multiply(price == null ? BigDecimal.ZERO : price));
+                    return m;
+                })
+                .list();
+    }
+
+    @Override
     public BigDecimal currentStock(long productId, long branchId) {
         return jdbc.sql("""
                 SELECT COALESCE(quantity, 0)
@@ -374,17 +535,18 @@ public class JdbcBakeryRepository implements BakeryRepository {
         if (q.isEmpty()) {
             return List.of();
         }
-        return jdbc.sql("""
-                SELECT p.id, p.sku, p.name, p.unit, p.price, p.cost,
-                       COALESCE(st.quantity, 0) AS quantity
-                FROM product p
-                LEFT JOIN inventory_stock st
-                       ON st.product_id = p.id AND (:branch IS NULL OR st.branch_id = :branch)
-                WHERE p.is_bakery = TRUE AND p.active = TRUE
-                  AND (lower(p.name) LIKE lower(:q) OR p.sku LIKE :q)
-                ORDER BY p.name
-                LIMIT 50
-                """)
+        return jdbc
+                .sql("""
+                        SELECT p.id, p.sku, p.name, p.unit, p.price, p.cost,
+                               COALESCE(st.quantity, 0) AS quantity
+                        FROM product p
+                        LEFT JOIN inventory_stock st
+                               ON st.product_id = p.id AND (CAST(:branch AS bigint) IS NULL OR st.branch_id = CAST(:branch AS bigint))
+                        WHERE p.active = TRUE
+                          AND (lower(p.name) LIKE lower(:q) OR p.sku LIKE :q)
+                        ORDER BY p.name
+                        LIMIT 50
+                        """)
                 .param("q", "%" + q + "%")
                 .param("branch", branchId)
                 .query((rs, n) -> itemRow(rs, false))
@@ -393,16 +555,17 @@ public class JdbcBakeryRepository implements BakeryRepository {
 
     @Override
     public List<Map<String, Object>> listBakeryItems(Long branchId) {
-        return jdbc.sql("""
-                SELECT p.id, p.sku, p.name, p.unit, p.price, p.cost,
-                       COALESCE(st.quantity, 0) AS quantity,
-                       (p.price * COALESCE(st.quantity, 0)) AS line_total
-                FROM product p
-                LEFT JOIN inventory_stock st
-                       ON st.product_id = p.id AND (:branch IS NULL OR st.branch_id = :branch)
-                WHERE p.is_bakery = TRUE AND p.active = TRUE
-                ORDER BY p.name
-                """)
+        return jdbc
+                .sql("""
+                        SELECT p.id, p.sku, p.name, p.unit, p.price, p.cost,
+                               COALESCE(st.quantity, 0) AS quantity,
+                               (p.price * COALESCE(st.quantity, 0)) AS line_total
+                        FROM product p
+                        LEFT JOIN inventory_stock st
+                               ON st.product_id = p.id AND (CAST(:branch AS bigint) IS NULL OR st.branch_id = CAST(:branch AS bigint))
+                        WHERE p.active = TRUE
+                        ORDER BY p.name
+                        """)
                 .param("branch", branchId)
                 .query((rs, n) -> itemRow(rs, true))
                 .list();

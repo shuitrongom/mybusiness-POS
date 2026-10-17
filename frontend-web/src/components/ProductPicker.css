@@ -1,0 +1,138 @@
+/* Selector premium de artículos (por selección, no por teclear). */
+.ppick {
+  position: relative;
+  width: 100%;
+}
+
+.ppick-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--heading);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.ppick-trigger:hover {
+  border-color: var(--brand-500, #2e6ef2);
+}
+
+.ppick-trigger.is-open {
+  border-color: var(--brand-600, #2e6ef2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-600, #2e6ef2) 18%, transparent);
+}
+
+.ppick-trigger-label {
+  flex: 1;
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.ppick-chevron {
+  transition: transform 0.18s ease;
+  color: var(--text-muted);
+}
+
+.ppick-trigger.is-open .ppick-chevron {
+  transform: rotate(180deg);
+}
+
+.ppick-panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.ppick-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.ppick-filter input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--heading);
+  font-size: var(--fs-sm);
+}
+
+.ppick-count {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg, rgba(127, 127, 127, 0.12));
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+.ppick-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.ppick-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--heading);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.ppick-item.is-active {
+  background: color-mix(in srgb, var(--brand-600, #2e6ef2) 14%, transparent);
+}
+
+.ppick-item-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.ppick-item-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+.ppick-item.is-added .ppick-item-name {
+  color: var(--text-muted);
+}
+
+.ppick-item-check {
+  color: #12b886;
+}
+
+.ppick-empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}

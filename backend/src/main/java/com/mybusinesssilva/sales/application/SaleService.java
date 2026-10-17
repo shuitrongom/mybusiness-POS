@@ -103,18 +103,21 @@ public class SaleService {
      * Registra una venta que incluye renglones de merma de panadería, de forma
      * atómica: en la
      * MISMA transacción persiste la venta, descuenta inventario (estricto donde
-     * aplica) y
-     * registra la trazabilidad de merma. Si cualquiera de esos pasos falla (p. ej.
-     * una regla de
-     * merma inválida o la no-sobreventa), toda la transacción revierte: ni la
-     * venta, ni los
-     * movimientos, ni la merma quedan aplicados. Con {@code wasteLines} vacío se
-     * comporta como
-     * {@link #registerSale(Sale)}.
+     * aplica para los renglones normales), descuenta la existencia de merma para
+     * los renglones
+     * marcados como merma y registra su trazabilidad. Si cualquiera de esos pasos
+     * falla (p. ej.
+     * la no-sobreventa normal o la no-sobreventa de merma), toda la transacción
+     * revierte: ni la
+     * venta, ni los movimientos, ni la merma quedan aplicados. Sin renglones de
+     * merma se comporta
+     * como {@link #registerSale(Sale)}. La marca de merma viaja en cada
+     * {@link SaleLine#waste()}.
      */
     @Transactional
-    public SaleResult registerSaleWithWaste(Sale sale, List<BakeryUseCase.WasteLineCommand> wasteLines) {
-        if (wasteLines == null || wasteLines.isEmpty()) {
+    public SaleResult registerSaleWithWaste(Sale sale) {
+        boolean hasWaste = sale.getLines().stream().anyMatch(SaleLine::waste);
+        if (!hasWaste) {
             return registerSale(sale);
         }
 
@@ -139,25 +142,36 @@ public class SaleService {
 
         Sale saved = saleRepository.insert(sale);
 
+        // Renglones de merma: descuentan de la existencia de MERMA (no del stock
+        // normal), con el
+        // precio de merma fijo del artículo, y registran la trazabilidad con origen
+        // VENTA.
+        List<BakeryUseCase.WasteLineCommand> wasteCommands = saved.getLines().stream()
+                .filter(SaleLine::waste)
+                .map(l -> new BakeryUseCase.WasteLineCommand(l.productId(), l.quantity()))
+                .toList();
+        bakeryUseCase.sellWaste(saved.getId(), saved.getBranchId(), saved.getCashier(), wasteCommands);
+
+        // Renglones normales: descuentan del stock normal (estricto donde aplica). Los
+        // renglones
+        // de merma se saltan aquí porque ya movieron la existencia de merma.
         Set<Long> enforceStockIds = resolveEnforceStockIds(saved);
         applySaleMovements(saved, enforceStockIds);
 
         registerCreditIfNeeded(saved);
 
-        // Dentro de la misma transacción: valida las reglas de merma y registra su
-        // trazabilidad.
-        // Un fallo aquí revierte la venta y los movimientos ya aplicados.
-        bakeryUseCase.recordWasteSale(saved.getId(), saved.getCashier(), wasteLines);
-
         return new SaleResult(saved.getId(), saved.total(), saved.change(), false);
     }
 
     /**
-     * Resuelve, para los renglones con producto, cuáles tienen
-     * {@code enforce_stock = TRUE}.
+     * Resuelve, para los renglones con producto que NO son merma, cuáles están
+     * sujetos a
+     * no-sobreventa. Los renglones de merma se excluyen: no descuentan del stock
+     * normal.
      */
     private Set<Long> resolveEnforceStockIds(Sale saved) {
         Set<Long> productIds = saved.getLines().stream()
+                .filter(line -> !line.waste())
                 .map(SaleLine::productId)
                 .filter(id -> id != null)
                 .collect(Collectors.toSet());
@@ -165,15 +179,18 @@ public class SaleService {
     }
 
     /**
-     * Descuenta inventario por cada renglón con producto. Si el producto está en
+     * Descuenta inventario por cada renglón NORMAL con producto. Si el producto
+     * está en
      * {@code enforceStockIds} usa la salida estricta (rechaza y revierte si no hay
      * existencia);
-     * en caso contrario usa el movimiento de venta normal. Los artículos libres no
-     * mueven stock.
+     * en caso contrario usa el movimiento de venta normal. Los artículos libres y
+     * los renglones
+     * de merma no mueven el stock normal (la merma se descontó aparte, de
+     * bakery_waste_stock).
      */
     private void applySaleMovements(Sale saved, Set<Long> enforceStockIds) {
         for (SaleLine line : saved.getLines()) {
-            if (line.productId() == null) {
+            if (line.productId() == null || line.waste()) {
                 continue;
             }
             if (enforceStockIds.contains(line.productId())) {
@@ -218,15 +235,22 @@ public class SaleService {
         }
         long branchId = saleRepository.branchOf(saleId).orElseThrow();
 
-        // Reingresa el inventario de cada renglón (movimiento de tipo RETURN). Los
-        // artículos
-        // libres (sin producto) no movieron stock, así que se omiten.
+        // Reingresa cada renglón a la existencia correcta. Los artículos libres (sin
+        // producto)
+        // no movieron stock, así que se omiten. Un renglón de merma se devuelve a la
+        // EXISTENCIA
+        // DE MERMA (no al stock normal), porque la venta descontó de ahí.
         for (SaleRepository.SaleLineRow line : saleRepository.linesOf(saleId)) {
             if (line.productId() == null) {
                 continue;
             }
-            inventoryPort.applyMovement(line.productId(), branchId, MovementType.RETURN,
-                    line.quantity(), "VOID:" + saleId, actor);
+            if (line.waste()) {
+                bakeryUseCase.returnWasteOnVoid(line.productId(), branchId, line.quantity(),
+                        actor, saleId);
+            } else {
+                inventoryPort.applyMovement(line.productId(), branchId, MovementType.RETURN,
+                        line.quantity(), "VOID:" + saleId, actor);
+            }
         }
         saleRepository.markVoided(saleId);
     }

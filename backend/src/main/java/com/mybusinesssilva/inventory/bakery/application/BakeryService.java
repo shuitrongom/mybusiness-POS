@@ -3,15 +3,19 @@ package com.mybusinesssilva.inventory.bakery.application;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryEntryStatus;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProduction;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProductionLine;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteOrigin;
 import com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase;
 import com.mybusinesssilva.inventory.bakery.domain.port.out.BakeryRepository;
+import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
 import com.mybusinesssilva.inventory.domain.model.MovementType;
 import com.mybusinesssilva.inventory.domain.port.in.InventoryPort;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,54 +71,97 @@ public class BakeryService implements BakeryUseCase {
 
     @Override
     @Transactional
-    public void recordWasteSale(long saleId, String cashier, List<WasteLineCommand> wasteLines) {
-        if (wasteLines == null || wasteLines.isEmpty()) {
-            return;
+    public void transferToWaste(long productId, long branchId, BigDecimal quantity,
+            WasteOrigin origin, String cashier, Long saleId, Long shiftId) {
+        if (origin == null) {
+            throw new IllegalArgumentException("El origen de la merma es obligatorio");
         }
-        for (WasteLineCommand line : wasteLines) {
-            if (line.quantity() == null || line.quantity().signum() <= 0) {
-                throw new IllegalArgumentException("La cantidad de merma debe ser positiva");
-            }
-            BigDecimal wastePrice = line.wastePrice() == null ? BigDecimal.ZERO : line.wastePrice();
-            if (wastePrice.signum() < 0) {
-                throw new IllegalArgumentException("El precio de merma no puede ser negativo");
-            }
-            BigDecimal entryPrice = resolveEntryPrice(line, saleId);
-            if (wastePrice.compareTo(entryPrice) > 0) {
-                throw new IllegalArgumentException(
-                        "El precio de merma no puede superar el precio de entrada");
-            }
-            BigDecimal difference = entryPrice.subtract(wastePrice);
-            repository.upsertWasteSale(saleId, line.productId(), line.quantity(),
-                    entryPrice, wastePrice, difference, cashier);
+        if (quantity == null || quantity.signum() <= 0) {
+            throw new IllegalArgumentException("La cantidad de merma debe ser positiva");
         }
-    }
+        BigDecimal normalPrice = repository.productPrice(productId).orElse(BigDecimal.ZERO);
+        BigDecimal wastePrice = repository.productWastePrice(productId);
+        BigDecimal difference = normalPrice.subtract(wastePrice).multiply(quantity);
 
-    /**
-     * Resuelve el entry_price del renglón de merma. Usa el enviado por el POS; si
-     * llega null,
-     * cae al entry_price del bakery_production_line más reciente del
-     * producto/sucursal (la
-     * sucursal se deriva de la venta), y si no hay producción previa, al
-     * product.price (D-A).
-     */
-    private BigDecimal resolveEntryPrice(WasteLineCommand line, long saleId) {
-        if (line.entryPrice() != null) {
-            return line.entryPrice();
-        }
-        Long branchId = repository.saleBranch(saleId).orElse(null);
-        if (branchId != null) {
-            BigDecimal latest = repository.latestEntryPrice(line.productId(), branchId).orElse(null);
-            if (latest != null) {
-                return latest;
+        if (origin.isFromNormalStock()) {
+            // Normal -> merma: baja el stock normal (estricto, no deja negativo) y sube la
+            // merma.
+            inventoryPort.applyOutboundStrict(productId, branchId, MovementType.WASTE_OUT,
+                    quantity, "WASTE:" + origin.name() + ":" + (shiftId == null ? "-" : shiftId), cashier);
+            repository.addWasteStock(productId, branchId, quantity);
+        } else {
+            // Salida de merma (VENTA/REPARTO): baja la existencia de merma, no toca el
+            // normal.
+            boolean ok = repository.deductWasteStock(productId, branchId, quantity);
+            if (!ok) {
+                BigDecimal available = repository.wasteStock(productId, branchId);
+                throw new InsufficientStockException(productId, null, available, quantity);
             }
         }
-        return repository.productPrice(line.productId()).orElse(BigDecimal.ZERO);
+        repository.insertWasteMovement(productId, branchId, origin.name(), quantity,
+                normalPrice, wastePrice, difference, cashier, saleId, shiftId);
     }
 
     @Override
-    public List<Map<String, Object>> listWasteSales(LocalDate from, LocalDate to, Long productId) {
-        return repository.listWasteSales(from, to, productId);
+    @Transactional
+    public Set<Long> sellWaste(long saleId, long branchId, String cashier, List<WasteLineCommand> lines) {
+        Set<Long> wasteProductIds = new LinkedHashSet<>();
+        if (lines == null || lines.isEmpty()) {
+            return wasteProductIds;
+        }
+        for (WasteLineCommand line : lines) {
+            // Venta de merma: precio FIJO del artículo, descuento de la existencia de merma
+            // y
+            // trazabilidad con origen VENTA, todo dentro de transferToWaste.
+            transferToWaste(line.productId(), branchId, line.quantity(),
+                    WasteOrigin.VENTA, cashier, saleId, null);
+            wasteProductIds.add(line.productId());
+        }
+        return wasteProductIds;
+    }
+
+    @Override
+    @Transactional
+    public void returnWasteOnVoid(long productId, long branchId, BigDecimal quantity,
+            String actor, long saleId) {
+        if (quantity == null || quantity.signum() <= 0) {
+            return;
+        }
+        // Devuelve la cantidad a la existencia de merma y registra un movimiento VENTA
+        // que revierte
+        // el de la venta (cantidad y diferencia negativas), para que saldos y reporte
+        // cuadren.
+        repository.addWasteStock(productId, branchId, quantity);
+        BigDecimal normalPrice = repository.productPrice(productId).orElse(BigDecimal.ZERO);
+        BigDecimal wastePrice = repository.productWastePrice(productId);
+        BigDecimal difference = normalPrice.subtract(wastePrice).multiply(quantity).negate();
+        repository.insertWasteMovement(productId, branchId, WasteOrigin.VENTA.name(),
+                quantity.negate(), normalPrice, wastePrice, difference, actor, saleId, null);
+    }
+
+    @Override
+    public BigDecimal wasteStock(long productId, long branchId) {
+        return repository.wasteStock(productId, branchId);
+    }
+
+    @Override
+    public List<Map<String, Object>> productsWithNormalStock(long branchId) {
+        return repository.productsWithNormalStock(branchId);
+    }
+
+    @Override
+    public List<Map<String, Object>> productsWithStock(long branchId, String kind) {
+        return repository.productsWithStock(branchId, kind);
+    }
+
+    @Override
+    public List<Map<String, Object>> dailyStockAll(long branchId, LocalDate date) {
+        return repository.dailyStockAll(branchId, date != null ? date : LocalDate.now());
+    }
+
+    @Override
+    public List<Map<String, Object>> listWasteMovements(LocalDate from, LocalDate to, Long productId) {
+        return repository.listWasteMovements(from, to, productId);
     }
 
     @Override

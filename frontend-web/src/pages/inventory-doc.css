@@ -1,0 +1,491 @@
+/* =========================================================================
+   Captura de líneas de inventario (Entradas / Salidas / Producción) — diseño
+   premium por TARJETAS de renglón. Reemplaza la tabla de inputs sueltos por
+   filas-tarjeta alineadas con un grid de columnas fijas, para un acabado
+   enterprise, limpio y perfectamente cuadrado.
+   ========================================================================= */
+
+.idoc-lines {
+  margin-top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Cabecera de columnas: mismo grid que las filas, para alineación exacta. */
+.idoc-row-head,
+.idoc-row {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  /* columnas: artículo | cantidad | precio | costo | importe | acción
+     (las columnas de precio/costo/importe se ocultan según el modo con utilidades) */
+}
+
+.idoc-row-head {
+  padding: 4px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.idoc-row {
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.idoc-row:hover {
+  border-color: color-mix(in srgb, var(--brand-600, #2e6ef2) 40%, var(--border));
+}
+
+/* Columna de artículo */
+.idoc-article {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.idoc-article-avatar {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.idoc-article-text {
+  min-width: 0;
+}
+
+.idoc-article-name {
+  font-weight: 650;
+  color: var(--heading);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.idoc-article-unit {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+/* Encabezados de columnas de control: centrados sobre su control (que va centrado en la celda),
+   para que el título caiga justo encima del stepper / campo de dinero / importe. */
+.idoc-h-right {
+  text-align: center;
+}
+
+/* Stepper de cantidad premium */
+.idoc-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  justify-self: center;
+}
+
+.idoc-qty button {
+  width: 32px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.idoc-qty button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand-600, #2e6ef2) 16%, transparent);
+  color: var(--heading);
+}
+
+.idoc-qty button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.idoc-qty input {
+  width: 48px;
+  height: 34px;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--heading);
+  text-align: center;
+  font-weight: 650;
+  font-size: var(--fs-sm);
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.idoc-qty input::-webkit-outer-spin-button,
+.idoc-qty input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Campo monetario con prefijo $ */
+.idoc-money {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0 10px;
+  height: 36px;
+  width: 118px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.idoc-money:focus-within {
+  border-color: var(--brand-600, #2e6ef2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-600, #2e6ef2) 16%, transparent);
+}
+
+.idoc-money-sign {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.idoc-money input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--heading);
+  text-align: right;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.idoc-money input::-webkit-outer-spin-button,
+.idoc-money input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Importe calculado y disponible */
+.idoc-amount {
+  justify-self: center;
+  font-weight: 700;
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.idoc-avail {
+  justify-self: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.idoc-avail.is-over {
+  color: #e11d48;
+}
+
+/* Botón quitar */
+.idoc-remove {
+  justify-self: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: color-mix(in srgb, #e11d48 14%, transparent);
+  color: #e11d48;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.12s ease;
+}
+
+.idoc-remove:hover {
+  background: color-mix(in srgb, #e11d48 26%, transparent);
+}
+
+/* Estado vacío */
+.idoc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 34px 16px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+}
+
+/* =========================================================================
+   Historial reciente (Producción / Entradas / Salidas): lista con grid de
+   columnas compartido entre cabecera y filas, mismo lenguaje visual que la
+   captura de arriba, perfectamente alineado.
+   ========================================================================= */
+.idoc-hist {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+}
+
+.idoc-hist-head,
+.idoc-hist-row {
+  display: grid;
+  align-items: center;
+  gap: 20px;
+  padding: 0 18px;
+}
+
+.idoc-hist-head {
+  height: 38px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.idoc-hist-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.idoc-hist-row {
+  height: 52px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: var(--fs-sm);
+  color: var(--heading);
+  transition: border-color 0.14s ease;
+}
+
+.idoc-hist-row:hover {
+  border-color: color-mix(in srgb, var(--brand-600, #2e6ef2) 35%, var(--border));
+}
+
+.idoc-hist-right {
+  text-align: right;
+}
+
+.idoc-hist-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.idoc-hist-folio {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  padding: 3px 10px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--brand-600, #2e6ef2) 16%, transparent);
+  color: var(--brand-500, #4b8bff);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.idoc-hist-name {
+  font-weight: 600;
+  color: var(--heading);
+}
+
+.idoc-hist-amount {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--heading);
+}
+
+.idoc-hist-muted {
+  color: var(--text-muted);
+}
+
+.idoc-hist-empty {
+  padding: 30px 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  margin-top: 6px;
+}
+
+/* =========================================================================
+   Existencias del día (panadería): filas-tarjeta con avatar y chips de métrica.
+   Mismo lenguaje visual que la captura y el historial.
+   ========================================================================= */
+.iday {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+}
+
+.iday-head,
+.iday-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 110px 110px 110px 130px 130px;
+  align-items: center;
+  gap: 16px;
+  padding: 0 18px;
+}
+
+.iday-head {
+  height: 40px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.iday-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.iday-row {
+  height: 60px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.iday-row:hover {
+  border-color: color-mix(in srgb, var(--brand-600, #2e6ef2) 38%, var(--border));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+.iday-right {
+  text-align: right;
+}
+
+.iday-article {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.iday-avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.iday-name {
+  font-weight: 650;
+  color: var(--heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.iday-unit {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+.iday-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--heading);
+  font-weight: 600;
+}
+
+.iday-num.is-dim {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Chip "en merma" destacado cuando hay */
+.iday-waste {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, #d97706 18%, transparent);
+  color: #f59e0b;
+}
+
+.iday-waste.is-zero {
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 500;
+  padding: 0;
+}
+
+/* Restante del día: chip de estado */
+.iday-remaining {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, #12b886 16%, transparent);
+  color: #12b886;
+}
+
+.iday-remaining.is-zero {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.iday-value {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--heading);
+}
+
+.iday-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  margin-top: 8px;
+}

@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { useSession } from '@/store/session';
+import { decodeToken, canUseModule } from '@/lib/jwt';
 import {
   ShoppingCart, Undo2, Tag, Wallet, HandCoins, Receipt, DollarSign, TrendingUp,
 } from 'lucide-react';
@@ -7,6 +9,8 @@ import { ModuleLanding, type ModuleOption, type ModuleStat } from '@/components/
 
 interface DashboardSummary { salesCount: number; salesTotal: number; itemsSold: number; }
 interface Summary { totalPending: number; openCount: number; overdueCount: number; }
+/** Resumen de turno del cajero (subset de /shifts/my-summary) para los KPIs de su landing. */
+interface ShiftSummary { totalSales: number; salesCount: number; averageTicket: number; }
 
 const money = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
@@ -17,18 +21,38 @@ const int = (n: number) => new Intl.NumberFormat('es-MX').format(n || 0);
  * cobrar) y las opciones del módulo. El cliente entra aquí desde el Inicio y elige la acción.
  */
 export function SalesModulePage() {
+  const claims = decodeToken(useSession((s) => s.token));
+  const canSeeBi = canUseModule(claims, 'bi');
+  const canSeeCustomers = canUseModule(claims, 'customers');
+
+  // DUEÑO/ADMIN: números GLOBALES del negocio (módulo bi). CAJERO: los MISMOS KPIs pero desde su
+  // propio turno (/shifts/my-summary, que su módulo de caja autoriza), para que vea datos reales
+  // sin pedir analítica que no tiene (cero 401).
   const today = useQuery({
     queryKey: ['dashboard', 'today'],
+    enabled: canSeeBi,
     queryFn: async () => (await api.get<DashboardSummary>('/bi/dashboard/today')).data,
   });
+  const myShift = useQuery({
+    queryKey: ['shift', 'my-summary'],
+    enabled: !canSeeBi,
+    queryFn: async () => {
+      const res = await api.get<ShiftSummary>('/shifts/my-summary');
+      return res.status === 204 ? null : res.data;
+    },
+  });
+  // La cartera por cobrar es del módulo clientes; solo se pide si el rol lo tiene.
   const receivables = useQuery({
     queryKey: ['receivables-summary'],
+    enabled: canSeeCustomers,
     queryFn: async () => (await api.get<Summary>('/customers/receivables/summary')).data,
   });
 
-  const salesTotal = today.data?.salesTotal ?? 0;
-  const salesCount = today.data?.salesCount ?? 0;
-  const avgTicket = salesCount > 0 ? salesTotal / salesCount : 0;
+  const salesTotal = canSeeBi ? (today.data?.salesTotal ?? 0) : (myShift.data?.totalSales ?? 0);
+  const salesCount = canSeeBi ? (today.data?.salesCount ?? 0) : (myShift.data?.salesCount ?? 0);
+  const avgTicket = canSeeBi
+    ? (salesCount > 0 ? salesTotal / salesCount : 0)
+    : (myShift.data?.averageTicket ?? 0);
 
   const stats: ModuleStat[] = [
     { label: 'Ventas de hoy', value: money(salesTotal), icon: <DollarSign size={20} /> },

@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.mybusinesssilva.catalog.application.CatalogService;
 import com.mybusinesssilva.catalog.domain.model.Product;
 import com.mybusinesssilva.inventory.application.InventoryService;
+import com.mybusinesssilva.inventory.bakery.application.BakeryService;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteOrigin;
 import com.mybusinesssilva.inventory.domain.model.MovementType;
 import com.mybusinesssilva.licensing.application.LicensingService;
 import com.mybusinesssilva.licensing.domain.model.Business;
@@ -15,6 +17,8 @@ import com.mybusinesssilva.sales.domain.model.Payment;
 import com.mybusinesssilva.sales.domain.model.PaymentMethod;
 import com.mybusinesssilva.sales.domain.model.Sale;
 import com.mybusinesssilva.sales.domain.model.SaleLine;
+import com.mybusinesssilva.platform.security.AuthenticatedUser;
+import com.mybusinesssilva.platform.security.Roles;
 import com.mybusinesssilva.platform.tenancy.TenantContext;
 import com.mybusinesssilva.support.AbstractIntegrationTest;
 import java.math.BigDecimal;
@@ -43,6 +47,8 @@ class SaleServiceIT extends AbstractIntegrationTest {
         @Autowired
         private SaleService saleService;
         @Autowired
+        private BakeryService bakeryService;
+        @Autowired
         private ShiftService shiftService;
         @Autowired
         private PlanRepository planRepository;
@@ -54,12 +60,12 @@ class SaleServiceIT extends AbstractIntegrationTest {
         @AfterEach
         void clear() {
                 TenantContext.clear();
+                org.springframework.security.core.context.SecurityContextHolder.clearContext();
         }
 
         @Test
         void saleDiscountsInventory() {
                 long productId = setup("Refresco");
-                // Stock inicial 100.
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("100"), "COMPRA", "tester");
 
@@ -323,77 +329,125 @@ class SaleServiceIT extends AbstractIntegrationTest {
         }
 
         @Test
-        void saleWithWasteRecordsTraceabilityAndDiscountsStock() {
+        void saleWithWasteDiscountsWasteStockNotNormalStock() {
                 long productId = setup("ConchaMerma");
-                markBakery(productId);
+                setWastePrice(productId, new BigDecimal("3.00")); // precio de merma fijo
+                // Produce 10 y pasa 10 a merma: stock normal 0, merma 10.
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("10"), "PROD:1", "panadero");
+                bakeryService.transferToWaste(productId, branchId, new BigDecimal("10"),
+                                WasteOrigin.MANUAL, "cajero", null, null);
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("0");
+                assertThat(bakeryService.wasteStock(productId, branchId)).isEqualByComparingTo("10");
 
+                // Venta de merma de 3 piezas: el renglón va marcado waste=true y al precio de
+                // merma.
                 Sale sale = Sale.complete(branchId, null, null, "cajero", null,
                                 List.of(new SaleLine(productId, "ConchaMerma", new BigDecimal("3"),
-                                                new BigDecimal("3.00"), BigDecimal.ZERO)),
+                                                new BigDecimal("3.00"), BigDecimal.ZERO, "pieza", true)),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("9.00"))),
                                 null);
-                var waste = List.of(
-                                new com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase.WasteLineCommand(
-                                                productId, new BigDecimal("3"), new BigDecimal("5.00"),
-                                                new BigDecimal("3.00")));
 
-                SaleService.SaleResult r = saleService.registerSaleWithWaste(sale, waste);
+                SaleService.SaleResult r = saleService.registerSaleWithWaste(sale);
 
                 JdbcTemplate jdbc = new JdbcTemplate(dataSource);
                 Map<String, Object> row = jdbc.queryForMap(
-                                "SELECT quantity, entry_price, waste_price, difference FROM bakery_waste_sale "
-                                                + "WHERE sale_id = ? AND product_id = ?",
+                                "SELECT origin, quantity, normal_price, waste_price, difference "
+                                                + "FROM bakery_waste_movement WHERE sale_id = ? AND product_id = ?",
                                 r.saleId(), productId);
+                assertThat(row.get("origin")).isEqualTo("VENTA");
                 assertThat((BigDecimal) row.get("quantity")).isEqualByComparingTo("3");
-                assertThat((BigDecimal) row.get("entry_price")).isEqualByComparingTo("5.00");
                 assertThat((BigDecimal) row.get("waste_price")).isEqualByComparingTo("3.00");
-                assertThat((BigDecimal) row.get("difference")).isEqualByComparingTo("2.00");
-                // Stock descontado por la venta: 10 - 3 = 7.
-                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("7");
+                // La merma baja de 10 a 7; el stock normal NO se tocó (sigue en 0).
+                assertThat(bakeryService.wasteStock(productId, branchId)).isEqualByComparingTo("7");
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("0");
         }
 
         @Test
-        void saleWithInvalidWasteRevertsEverything() {
+        void saleWithWasteOversellRevertsEverything() {
                 long productId = setup("PanMalMerma");
-                markBakery(productId);
+                setWastePrice(productId, new BigDecimal("3.00"));
+                // Produce 10 y pasa solo 2 a merma: hay 2 en merma, 8 en normal.
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("10"), "PROD:1", "panadero");
+                bakeryService.transferToWaste(productId, branchId, new BigDecimal("2"),
+                                WasteOrigin.MANUAL, "cajero", null, null);
 
+                // Intenta vender 5 como merma habiendo solo 2: no-sobreventa de merma ->
+                // revierte todo.
                 Sale sale = Sale.complete(branchId, null, null, "cajero", null,
-                                List.of(new SaleLine(productId, "PanMalMerma", new BigDecimal("2"),
-                                                new BigDecimal("9.00"), BigDecimal.ZERO)),
-                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("18.00"))),
+                                List.of(new SaleLine(productId, "PanMalMerma", new BigDecimal("5"),
+                                                new BigDecimal("3.00"), BigDecimal.ZERO, "pieza", true)),
+                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("15.00"))),
                                 null);
-                // waste_price (9) > entry_price (5): regla de negocio -> revierte toda la
-                // transacción.
-                var waste = List.of(
-                                new com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase.WasteLineCommand(
-                                                productId, new BigDecimal("2"), new BigDecimal("5.00"),
-                                                new BigDecimal("9.00")));
 
                 org.assertj.core.api.Assertions.assertThatThrownBy(
-                                () -> saleService.registerSaleWithWaste(sale, waste))
-                                .isInstanceOf(IllegalArgumentException.class);
+                                () -> saleService.registerSaleWithWaste(sale))
+                                .isInstanceOf(com.mybusinesssilva.inventory.domain.model.InsufficientStockException.class);
 
                 JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+                // Ni la venta ni el movimiento de merma quedaron (transacción revertida).
                 assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sale", Integer.class)).isZero();
-                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM bakery_waste_sale", Integer.class)).isZero();
-                // Ni la venta ni los movimientos de salida quedaron: el stock sigue en 10.
-                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("10");
+                assertThat(jdbc.queryForObject(
+                                "SELECT COUNT(*) FROM bakery_waste_movement WHERE origin = 'VENTA'", Integer.class))
+                                .isZero();
+                // La merma sigue en 2 y el stock normal en 8.
+                assertThat(bakeryService.wasteStock(productId, branchId)).isEqualByComparingTo("2");
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("8");
         }
 
         // --- helpers ---
 
         private void markEnforceStock(long productId) {
                 new JdbcTemplate(dataSource).update(
-                                "UPDATE product SET is_bakery = TRUE, enforce_stock = TRUE WHERE id = ?", productId);
+                                "UPDATE product SET enforce_stock = TRUE WHERE id = ?", productId);
         }
 
-        private void markBakery(long productId) {
+        private void setWastePrice(long productId, BigDecimal wastePrice) {
                 new JdbcTemplate(dataSource).update(
-                                "UPDATE product SET is_bakery = TRUE WHERE id = ?", productId);
+                                "UPDATE product SET waste_price = ? WHERE id = ?", wastePrice, productId);
+        }
+
+        @Test
+        void closeShiftInBakeryMovesLeftoverToWaste() {
+                // Negocio panadería + cajero autenticado con el módulo bakery (gatea el
+                // candado).
+                long planId = planRepository.findByCode("PROFESSIONAL").orElseThrow().id();
+                Business business = licensingService.createBusiness(
+                                "admin@mybusinesssilva.com", "Panaderia Cierre", null, "panaderia", planId, 1);
+                TenantContext.setTenantId(business.getSchemaName());
+                branchId = createBranch("Matriz");
+                long productId = createProduct("Concha");
+                authenticateBakery(business.getSchemaName());
+
+                // Produce 50 y vende 10 normales: quedan 40 de sobrante en stock normal.
+                inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
+                                new BigDecimal("50"), "PROD:1", "panadero");
+                inventoryService.applyOutboundStrict(productId, branchId, MovementType.SALE,
+                                new BigDecimal("10"), "SALE:1", "cajero");
+
+                long registerId = createCashRegister();
+                long shiftId = shiftService.openShift(registerId, "cajero", new BigDecimal("0.00"),
+                                branchId, null, null, false);
+
+                shiftService.closeShift(shiftId, "cajero", null);
+
+                // Candado: el sobrante (40) pasó a merma; stock normal en 0, merma en 40.
+                assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("0");
+                assertThat(bakeryService.wasteStock(productId, branchId)).isEqualByComparingTo("40");
+                Integer cierreMovs = new JdbcTemplate(dataSource).queryForObject(
+                                "SELECT COUNT(*) FROM bakery_waste_movement WHERE origin = 'CIERRE' AND shift_id = ?",
+                                Integer.class, shiftId);
+                assertThat(cierreMovs).isEqualTo(1);
+        }
+
+        private void authenticateBakery(String tenant) {
+                AuthenticatedUser user = new AuthenticatedUser(
+                                "cajero@panaderia.mx", tenant,
+                                List.of(Roles.CASHIER), List.of("sales", "cash", "bakery"));
+                var auth = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                                user, null, org.springframework.security.core.authority.AuthorityUtils.NO_AUTHORITIES);
+                org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
         }
 
         private long setup(String productName) {

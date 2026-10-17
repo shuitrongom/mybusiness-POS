@@ -21,5 +21,14 @@ public enum MovementType {
     TRANSFER_OUT,
 
     /** Entrada por devolución de cliente. */
-    RETURN
+    RETURN,
+
+    /**
+     * Salida del stock normal porque el pan pasó a MERMA (panadería). No es venta
+     * ni traspaso:
+     * la unidad sigue en la sucursal pero cambia de estado a merma vendible. Resta
+     * del stock
+     * normal; la existencia de merma se lleva aparte en {@code bakery_waste_stock}.
+     */
+    WASTE_OUT
 }

@@ -13,8 +13,10 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Implementación JDBC del repositorio de productos. Opera sobre el schema del tenant en curso
- * (el {@code search_path} lo fija el DataSource consciente del tenant). Los atributos dinámicos
+ * Implementación JDBC del repositorio de productos. Opera sobre el schema del
+ * tenant en curso
+ * (el {@code search_path} lo fija el DataSource consciente del tenant). Los
+ * atributos dinámicos
  * del giro se serializan/deserializan como JSONB.
  */
 @Repository
@@ -39,14 +41,14 @@ public class JdbcProductRepository implements ProductRepository {
                     (sku, name, category_id, unit, sold_by_weight, sat_prod_serv, sat_unit,
                      price, cost, active, attributes, image_url,
                      description, brand, supplier_id, tax_rate, ieps_rate,
-                     price2, price3, price4, price5, last_cost, avg_cost,
+                     price2, price3, price4, price5, waste_price, last_cost, avg_cost,
                      min_stock, max_stock, reorder_point,
                      for_sale, track_inventory, track_lots, allow_below_cost, blocked,
                      is_composite, on_sale, loyalty_points)
                 VALUES (:sku, :name, :categoryId, :unit, :weight, :satProd, :satUnit,
                         :price, :cost, :active, CAST(:attrs AS jsonb), :imageUrl,
                         :description, :brand, :supplierId, :taxRate, :iepsRate,
-                        :price2, :price3, :price4, :price5, :lastCost, :avgCost,
+                        :price2, :price3, :price4, :price5, :wastePrice, :lastCost, :avgCost,
                         :minStock, :maxStock, :reorderPoint,
                         :forSale, :trackInventory, :trackLots, :allowBelowCost, :blocked,
                         :isComposite, :onSale, :loyaltyPoints)
@@ -73,6 +75,7 @@ public class JdbcProductRepository implements ProductRepository {
                 .param("price3", x.price3())
                 .param("price4", x.price4())
                 .param("price5", x.price5())
+                .param("wastePrice", x.wastePrice())
                 .param("lastCost", x.lastCost())
                 .param("avgCost", x.avgCost())
                 .param("minStock", x.minStock())
@@ -105,6 +108,7 @@ public class JdbcProductRepository implements ProductRepository {
                     description = :description, brand = :brand, supplier_id = :supplierId,
                     tax_rate = :taxRate, ieps_rate = :iepsRate,
                     price2 = :price2, price3 = :price3, price4 = :price4, price5 = :price5,
+                    waste_price = :wastePrice,
                     last_cost = :lastCost, avg_cost = :avgCost,
                     min_stock = :minStock, max_stock = :maxStock, reorder_point = :reorderPoint,
                     for_sale = :forSale, track_inventory = :trackInventory, track_lots = :trackLots,
@@ -135,6 +139,7 @@ public class JdbcProductRepository implements ProductRepository {
                 .param("price3", x.price3())
                 .param("price4", x.price4())
                 .param("price5", x.price5())
+                .param("wastePrice", x.wastePrice())
                 .param("lastCost", x.lastCost())
                 .param("avgCost", x.avgCost())
                 .param("minStock", x.minStock())
@@ -156,7 +161,8 @@ public class JdbcProductRepository implements ProductRepository {
 
     @Override
     public boolean delete(long id) {
-        // Si el producto tiene ventas, no se borra físicamente (rompería el histórico): se desactiva.
+        // Si el producto tiene ventas, no se borra físicamente (rompería el histórico):
+        // se desactiva.
         long soldTimes = jdbc.sql("SELECT count(*) FROM sale_line WHERE product_id = :id")
                 .param("id", id).query(Long.class).single();
         if (soldTimes > 0) {
@@ -204,8 +210,10 @@ public class JdbcProductRepository implements ProductRepository {
     @Override
     public List<Product> findAll() {
         // Optimización N+1: en lugar de una consulta de códigos de barras POR producto
-        // (lentísimo con la BD en la nube: ~1 viaje por producto), se traen TODOS los códigos
-        // en una sola consulta y se agrupan en memoria por product_id. Así la carga del catálogo
+        // (lentísimo con la BD en la nube: ~1 viaje por producto), se traen TODOS los
+        // códigos
+        // en una sola consulta y se agrupan en memoria por product_id. Así la carga del
+        // catálogo
         // (p. ej. la cuadrícula del punto de venta) pasa de N+1 consultas a solo 2.
         java.util.Map<Long, List<String>> barcodesByProduct = new java.util.HashMap<>();
         jdbc.sql("SELECT product_id, barcode FROM product_barcode ORDER BY product_id, id")
@@ -234,13 +242,15 @@ public class JdbcProductRepository implements ProductRepository {
 
     /**
      * Mapea una fila de producto consultando sus códigos de barras individualmente.
-     * Usado por lecturas de UN solo producto (findById, byBarcode, search). Para listados
-     * grandes usar {@link #findAll()}, que evita el N+1 cargando los barcodes en bloque.
+     * Usado por lecturas de UN solo producto (findById, byBarcode, search). Para
+     * listados
+     * grandes usar {@link #findAll()}, que evita el N+1 cargando los barcodes en
+     * bloque.
      */
     private Product mapRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         long id = rs.getLong("id");
         List<String> barcodes = jdbc.sql(
-                        "SELECT barcode FROM product_barcode WHERE product_id = :id ORDER BY id")
+                "SELECT barcode FROM product_barcode WHERE product_id = :id ORDER BY id")
                 .param("id", id)
                 .query(String.class)
                 .list();
@@ -248,8 +258,10 @@ public class JdbcProductRepository implements ProductRepository {
     }
 
     /**
-     * Mapea una fila de producto usando una lista de códigos de barras ya cargada (sin consultar
-     * la BD). Permite a {@link #findAll()} resolver todos los barcodes en una sola consulta previa.
+     * Mapea una fila de producto usando una lista de códigos de barras ya cargada
+     * (sin consultar
+     * la BD). Permite a {@link #findAll()} resolver todos los barcodes en una sola
+     * consulta previa.
      */
     private Product mapRowWithBarcodes(java.sql.ResultSet rs, List<String> barcodes)
             throws java.sql.SQLException {
@@ -264,6 +276,7 @@ public class JdbcProductRepository implements ProductRepository {
                 rs.getBigDecimal("price3"),
                 rs.getBigDecimal("price4"),
                 rs.getBigDecimal("price5"),
+                rs.getBigDecimal("waste_price"),
                 rs.getBigDecimal("last_cost"),
                 rs.getBigDecimal("avg_cost"),
                 rs.getBigDecimal("min_stock"),

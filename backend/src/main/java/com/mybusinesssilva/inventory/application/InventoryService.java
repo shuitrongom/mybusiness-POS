@@ -120,7 +120,7 @@ public class InventoryService implements InventoryPort {
     private BigDecimal signedQuantity(MovementType type, BigDecimal absQuantity) {
         return switch (type) {
             case PURCHASE, TRANSFER_IN, RETURN -> absQuantity;
-            case SALE, TRANSFER_OUT -> absQuantity.negate();
+            case SALE, TRANSFER_OUT, WASTE_OUT -> absQuantity.negate();
             case ADJUSTMENT -> absQuantity; // el ajuste usa el método adjust() con signo explícito
         };
     }

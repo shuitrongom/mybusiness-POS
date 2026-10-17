@@ -1,6 +1,11 @@
 package com.mybusinesssilva.sales.application;
 
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteOrigin;
+import com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase;
+import com.mybusinesssilva.platform.security.ModuleAccessEvaluator;
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,14 +19,26 @@ import org.springframework.transaction.annotation.Transactional;
  * se calcula el corte (ventas por método de pago) y se compara con el conteo
  * físico (arqueo),
  * reportando la diferencia.
+ *
+ * <p>
+ * En giro panadería, al cerrar la caja se aplica el <strong>candado de
+ * merma</strong>: el
+ * sobrante de pan en existencia normal de la sucursal pasa automáticamente a
+ * merma (origen
+ * {@code CIERRE}), dentro de la misma transacción del cierre.
  */
 @Service
 public class ShiftService {
 
         private final JdbcClient jdbc;
+        private final BakeryUseCase bakeryUseCase;
+        private final ModuleAccessEvaluator moduleAccess;
 
-        public ShiftService(JdbcClient jdbc) {
+        public ShiftService(JdbcClient jdbc, BakeryUseCase bakeryUseCase,
+                        ModuleAccessEvaluator moduleAccess) {
                 this.jdbc = jdbc;
+                this.bakeryUseCase = bakeryUseCase;
+                this.moduleAccess = moduleAccess;
         }
 
         /**
@@ -375,9 +392,53 @@ public class ShiftService {
                 persistCut(shiftId, "Z", openingFloat, cashSales, cardSales, transferSales, voucherSales,
                                 cashIn, cashOut, expectedCash, countedCash, difference, split, closedBy);
 
+                // Candado de merma (giro panadería): el sobrante del stock normal de la
+                // sucursal del
+                // turno pasa a merma automáticamente, en esta misma transacción del cierre.
+                transferLeftoverToWasteOnClose(shiftId, closedBy);
+
                 return new ShiftClosure(shiftId, openingFloat, cashSales, cardSales, transferSales,
                                 voucherSales, cashIn, cashOut, expectedCash, countedCash, difference,
                                 split.normalCount(), split.normalTotal(), split.specialCount(), split.specialTotal());
+        }
+
+        /**
+         * Candado de merma al cierre: solo en giro panadería (módulo {@code bakery}
+         * activo). Por
+         * cada producto con existencia normal &gt; 0 en la sucursal del turno,
+         * transfiere ese
+         * sobrante a merma con origen {@code CIERRE}. Es idempotente respecto a lo que
+         * ya se pasó
+         * manualmente antes del cierre: solo mueve lo que siga en existencia normal
+         * positiva.
+         *
+         * <p>
+         * Si el turno no tiene sucursal asociada (dato opcional en {@code shift}), no
+         * hay a qué
+         * sucursal aplicar el candado y se omite sin error.
+         */
+        private void transferLeftoverToWasteOnClose(long shiftId, String closedBy) {
+                if (!moduleAccess.canUse("bakery")) {
+                        return;
+                }
+                Long branchId = jdbc.sql("SELECT branch_id FROM shift WHERE id = :id")
+                                .param("id", shiftId)
+                                .query(Long.class)
+                                .optional()
+                                .orElse(null);
+                if (branchId == null) {
+                        return;
+                }
+                List<Map<String, Object>> leftovers = bakeryUseCase.productsWithNormalStock(branchId);
+                for (Map<String, Object> row : leftovers) {
+                        long productId = ((Number) row.get("productId")).longValue();
+                        BigDecimal quantity = (BigDecimal) row.get("quantity");
+                        if (quantity == null || quantity.signum() <= 0) {
+                                continue;
+                        }
+                        bakeryUseCase.transferToWaste(productId, branchId, quantity,
+                                        WasteOrigin.CIERRE, closedBy, null, shiftId);
+                }
         }
 
         /**

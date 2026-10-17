@@ -28,6 +28,8 @@ interface ProductExtras {
   price5: number;
   taxRate: number;
   onSale: boolean;
+  /** Precio FIJO de merma del artículo (giro panadería). 0 si no se configuró. */
+  wastePrice: number;
 }
 
 interface Product {
@@ -84,12 +86,15 @@ interface CartLine {
   /** true si es un artículo libre capturado con "Producto rápido". */
   free?: boolean;
   /**
-   * true si el renglón se vende como MERMA (solo artículos de panadería). El precio se puede
-   * editar a la baja; el renglón viaja en la venta con waste=true y entryPrice (precio de entrada).
+   * true si el renglón se vende como MERMA (giro panadería). El precio pasa al precio de merma
+   * FIJO del artículo (no editable); el renglón viaja en la venta con waste=true y el backend
+   * descuenta de la existencia de merma.
    */
   waste?: boolean;
-  /** Precio de entrada del artículo de pan (base para calcular la merma); solo renglones de pan. */
-  entryPrice?: number;
+  /** Precio de merma FIJO del artículo (del catálogo). Habilita el toggle si es > 0. */
+  wastePrice?: number;
+  /** Precio normal del renglón, guardado al marcar merma para restaurarlo al desmarcar. */
+  normalPrice?: number;
 }
 
 /** Detalle del ProblemDetail 409 INSUFFICIENT_STOCK que devuelve el backend al sobrevender. */
@@ -165,6 +170,9 @@ export function PosPage() {
   // Precios especiales del cliente seleccionado (producto -> precio pactado). Tienen prioridad
   // sobre la lista de precios y el precio normal. Vacio = el cliente no tiene precios especiales.
   const [specialPrices, setSpecialPrices] = useState<Record<number, number>>({});
+  // Existencia por producto en la sucursal activa (productId -> cantidad). En giro panadería el POS
+  // solo muestra y vende panes CON existencia > 0: no se puede vender lo que no está en inventario.
+  const [stockMap, setStockMap] = useState<Record<number, number>>({});
   const [globalDiscount, setGlobalDiscount] = useState(0);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -188,9 +196,6 @@ export function PosPage() {
   const claims = decodeToken(token);
   const sellAllowed = canSell(claims);
   const bakeryEnabled = hasModule(claims, 'bakery');
-  // IDs de los artículos de panadería (del endpoint gateado /bakery/items). Un renglón cuyo
-  // productId está en este conjunto puede marcarse como MERMA en el carrito.
-  const [bakeryIds, setBakeryIds] = useState<Set<number>>(new Set());
 
   // Descuentos automáticos por promociones vigentes, recalculados con el carrito. Los artículos
   // libres (sin productId) no participan en promociones.
@@ -203,9 +208,12 @@ export function PosPage() {
     [promos, cart],
   );
 
-  /** Descuento por promoción de un renglón (0 para artículos libres o sin promoción). */
+  /**
+   * Descuento por promoción de un renglón (0 para artículos libres, renglones de merma o sin
+   * promoción). La merma se vende a su precio fijo: no acumula promociones.
+   */
   const promoDiscountOf = (l: CartLine) =>
-    l.productId != null ? (promoResult.discountByProduct[l.productId] || 0) : 0;
+    l.productId != null && !l.waste ? (promoResult.discountByProduct[l.productId] || 0) : 0;
 
   const linesSubtotal = cart.reduce(
     (sum, l) => sum + l.quantity * l.unitPrice - promoDiscountOf(l), 0);
@@ -253,16 +261,23 @@ export function PosPage() {
     if (branchId) localStorage.setItem(BRANCH_KEY, String(branchId));
   }, [branchId]);
 
-  // Carga los IDs de artículos de panadería de la sucursal activa (solo si el negocio tiene el
-  // módulo 'bakery'). Permite identificar en el carrito qué renglones admiten venta como merma.
+  // Carga la existencia de la sucursal (solo giro panadería) para mostrar/vender únicamente panes
+  // con stock > 0. Se recarga al cambiar de sucursal y tras cada venta (reusa el contador 'pending'
+  // y 'cart' vacío como señal de que algo cambió). En otros giros no se filtra por existencia.
   useEffect(() => {
-    if (!bakeryEnabled || !branchId) { setBakeryIds(new Set()); return; }
+    if (!bakeryEnabled || !branchId) { setStockMap({}); return; }
     let cancelled = false;
-    api.get<{ id: number }[]>('/bakery/items', { params: { branchId } })
-      .then((r) => { if (!cancelled) setBakeryIds(new Set(r.data.map((i) => i.id))); })
-      .catch(() => { if (!cancelled) setBakeryIds(new Set()); });
+    api.get<{ productId: number; quantity: number }[]>('/inventory/stock', { params: { branchId } })
+      .then((r) => {
+        if (cancelled) return;
+        const m: Record<number, number> = {};
+        for (const row of r.data) m[row.productId] = Number(row.quantity) || 0;
+        setStockMap(m);
+      })
+      .catch(() => { if (!cancelled) setStockMap({}); });
     return () => { cancelled = true; };
-  }, [bakeryEnabled, branchId]);
+  }, [bakeryEnabled, branchId, ticket]);
+
 
   useEffect(() => {
     localStorage.setItem(PRICELIST_KEY, String(priceListId));
@@ -311,9 +326,11 @@ export function PosPage() {
     return products.filter((p) => {
       const matchCat = activeCategory === 'all' || p.categoryId === activeCategory;
       const matchText = q === '' || p.name.toLowerCase().includes(q);
-      return matchCat && matchText;
+      // Giro panadería: solo panes CON existencia (> 0). No se vende lo que no hay en inventario.
+      const hasStock = !bakeryEnabled || (stockMap[p.id] ?? 0) > 0;
+      return matchCat && matchText && hasStock;
     });
-  }, [products, activeCategory, search]);
+  }, [products, activeCategory, search, bakeryEnabled, stockMap]);
 
   const addByBarcode = async () => {
     const code = barcode.trim();
@@ -345,6 +362,7 @@ export function PosPage() {
     addLine({
       id: crypto.randomUUID(), productId: p.id, categoryId: p.categoryId, description: p.name,
       quantity: qty, unitPrice: effectivePrice(p), discount: 0,
+      wastePrice: p.extras?.wastePrice ?? 0,
     });
     setMessage(null);
   };
@@ -376,22 +394,32 @@ export function PosPage() {
   };
 
   const setUnitPrice = (id: string, unitPrice: number) => {
-    setCart((prev) => prev.map((l) => (l.id === id ? { ...l, unitPrice: Math.max(unitPrice, 0) } : l)));
+    setCart((prev) => prev.map((l) => {
+      if (l.id !== id) return l;
+      // Un renglón de merma usa el precio de merma fijo del artículo: no es editable.
+      if (l.waste) return l;
+      return { ...l, unitPrice: Math.max(unitPrice, 0) };
+    }));
   };
 
   /**
-   * Marca/desmarca un renglón de pan como MERMA. Al activarla, el precio actual pasa a ser el
-   * precio de entrada (entryPrice) y el precio del renglón queda editable a la baja (es el precio
-   * de merma que viaja como unitPrice). Al desactivarla, se restaura el precio de entrada.
+   * Marca/desmarca un renglón como MERMA (giro panadería). Al activarla, guarda el precio normal
+   * y fija el precio del renglón al precio de merma FIJO del artículo (no editable); el renglón
+   * viaja con waste=true y el backend descuenta de la existencia de merma. Al desactivarla,
+   * restaura el precio normal. Solo aplica a productos de catálogo con precio de merma > 0.
    */
   const toggleWaste = (id: string) => {
     setCart((prev) => prev.map((l) => {
       if (l.id !== id) return l;
       if (l.waste) {
-        const restored = l.entryPrice ?? l.unitPrice;
-        return { ...l, waste: false, entryPrice: undefined, unitPrice: restored };
+        const restored = l.normalPrice ?? l.unitPrice;
+        return { ...l, waste: false, normalPrice: undefined, unitPrice: restored };
       }
-      return { ...l, waste: true, entryPrice: l.unitPrice };
+      const wastePrice = l.wastePrice ?? 0;
+      if (wastePrice <= 0) {
+        return l; // sin precio de merma configurado no se puede vender como merma
+      }
+      return { ...l, waste: true, normalPrice: l.unitPrice, unitPrice: wastePrice };
     }));
   };
 
@@ -521,10 +549,9 @@ export function PosPage() {
         unitPrice: l.unitPrice,
         discount: promoDiscountOf(l),
         unit: l.unit ?? null,
-        // Merma de panadería: el renglón viaja con waste=true y su precio de entrada; el backend
-        // registra la merma (wastePrice ≡ unitPrice) y descuenta la existencia.
+        // Merma de panadería: el renglón viaja con waste=true. El precio de merma es FIJO en el
+        // artículo; el backend lo aplica y descuenta de la existencia de merma (no del stock normal).
         waste: l.waste ? true : null,
-        entryPrice: l.waste ? (l.entryPrice ?? null) : null,
       })),
       payments: payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: p.amount })),
       idempotencyKey,
@@ -772,7 +799,11 @@ export function PosPage() {
             <div className="pos-grid-empty">
               {products.length === 0
                 ? 'Aún no hay productos. Regístralos en la sección Productos.'
-                : 'Ningún producto coincide con la búsqueda.'}
+                : search.trim() !== ''
+                  ? 'Ningún producto coincide con la búsqueda.'
+                  : bakeryEnabled
+                    ? 'No hay pan con existencia. Registra la producción del día en Inventario → Entradas para poder vender.'
+                    : 'Ningún producto coincide con la búsqueda.'}
             </div>
           )}
         </motion.div>
@@ -824,7 +855,9 @@ export function PosPage() {
             {cart.map((l) => {
               const promoLabel = l.productId != null ? promoResult.labelByProduct[l.productId] : undefined;
               const promoDisc = l.productId != null ? (promoResult.discountByProduct[l.productId] || 0) : 0;
-              const isBakery = l.productId != null && bakeryIds.has(l.productId);
+              // En giro panadería, un renglón de catálogo con precio de merma configurado (>0)
+              // puede venderse como merma. "Todos son pan por giro": no depende de una bandera.
+              const canSellAsWaste = bakeryEnabled && l.productId != null && (l.wastePrice ?? 0) > 0;
               return (
                 <motion.div key={l.id} className="pos-line" layout
                   initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
@@ -843,26 +876,27 @@ export function PosPage() {
                     </div>
                     <div className="pos-line-price">
                       <input className="pos-line-price-input" type="number" min={0} step="0.01"
-                        value={l.unitPrice}
+                        value={l.unitPrice} disabled={l.waste}
+                        title={l.waste ? 'Precio de merma fijo del artículo (no editable)' : undefined}
                         onChange={(e) => setUnitPrice(l.id, Number(e.target.value) || 0)} />
                       <span> c/u</span>
                     </div>
-                    {promoLabel && (
+                    {promoLabel && !l.waste && (
                       <span className="pos-line-promo">
                         <Tag size={11} /> {promoLabel} · -{money(promoDisc)}
                       </span>
                     )}
-                    {isBakery && (
+                    {canSellAsWaste && (
                       <button
                         type="button"
                         className={`pos-line-waste ${l.waste ? 'is-active' : ''}`}
                         onClick={() => toggleWaste(l.id)}
                         title={l.waste
-                          ? 'Vendiendo como merma (precio editable a la baja). Toca para quitar.'
-                          : 'Marcar como merma: baja el precio por pan del día anterior.'}
+                          ? 'Vendiendo como merma al precio de merma del artículo. Toca para quitar.'
+                          : `Vender como merma a ${money(l.wastePrice ?? 0)} (precio fijo del artículo).`}
                       >
                         <Trash2 size={11} /> {l.waste
-                          ? `Merma · entrada ${money(l.entryPrice ?? 0)}`
+                          ? `Merma · ${money(l.wastePrice ?? 0)}`
                           : 'Vender como merma'}
                       </button>
                     )}
