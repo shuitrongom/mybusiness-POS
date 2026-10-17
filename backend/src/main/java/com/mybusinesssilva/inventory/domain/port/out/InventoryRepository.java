@@ -21,6 +21,19 @@ public interface InventoryRepository {
      */
     BigDecimal adjustQuantity(long productId, long branchId, BigDecimal delta);
 
+    /**
+     * Descuenta {@code qty} de la existencia de forma atómica y condicionada: solo
+     * si la
+     * existencia actual es mayor o igual a {@code qty}. Devuelve la cantidad
+     * resultante, o
+     * {@link Optional#empty()} si no había suficiente (o no existía el registro de
+     * stock),
+     * sin modificar nada en ese caso.
+     *
+     * @param qty cantidad positiva a descontar
+     */
+    Optional<BigDecimal> adjustQuantityIfEnough(long productId, long branchId, BigDecimal qty);
+
     void setMinQuantity(long productId, long branchId, BigDecimal minQuantity);
 
     void recordMovement(InventoryMovement movement);

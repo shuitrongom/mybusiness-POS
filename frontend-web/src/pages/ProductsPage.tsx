@@ -8,8 +8,11 @@ import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fileToThumbnailDataUrl } from '@/lib/image';
 import { fadeInUp, pressable, staggerContainer, staggerItem } from '@/lib/motion';
+import { useSession } from '@/store/session';
+import { decodeToken, hasModule } from '@/lib/jwt';
 import '@/pages/dashboard.css';
 import './products.css';
+import './products-list.css';
 
 /** Campos profesionales del producto (coinciden con ProductExtras del backend). */
 interface ProductExtras {
@@ -22,6 +25,7 @@ interface ProductExtras {
   price3: number;
   price4: number;
   price5: number;
+  wastePrice: number;
   lastCost: number;
   avgCost: number;
   minStock: number;
@@ -101,6 +105,7 @@ interface DraftForm {
   price3: string;
   price4: string;
   price5: string;
+  wastePrice: string;
   taxRate: string; // en porcentaje visible (16)
   iepsRate: string;
   // inventario
@@ -118,12 +123,14 @@ interface DraftForm {
   loyaltyPoints: string;
 }
 
-function emptyDraft(): DraftForm {
+function emptyDraft(isBakery = false): DraftForm {
   return {
     name: '', sku: '', description: '', brand: '', categoryId: '', unit: 'pieza', soldByWeight: false,
     barcode: '', imageUrl: '', active: true,
-    price: '', cost: '', lastCost: '', price2: '', price3: '', price4: '', price5: '',
-    taxRate: '16', iepsRate: '0',
+    price: '', cost: '', lastCost: '', price2: '', price3: '', price4: '', price5: '', wastePrice: '',
+    // En giro panadería el pan es tasa 0% de IVA por default (alimento básico); si una panadería
+    // quiere gravar algún producto, lo captura manualmente. Otros giros mantienen 16%.
+    taxRate: isBakery ? '0' : '16', iepsRate: '0',
     minStock: '', maxStock: '', reorderPoint: '',
     forSale: true, trackInventory: true, trackLots: false, allowBelowCost: false,
     blocked: false, isComposite: false, onSale: false, loyaltyPoints: '',
@@ -132,14 +139,18 @@ function emptyDraft(): DraftForm {
 
 function draftFromProduct(p: Product): DraftForm {
   const x = p.extras;
+  // Un importe en 0 se muestra como campo VACÍO para que se vea el placeholder ("0.00"), no un
+  // "0" escrito. Así editar un producto se ve igual de limpio que crearlo (criterio consistente).
+  const money0 = (n: number | null | undefined) => (n && n > 0 ? String(n) : '');
   return {
     name: p.name, sku: p.sku ?? '', description: x.description ?? '', brand: x.brand ?? '',
     categoryId: p.categoryId != null ? String(p.categoryId) : '',
     unit: p.unit, soldByWeight: p.soldByWeight, barcode: p.barcodes?.[0] ?? '',
     imageUrl: p.imageUrl ?? '', active: p.active,
-    price: String(p.price ?? 0), cost: String(p.cost ?? 0), lastCost: String(x.lastCost ?? 0),
-    price2: String(x.price2 ?? 0), price3: String(x.price3 ?? 0),
-    price4: String(x.price4 ?? 0), price5: String(x.price5 ?? 0),
+    price: money0(p.price), cost: money0(p.cost), lastCost: money0(x.lastCost),
+    price2: money0(x.price2), price3: money0(x.price3),
+    price4: money0(x.price4), price5: money0(x.price5),
+    wastePrice: money0(x.wastePrice),
     taxRate: String((x.taxRate ?? 0.16) * 100), iepsRate: String((x.iepsRate ?? 0) * 100),
     minStock: String(x.minStock ?? 0), maxStock: String(x.maxStock ?? 0),
     reorderPoint: String(x.reorderPoint ?? 0),
@@ -170,6 +181,7 @@ function draftToPayload(d: DraftForm) {
     price3: num(d.price3),
     price4: num(d.price4),
     price5: num(d.price5),
+    wastePrice: num(d.wastePrice),
     taxRate: num(d.taxRate) / 100,
     iepsRate: num(d.iepsRate) / 100,
     minStock: num(d.minStock),
@@ -193,13 +205,14 @@ function draftToPayload(d: DraftForm) {
  */
 export function ProductsPage() {
   const queryClient = useQueryClient();
+  const isBakery = hasModule(decodeToken(useSession((s) => s.token)), 'bakery');
   const [query, setQuery] = useState('');
   const [deleting, setDeleting] = useState<Product | null>(null);
 
   // Editor: null = cerrado; { id: null } = alta; { id } = edición.
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [draft, setDraft] = useState<DraftForm>(emptyDraft());
+  const [draft, setDraft] = useState<DraftForm>(() => emptyDraft(isBakery));
   const [tab, setTab] = useState<Tab>('general');
   const [catModalOpen, setCatModalOpen] = useState(false);
 
@@ -243,7 +256,7 @@ export function ProductsPage() {
 
   function openCreate() {
     setEditingId(null);
-    setDraft(emptyDraft());
+    setDraft(emptyDraft(isBakery));
     setTab('general');
     setEditorOpen(true);
   }
@@ -275,6 +288,10 @@ export function ProductsPage() {
     (p) => query.trim() === '' || p.name.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
+  // Nombre de categoría por id, para mostrarlo en la fila del producto.
+  const categoryName = (id: number | null): string | null =>
+    id == null ? null : (categories.data ?? []).find((c) => c.id === id)?.name ?? null;
+
   const margin = marginPct(Number(draft.price), Number(draft.cost));
 
   return (
@@ -303,50 +320,70 @@ export function ProductsPage() {
           <input className="prod-search" value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar producto…" />
         </div>
-        <table className="table">
-          <thead>
-            <tr><th></th><th>Producto</th><th>Unidad</th><th>Precio</th><th>Código</th><th>Acciones</th></tr>
-          </thead>
-          <motion.tbody variants={staggerContainer} initial="hidden" animate="visible">
+        <div className="plist">
+          <div className="plist-head">
+            <span />
+            <span>Producto</span>
+            <span>Unidad</span>
+            <span>Costo</span>
+            <span>Precio</span>
+            <span>IVA</span>
+            <span>Código</span>
+            <span style={{ textAlign: 'right' }}>Acciones</span>
+          </div>
+          <motion.div className="plist-body" variants={staggerContainer} initial="hidden" animate="visible">
             {filtered.map((p) => (
-              <motion.tr key={p.id} variants={staggerItem} className={p.active ? '' : 'row-inactive'}>
-                <td>
-                  {p.imageUrl ? (
-                    <img src={p.imageUrl} alt={p.name} className="prod-thumb" />
-                  ) : (
-                    <span className="prod-thumb prod-thumb-avatar" style={{ background: colorFor(p.name) }}>
-                      {initials(p.name)}
-                    </span>
-                  )}
-                </td>
-                <td>
-                  <strong>{p.name}</strong>
-                  {!p.active && <span className="badge-muted">Inactivo</span>}
-                  {p.extras?.onSale && <span className="badge-sale">Oferta</span>}
-                </td>
-                <td>{p.unit}</td>
-                <td>{money(p.price)}</td>
-                <td>{p.barcodes?.[0] ?? '—'}</td>
-                <td>
-                  <div className="prod-row-actions">
-                    <button type="button" className="icon-btn" title="Editar" onClick={() => openEdit(p)}>
-                      <Pencil size={18} color="#ffffff" strokeWidth={2.25} />
-                    </button>
-                    <button type="button" className="icon-btn icon-btn-danger" title="Eliminar"
-                      onClick={() => setDeleting(p)}>
-                      <Trash2 size={18} color="#ffffff" strokeWidth={2.25} />
-                    </button>
+              <motion.div key={p.id} variants={staggerItem}
+                className={`plist-row ${p.active ? '' : 'is-inactive'}`}>
+                {p.imageUrl ? (
+                  <img src={p.imageUrl} alt={p.name} className="plist-avatar" />
+                ) : (
+                  <span className="plist-avatar" style={{ background: colorFor(p.name) }}>
+                    {initials(p.name)}
+                  </span>
+                )}
+                <div className="plist-name-cell">
+                  <div className="plist-name">
+                    <span className="plist-name-text">{p.name}</span>
+                    {!p.active && <span className="plist-badge plist-badge-off">Inactivo</span>}
+                    {p.extras?.onSale && <span className="plist-badge plist-badge-sale">Oferta</span>}
                   </div>
-                </td>
-              </motion.tr>
+                  <div className="plist-sub">
+                    {[categoryName(p.categoryId), p.sku ? `SKU ${p.sku}` : null].filter(Boolean).join(' · ') || 'Sin categoría'}
+                  </div>
+                </div>
+                <span className="plist-unit">{p.unit}</span>
+                <span className="plist-cost">{p.cost > 0 ? money(p.cost) : '—'}</span>
+                <div className="plist-price-cell">
+                  <span className={`plist-price ${p.price > 0 ? '' : 'is-zero'}`}>{money(p.price)}</span>
+                  {(() => {
+                    const m = marginPct(p.price, p.cost);
+                    if (m == null) return <span className="plist-margin is-none">margen —</span>;
+                    return <span className={`plist-margin ${m >= 0 ? 'is-good' : 'is-bad'}`}>margen {m.toFixed(0)}%</span>;
+                  })()}
+                </div>
+                <span className={`plist-tax ${p.extras?.taxRate > 0 ? 'is-taxed' : ''}`}>
+                  {Math.round((p.extras?.taxRate ?? 0) * 100)}%
+                </span>
+                <span className="plist-code">{p.barcodes?.[0] ?? '—'}</span>
+                <div className="plist-actions">
+                  <button type="button" className="plist-act" title="Editar" onClick={() => openEdit(p)}>
+                    <Pencil size={16} strokeWidth={2.25} />
+                  </button>
+                  <button type="button" className="plist-act is-danger" title="Eliminar"
+                    onClick={() => setDeleting(p)}>
+                    <Trash2 size={16} strokeWidth={2.25} />
+                  </button>
+                </div>
+              </motion.div>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="empty">
+              <div className="plist-empty">
                 {products.data?.length === 0 ? 'Aún no hay productos.' : 'Sin resultados.'}
-              </td></tr>
+              </div>
             )}
-          </motion.tbody>
-        </table>
+          </motion.div>
+        </div>
       </motion.div>
 
       {/* Editor slide-over premium */}
@@ -497,6 +534,13 @@ export function ProductsPage() {
                           onChange={(e) => set('price5', e.target.value)} placeholder="0.00" />
                       </label>
                     </div>
+                    {isBakery && (
+                      <label className="field">
+                        <span>Precio de merma</span>
+                        <input type="number" step="0.01" value={draft.wastePrice}
+                          onChange={(e) => set('wastePrice', e.target.value)} placeholder="0.00" />
+                      </label>
+                    )}
                     <div className="grid-2">
                       <label className="field">
                         <span>IVA (%)</span>

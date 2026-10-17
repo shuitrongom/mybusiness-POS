@@ -96,7 +96,8 @@ public class SaleController {
 
                 List<SaleLine> lines = request.lines().stream()
                                 .map(l -> new SaleLine(l.productId(), l.description(), l.quantity(),
-                                                l.unitPrice(), l.discount(), l.unit()))
+                                                l.unitPrice(), l.discount(), l.unit(),
+                                                Boolean.TRUE.equals(l.waste())))
                                 .toList();
 
                 List<Payment> payments = request.payments() == null ? List.of()
@@ -115,7 +116,14 @@ public class SaleController {
                                 request.globalDiscount(), request.note(), onCredit,
                                 lines, payments, request.idempotencyKey());
 
-                SaleService.SaleResult result = saleService.registerSale(sale);
+                // La venta de merma se detecta por los propios renglones (SaleLine.waste). El
+                // precio de merma lo aplica el backend desde product.waste_price; el POS no lo
+                // teclea. registerSaleWithWaste descuenta esos renglones de la existencia de
+                // merma.
+                boolean hasWaste = lines.stream().anyMatch(SaleLine::waste);
+                SaleService.SaleResult result = hasWaste
+                                ? saleService.registerSaleWithWaste(sale)
+                                : saleService.registerSale(sale);
                 HttpStatus status = result.duplicated() ? HttpStatus.OK : HttpStatus.CREATED;
                 return ResponseEntity.status(status).body(result);
         }
@@ -214,7 +222,8 @@ public class SaleController {
                         @NotNull BigDecimal quantity,
                         @NotNull BigDecimal unitPrice,
                         BigDecimal discount,
-                        @Size(max = 16) String unit) {
+                        @Size(max = 16) String unit,
+                        Boolean waste) {
         }
 
         /** Pago de venta. */

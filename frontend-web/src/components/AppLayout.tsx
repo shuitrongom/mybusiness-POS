@@ -8,7 +8,7 @@ import {
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UserMenu } from '@/components/UserMenu';
 import { useSession } from '@/store/session';
-import { decodeToken, canUseModule, canSell } from '@/lib/jwt';
+import { decodeToken, canUseModule, canSell, hasModule } from '@/lib/jwt';
 import { api } from '@/lib/api';
 import { setPaperWidth } from '@/lib/thermalPrint';
 import './app-layout.css';
@@ -130,12 +130,34 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
   // permiso sobre el módulo del grupo. Dueño/Admin ven todo. Así el cajero deja de estar
   // encajonado en el POS y ve exactamente lo que su rol permite.
   const maySell = canSell(claims);
+  // Giro panadería: el negocio tiene habilitado el módulo 'bakery'. En ese giro, el submenú de
+  // Inventario se afina al pan (se ocultan opciones que no aplican a una panadería: tallas y
+  // colores, números de serie/lote, calidad de inventario industrial y la app de conteo móvil).
+  const isBakery = hasModule(claims, 'bakery');
+  const INVENTORY_HIDE_FOR_BAKERY = new Set([
+    '/inventory-variants',   // Tallas y colores
+    '/inventory-serials',    // Números de serie
+    '/inventory-lots',       // Números de lote
+    '/inventory-quality',    // Calidad de inventario
+    '/inventory-stockapp',   // StockApp (app de conteo móvil; se activa con la app)
+  ]);
   const visibleGroups = OWNER_GROUPS
     .filter((g) => canUseModule(claims, g.module))
     .map((g) => g.id === 'sales' && !maySell
       // Administración/supervisión no vende: se oculta "Punto de venta", pero sí ven el resto
       // de Ventas (devoluciones, clientes, cobranza, cortes, ventas por cajero, reimpresión).
       ? { ...g, items: g.items.filter((it) => it.to !== '/pos') }
+      : g)
+    .map((g) => g.id === 'inventory' && isBakery
+      // Panadería: oculta las opciones que no aplican y añade el reporte de merma (reconectado
+      // dentro de Inventario; el módulo "Panadería" aparte ya no existe).
+      ? {
+        ...g,
+        items: [
+          ...g.items.filter((it) => !INVENTORY_HIDE_FOR_BAKERY.has(it.to)),
+          { to: '/inventory-waste', label: 'Reporte de merma' },
+        ],
+      }
       : g);
 
   // El grupo cuya ruta está activa arranca expandido; los demás, contraídos.
@@ -150,7 +172,7 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
     if (superAdmin) return;
     api.get<{ paperWidthMm: number }>('/tickets/settings')
       .then((r) => setPaperWidth(r.data.paperWidthMm))
-      .catch(() => {});
+      .catch(() => { });
   }, [superAdmin]);
 
   return (

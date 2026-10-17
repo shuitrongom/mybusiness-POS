@@ -32,7 +32,8 @@ class SecurityUnitTest {
         String secret = mfa.generateSecret();
         assertThat(secret).isNotBlank();
 
-        // Genera un código válido para "ahora" con el mismo algoritmo y verifica que se acepte.
+        // Genera un código válido para "ahora" con el mismo algoritmo y verifica que se
+        // acepte.
         var timeProvider = new dev.samstevens.totp.time.SystemTimeProvider();
         var codeGenerator = new dev.samstevens.totp.code.DefaultCodeGenerator();
         long bucket = Math.floorDiv(timeProvider.getTime(), 30);
@@ -73,6 +74,28 @@ class SecurityUnitTest {
         assertThat(evaluator.canUse("sales")).isTrue();
         assertThat(evaluator.canUse("invoicing")).isFalse();
 
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void bakeryModuleIsDeniedWithoutItAndAllowedForCashierWithIt() {
+        ModuleAccessEvaluator evaluator = new ModuleAccessEvaluator();
+
+        // Cajero de un negocio SIN el módulo bakery habilitado: 403.
+        AuthenticatedUser noBakery = new AuthenticatedUser(
+                "cajero@negocio.mx", "tenant_7",
+                List.of(Roles.CASHIER), List.of("sales"));
+        setAuthenticated(noBakery);
+        assertThat(evaluator.canUse("bakery")).isFalse();
+        SecurityContextHolder.clearContext();
+
+        // Cajero de un negocio CON bakery habilitado: puede usarlo (bakery está en
+        // CASHIER_MODULES).
+        AuthenticatedUser withBakery = new AuthenticatedUser(
+                "cajero@panaderia.mx", "tenant_8",
+                List.of(Roles.CASHIER), List.of("sales", "bakery"));
+        setAuthenticated(withBakery);
+        assertThat(evaluator.canUse("bakery")).isTrue();
         SecurityContextHolder.clearContext();
     }
 

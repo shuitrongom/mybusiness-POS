@@ -961,6 +961,17 @@
   background: var(--surface);
 }
 
+/* Precio bloqueado: renglón vendido como merma (precio fijo del artículo, no editable). */
+.pos-line-price-input:disabled {
+  color: #e11d48;
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+.pos-line-price-input:disabled:hover {
+  border-color: transparent;
+}
+
 /* Filas del resumen (subtotal, descuento) */
 .pos-summary-line {
   display: flex;
@@ -1236,6 +1247,28 @@
 
 .pos-line-promo svg {
   color: var(--accent-600);
+}
+
+/* Botón de MERMA en el renglón (solo artículos de panadería). */
+.pos-line-waste {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  background: transparent;
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pos-line-waste.is-active {
+  background: #e11d48;
+  border-color: #e11d48;
+  color: #fff;
 }
 
 .pos-summary-promo {

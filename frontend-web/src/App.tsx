@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSession } from '@/store/session';
-import { decodeToken, isSuperAdmin, isCashier } from '@/lib/jwt';
+import { decodeToken, isSuperAdmin, isCashier, hasModule } from '@/lib/jwt';
 import { LoginPage } from '@/pages/LoginPage';
 import { LandingPage } from '@/pages/LandingPage';
 import { AppLayout } from '@/components/AppLayout';
@@ -61,6 +61,7 @@ import { SalesByCashierPage } from '@/pages/SalesByCashierPage';
 import { CashierDashboardPage } from '@/pages/CashierDashboardPage';
 import { DocumentsPage } from '@/pages/DocumentsPage';
 import { BranchesPage } from '@/pages/BranchesPage';
+import { BakeryWastePage } from '@/pages/BakeryWastePage';
 import { SuperAdminPage } from '@/pages/SuperAdminPage';
 import { SuperAdminDashboardPage } from '@/pages/SuperAdminDashboardPage';
 
@@ -78,6 +79,7 @@ export function App() {
   const claims = decodeToken(token);
   const superAdmin = isSuperAdmin(claims);
   const cashier = isCashier(claims);
+  const bakery = hasModule(claims, 'bakery');
 
   if (!isAuthenticated) {
     return (
@@ -129,6 +131,11 @@ export function App() {
             <Route path="inventory-physical" element={<InventoryPhysicalPage />} />
             <Route path="inventory-stockapp" element={<InventoryStockAppPage />} />
             <Route path="inventory-kardex" element={<InventoryKardexPage />} />
+            {/* Panadería: integrada en Inventario y POS. El reporte de merma vive dentro de
+                Inventario (ruta inventory-waste), solo cuando el negocio tiene el módulo 'bakery'. */}
+            {bakery && (
+              <Route path="inventory-waste" element={<BakeryWastePage />} />
+            )}
             <Route path="compras" element={<PurchasingModulePage />} />
             <Route path="purchases" element={<PurchasesPage />} />
             <Route path="purchase-orders" element={<PurchaseOrdersPage />} />

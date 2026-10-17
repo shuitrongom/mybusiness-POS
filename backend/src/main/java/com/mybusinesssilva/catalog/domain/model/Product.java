@@ -6,27 +6,33 @@ import java.util.Map;
 /**
  * Producto del catálogo de un negocio.
  *
- * <p>Los campos comunes están tipados; los específicos del giro (caducidad, lote, calibre, etc.)
- * viven en {@code attributes}, cuya forma la define el perfil de giro del negocio. Los campos
- * profesionales adicionales (multiprecio, niveles de inventario, banderas, impuesto, proveedor)
- * se agrupan en {@link ProductExtras} para mantener el record principal manejable y no romper el
+ * <p>
+ * Los campos comunes están tipados; los específicos del giro (caducidad, lote,
+ * calibre, etc.)
+ * viven en {@code attributes}, cuya forma la define el perfil de giro del
+ * negocio. Los campos
+ * profesionales adicionales (multiprecio, niveles de inventario, banderas,
+ * impuesto, proveedor)
+ * se agrupan en {@link ProductExtras} para mantener el record principal
+ * manejable y no romper el
  * código existente que crea productos básicos.
  *
- * @param id            identificador (nulo hasta persistir)
- * @param sku           código interno del negocio (opcional)
- * @param name          nombre del producto
- * @param categoryId    categoría (opcional)
- * @param unit          unidad de venta (pieza, kg, litro...)
- * @param soldByWeight  true si se vende por peso (báscula)
- * @param satProdServ   clave SAT de producto/servicio (para CFDI)
- * @param satUnit       clave SAT de unidad (para CFDI)
- * @param price         precio de venta (lista / precio 1)
- * @param cost          costo
- * @param active        si está activo
- * @param barcodes      códigos de barras asociados
- * @param attributes    campos dinámicos del giro
- * @param imageUrl      foto del producto (URL o data URL base64); puede ser nula
- * @param extras        campos profesionales (multiprecio, inventario, banderas); nunca nulo
+ * @param id           identificador (nulo hasta persistir)
+ * @param sku          código interno del negocio (opcional)
+ * @param name         nombre del producto
+ * @param categoryId   categoría (opcional)
+ * @param unit         unidad de venta (pieza, kg, litro...)
+ * @param soldByWeight true si se vende por peso (báscula)
+ * @param satProdServ  clave SAT de producto/servicio (para CFDI)
+ * @param satUnit      clave SAT de unidad (para CFDI)
+ * @param price        precio de venta (lista / precio 1)
+ * @param cost         costo
+ * @param active       si está activo
+ * @param barcodes     códigos de barras asociados
+ * @param attributes   campos dinámicos del giro
+ * @param imageUrl     foto del producto (URL o data URL base64); puede ser nula
+ * @param extras       campos profesionales (multiprecio, inventario, banderas);
+ *                     nunca nulo
  */
 public record Product(
         Long id,
@@ -58,7 +64,8 @@ public record Product(
     }
 
     /**
-     * Campos profesionales del producto (nivel enterprise). Todos con valores por defecto para
+     * Campos profesionales del producto (nivel enterprise). Todos con valores por
+     * defecto para
      * que un producto simple no tenga que especificarlos.
      *
      * @param description    descripción larga
@@ -94,6 +101,7 @@ public record Product(
             BigDecimal price3,
             BigDecimal price4,
             BigDecimal price5,
+            BigDecimal wastePrice,
             BigDecimal lastCost,
             BigDecimal avgCost,
             BigDecimal minStock,
@@ -115,6 +123,7 @@ public record Product(
             price3 = zeroIfNull(price3);
             price4 = zeroIfNull(price4);
             price5 = zeroIfNull(price5);
+            wastePrice = zeroIfNull(wastePrice);
             lastCost = zeroIfNull(lastCost);
             avgCost = zeroIfNull(avgCost);
             minStock = zeroIfNull(minStock);
@@ -127,11 +136,15 @@ public record Product(
             return v == null ? BigDecimal.ZERO : v;
         }
 
-        /** Valores por defecto de un producto simple (vendible, con control de inventario, IVA 16%). */
+        /**
+         * Valores por defecto de un producto simple (vendible, con control de
+         * inventario, IVA 16%).
+         */
         public static ProductExtras defaults() {
             return new ProductExtras(
                     null, null, null, new BigDecimal("0.16"), BigDecimal.ZERO,
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                    BigDecimal.ZERO,
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                     true, true, false, false, false, false, false, BigDecimal.ZERO);
         }
@@ -139,19 +152,19 @@ public record Product(
 
     /** Constructor de conveniencia sin extras (usa los valores por defecto). */
     public Product(Long id, String sku, String name, Long categoryId, String unit,
-                   boolean soldByWeight, String satProdServ, String satUnit,
-                   BigDecimal price, BigDecimal cost, boolean active,
-                   java.util.List<String> barcodes, Map<String, Object> attributes,
-                   String imageUrl) {
+            boolean soldByWeight, String satProdServ, String satUnit,
+            BigDecimal price, BigDecimal cost, boolean active,
+            java.util.List<String> barcodes, Map<String, Object> attributes,
+            String imageUrl) {
         this(id, sku, name, categoryId, unit, soldByWeight, satProdServ, satUnit,
                 price, cost, active, barcodes, attributes, imageUrl, ProductExtras.defaults());
     }
 
     /** Constructor de conveniencia sin imagen ni extras. */
     public Product(Long id, String sku, String name, Long categoryId, String unit,
-                   boolean soldByWeight, String satProdServ, String satUnit,
-                   BigDecimal price, BigDecimal cost, boolean active,
-                   java.util.List<String> barcodes, Map<String, Object> attributes) {
+            boolean soldByWeight, String satProdServ, String satUnit,
+            BigDecimal price, BigDecimal cost, boolean active,
+            java.util.List<String> barcodes, Map<String, Object> attributes) {
         this(id, sku, name, categoryId, unit, soldByWeight, satProdServ, satUnit,
                 price, cost, active, barcodes, attributes, null, ProductExtras.defaults());
     }

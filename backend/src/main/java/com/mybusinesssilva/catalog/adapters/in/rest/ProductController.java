@@ -24,7 +24,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Endpoints del catálogo de productos del negocio.
  *
- * <p>Requieren que el negocio tenga habilitado el módulo de inventario (regla de tres capas
+ * <p>
+ * Requieren que el negocio tenga habilitado el módulo de inventario (regla de
+ * tres capas
  * de autorización: módulo habilitado comercialmente Y permiso del rol).
  */
 @RestController
@@ -41,7 +43,8 @@ public class ProductController {
     }
 
     /**
-     * Lista todos los productos activos del negocio. Accesible para vender (cajero) o administrar.
+     * Lista todos los productos activos del negocio. Accesible para vender (cajero)
+     * o administrar.
      * Es la fuente de la cuadrícula de productos del punto de venta.
      */
     @GetMapping
@@ -50,7 +53,10 @@ public class ProductController {
         return catalogService.listAll();
     }
 
-    /** Lista las categorías del negocio (para agrupar la cuadrícula del punto de venta). */
+    /**
+     * Lista las categorías del negocio (para agrupar la cuadrícula del punto de
+     * venta).
+     */
     @GetMapping("/categories")
     @PreAuthorize("@moduleAccess.canReadCatalog()")
     public List<Map<String, Object>> categories() {
@@ -74,13 +80,16 @@ public class ProductController {
         return ResponseEntity.ok(catalogService.updateProduct(toProduct(id, request)));
     }
 
-    /** Construye el modelo de dominio a partir del request, incluyendo los campos profesionales. */
+    /**
+     * Construye el modelo de dominio a partir del request, incluyendo los campos
+     * profesionales.
+     */
     private Product toProduct(Long id, CreateProductRequest r) {
         boolean active = r.active() == null ? true : r.active();
         Product.ProductExtras extras = new Product.ProductExtras(
                 r.description(), r.brand(), r.supplierId(),
                 r.taxRate(), r.iepsRate(),
-                r.price2(), r.price3(), r.price4(), r.price5(),
+                r.price2(), r.price3(), r.price4(), r.price5(), r.wastePrice(),
                 r.lastCost(), r.avgCost(),
                 r.minStock(), r.maxStock(), r.reorderPoint(),
                 r.forSale() == null ? true : r.forSale(),
@@ -101,8 +110,10 @@ public class ProductController {
     }
 
     /**
-     * Elimina un producto. Si tenía ventas se desactiva (borrado lógico) para no romper el
-     * histórico; si no, se borra físicamente. La respuesta indica cuál de los dos ocurrió.
+     * Elimina un producto. Si tenía ventas se desactiva (borrado lógico) para no
+     * romper el
+     * histórico; si no, se borra físicamente. La respuesta indica cuál de los dos
+     * ocurrió.
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> delete(@PathVariable long id) {
@@ -133,9 +144,12 @@ public class ProductController {
     }
 
     /**
-     * Alta/edición de producto. Los campos del giro van en {@code attributes}; los campos
-     * profesionales (multiprecio, inventario, banderas) son opcionales y toman valores por
-     * defecto sensatos si el cliente no los envía (compatibilidad con altas simples).
+     * Alta/edición de producto. Los campos del giro van en {@code attributes}; los
+     * campos
+     * profesionales (multiprecio, inventario, banderas) son opcionales y toman
+     * valores por
+     * defecto sensatos si el cliente no los envía (compatibilidad con altas
+     * simples).
      */
     public record CreateProductRequest(
             String sku,
@@ -161,6 +175,7 @@ public class ProductController {
             BigDecimal price3,
             BigDecimal price4,
             BigDecimal price5,
+            BigDecimal wastePrice,
             BigDecimal lastCost,
             BigDecimal avgCost,
             BigDecimal minStock,

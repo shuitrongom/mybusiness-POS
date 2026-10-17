@@ -1,5 +1,6 @@
 package com.mybusinesssilva.inventory.application;
 
+import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
 import com.mybusinesssilva.inventory.domain.model.InventoryMovement;
 import com.mybusinesssilva.inventory.domain.model.MovementType;
 import com.mybusinesssilva.inventory.domain.model.StockLevel;
@@ -11,10 +12,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Casos de uso de inventario. Implementa {@link InventoryPort} (consumido por ventas/compras)
+ * Casos de uso de inventario. Implementa {@link InventoryPort} (consumido por
+ * ventas/compras)
  * y ofrece operaciones de ajuste, traspaso, kardex y alertas de stock mínimo.
  *
- * <p>Cada movimiento actualiza la existencia y registra el renglón del kardex en la misma
+ * <p>
+ * Cada movimiento actualiza la existencia y registra el renglón del kardex en
+ * la misma
  * transacción, garantizando consistencia entre existencia e historial.
  */
 @Service
@@ -29,7 +33,7 @@ public class InventoryService implements InventoryPort {
     @Override
     @Transactional
     public BigDecimal applyMovement(long productId, long branchId, MovementType type,
-                                    BigDecimal quantity, String reference, String actor) {
+            BigDecimal quantity, String reference, String actor) {
         BigDecimal signed = signedQuantity(type, quantity.abs());
         BigDecimal balance = repository.adjustQuantity(productId, branchId, signed);
         repository.recordMovement(new InventoryMovement(
@@ -37,14 +41,34 @@ public class InventoryService implements InventoryPort {
         return balance;
     }
 
+    @Override
+    @Transactional
+    public BigDecimal applyOutboundStrict(long productId, long branchId, MovementType type,
+            BigDecimal quantity, String reference, String actor) {
+        BigDecimal requested = quantity.abs();
+        BigDecimal balance = repository.adjustQuantityIfEnough(productId, branchId, requested)
+                .orElseThrow(() -> {
+                    BigDecimal available = repository.findStock(productId, branchId)
+                            .map(StockLevel::quantity)
+                            .orElse(BigDecimal.ZERO);
+                    return new InsufficientStockException(productId, null, available, requested);
+                });
+        // La existencia ya se descontó de forma atómica; el kardex guarda la cantidad
+        // con signo.
+        repository.recordMovement(new InventoryMovement(
+                null, productId, branchId, type, requested.negate(), balance, null, reference, actor, null));
+        return balance;
+    }
+
     /**
-     * Ajuste manual de inventario con motivo (queda registrado para auditoría/kardex).
+     * Ajuste manual de inventario con motivo (queda registrado para
+     * auditoría/kardex).
      *
      * @param delta cantidad a sumar o restar (con signo)
      */
     @Transactional
     public BigDecimal adjust(long productId, long branchId, BigDecimal delta,
-                             String reason, String actor) {
+            String reason, String actor) {
         BigDecimal balance = repository.adjustQuantity(productId, branchId, delta);
         repository.recordMovement(new InventoryMovement(
                 null, productId, branchId, MovementType.ADJUSTMENT, delta, balance,
@@ -53,12 +77,13 @@ public class InventoryService implements InventoryPort {
     }
 
     /**
-     * Traspaso de un producto entre sucursales: salida en la origen y entrada en la destino,
+     * Traspaso de un producto entre sucursales: salida en la origen y entrada en la
+     * destino,
      * de forma atómica.
      */
     @Transactional
     public void transfer(long productId, long fromBranchId, long toBranchId,
-                         BigDecimal quantity, String actor) {
+            BigDecimal quantity, String actor) {
         if (fromBranchId == toBranchId) {
             throw new IllegalArgumentException("Las sucursales de origen y destino deben ser distintas");
         }
@@ -88,13 +113,14 @@ public class InventoryService implements InventoryPort {
     }
 
     /**
-     * Determina el signo de la cantidad según el tipo de movimiento: las entradas suman,
+     * Determina el signo de la cantidad según el tipo de movimiento: las entradas
+     * suman,
      * las salidas restan.
      */
     private BigDecimal signedQuantity(MovementType type, BigDecimal absQuantity) {
         return switch (type) {
             case PURCHASE, TRANSFER_IN, RETURN -> absQuantity;
-            case SALE, TRANSFER_OUT -> absQuantity.negate();
+            case SALE, TRANSFER_OUT, WASTE_OUT -> absQuantity.negate();
             case ADJUSTMENT -> absQuantity; // el ajuste usa el método adjust() con signo explícito
         };
     }
