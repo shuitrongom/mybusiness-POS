@@ -163,6 +163,22 @@ public interface BakeryUseCase {
     List<Map<String, Object>> listWasteMovements(LocalDate from, LocalDate to, Long productId);
 
     /**
+     * Historial UNIFICADO de salidas de panadería para "Salidas recientes": salida
+     * normal
+     * (inventory_document OUT, con su concepto real) + merma MANUAL ("Paso a
+     * merma") + merma
+     * REPARTO ("Reparto de merma"), ordenado por fecha DESC y limitado por
+     * {@code limit}. Cada
+     * fila trae su {@code kind} y su {@code concept} ya resuelto para que el
+     * frontend solo
+     * renderice (no combina ni ordena en cliente).
+     *
+     * @param branchId sucursal a mostrar; {@code null} = todas
+     * @param limit    máximo de filas (si &le; 0 se usa 50)
+     */
+    List<Map<String, Object>> listUnifiedExits(Long branchId, int limit);
+
+    /**
      * Existencia del día para un producto/sucursal: producido, vendido, restante
      * del día y,
      * solo si {@code date} es hoy, la existencia actual acumulada.

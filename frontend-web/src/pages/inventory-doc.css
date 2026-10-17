@@ -12,6 +12,42 @@
   gap: 10px;
 }
 
+/* Celda de disponible/existencia por renglón (chip de estado). */
+.idoc-availcell {
+  justify-self: center;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.idoc-availcell-unit {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  opacity: 0.8;
+  text-transform: lowercase;
+}
+
+.idoc-availcell.is-ok {
+  background: color-mix(in srgb, #12b886 15%, transparent);
+  color: #12b886;
+}
+
+.idoc-availcell.is-over {
+  background: color-mix(in srgb, #e11d48 16%, transparent);
+  color: #e11d48;
+}
+
+.idoc-availcell.is-none {
+  background: color-mix(in srgb, #e11d48 12%, transparent);
+  color: #e11d48;
+  font-weight: 600;
+  font-size: var(--fs-xs);
+}
+
 /* Cabecera de columnas: mismo grid que las filas, para alineación exacta. */
 .idoc-row-head,
 .idoc-row {
@@ -122,6 +158,11 @@
   cursor: not-allowed;
 }
 
+/* Stepper sin cantidad aún capturada (0): borde ámbar sutil que invita a capturarla. */
+.idoc-qty.is-empty {
+  border-color: color-mix(in srgb, #f59e0b 55%, var(--border));
+}
+
 .idoc-qty input {
   width: 48px;
   height: 34px;
@@ -185,6 +226,29 @@
 .idoc-money input::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+/* Precio de venta FIJO (viene del artículo, no editable en la entrada). */
+.idoc-fixed-price {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #12b886 14%, transparent);
+  color: #12b886;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.idoc-fixed-price.is-missing {
+  background: color-mix(in srgb, #e11d48 14%, transparent);
+  color: #e11d48;
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 /* Importe calculado y disponible */
@@ -311,6 +375,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Chip de TIPO de salida (panadería): mismo lenguaje visual que el chip de origen del
+   "Reporte de merma" (color de fondo + texto blanco, pastilla). El color lo pone el inline
+   style por kind (ámbar/sky/neutro), sin inventar una paleta nueva. */
+.idoc-hist-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .idoc-hist-name {
   font-weight: 600;
   color: var(--heading);
@@ -325,6 +404,27 @@
 
 .idoc-hist-muted {
   color: var(--text-muted);
+}
+
+/* Fecha + hora del registro (apiladas, alineadas a la derecha). */
+.idoc-hist-when {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-self: end;
+  line-height: 1.25;
+}
+
+.idoc-hist-when-date {
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+}
+
+.idoc-hist-when-time {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .idoc-hist-empty {
@@ -351,7 +451,8 @@
 .iday-head,
 .iday-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 110px 110px 110px 130px 130px;
+  /* artículo | producido | vendido(+%barra) | en merma | restante | precio | valor */
+  grid-template-columns: minmax(170px, 1fr) 96px 120px 100px 110px 100px 120px;
   align-items: center;
   gap: 16px;
   padding: 0 18px;
@@ -488,4 +589,159 @@
   border: 1px dashed var(--border);
   border-radius: 14px;
   margin-top: 8px;
+}
+
+/* Columna "Vendido" con % y mini-barra de progreso de desplazamiento del día. */
+.iday-sold {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  justify-self: end;
+  width: 100%;
+}
+
+.iday-sold-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.iday-sold-qty {
+  font-weight: 600;
+  color: var(--heading);
+}
+
+.iday-sold-pct {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.iday-bar {
+  width: 100%;
+  max-width: 92px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 22%, transparent);
+  overflow: hidden;
+}
+
+.iday-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0ea5e9, #12b886);
+  transition: width 0.3s ease;
+}
+
+/* Precio unitario */
+.iday-price {
+  text-align: right;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fila de totales (pie de la tabla) */
+.iday-foot {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  font-weight: 700;
+}
+
+.iday-foot .iday-foot-label {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.iday-foot .iday-num,
+.iday-foot .iday-value {
+  color: var(--heading);
+}
+
+/* =========================================================================
+   Modal "captura el precio primero" (no se opera con precio 0).
+   ========================================================================= */
+.idoc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(2, 6, 23, 0.6);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.idoc-modal {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  padding: 26px;
+  text-align: center;
+}
+
+.idoc-modal-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #f59e0b;
+}
+
+.idoc-modal-title {
+  margin: 0 0 8px;
+  font-size: var(--fs-lg, 18px);
+  font-weight: 700;
+  color: var(--heading);
+}
+
+.idoc-modal-text {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.idoc-modal-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-radius: 12px;
+  text-align: left;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.idoc-modal-list li {
+  padding: 4px 0;
+  color: var(--heading);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.idoc-modal-list li+li {
+  border-top: 1px solid var(--border);
+}
+
+.idoc-modal-hint {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.idoc-modal-actions {
+  display: flex;
+  justify-content: center;
 }

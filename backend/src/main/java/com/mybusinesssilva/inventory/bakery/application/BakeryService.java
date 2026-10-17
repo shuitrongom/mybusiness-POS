@@ -165,6 +165,11 @@ public class BakeryService implements BakeryUseCase {
     }
 
     @Override
+    public List<Map<String, Object>> listUnifiedExits(Long branchId, int limit) {
+        return repository.listUnifiedExits(branchId, limit);
+    }
+
+    @Override
     public Map<String, Object> dailyStock(long productId, long branchId, LocalDate date) {
         LocalDate day = date != null ? date : LocalDate.now();
         BigDecimal produced = repository.producedBetween(productId, branchId, day, day);

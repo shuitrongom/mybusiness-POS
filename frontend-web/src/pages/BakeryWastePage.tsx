@@ -4,6 +4,7 @@ import { Trash2, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp } from '@/lib/motion';
+import { InfoBanner } from '@/components/InfoBanner';
 import '@/pages/dashboard.css';
 import '@/pages/returns.css';
 import '@/pages/purchases.css';
@@ -88,6 +89,14 @@ export function BakeryWastePage() {
     <div>
       <h1 className="page-title">Reporte de merma</h1>
       <p className="page-sub">Todos los movimientos de merma del periodo: cierre, manual, venta y reparto. Solo lectura.</p>
+
+      <div style={{ margin: 'var(--space-3) 0' }}>
+        <InfoBanner icon={<Trash2 size={18} />} tone="amber" title="Trazabilidad de merma">
+          Cada movimiento de merma queda registrado con su origen: CIERRE (automático al cerrar caja),
+          MANUAL (en salidas), VENTA (merma vendida en el POS) y REPARTO (entregada a repartidor).
+          Aquí ves la pérdida entre el precio normal y el de merma.
+        </InfoBanner>
+      </div>
 
       <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
         <div className="pur-head">

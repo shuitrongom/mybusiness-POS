@@ -280,6 +280,72 @@ public class JdbcBakeryRepository implements BakeryRepository {
     }
 
     @Override
+    public List<Map<String, Object>> listUnifiedExits(Long branchId, int limit) {
+        // Historial unificado de salidas de panadería (Opción A): salida normal
+        // (inventory_document OUT) + merma MANUAL/REPARTO (bakery_waste_movement), en
+        // un
+        // único UNION ALL para que ORDER BY/LIMIT globales se apliquen sobre el
+        // conjunto
+        // combinado (mismo patrón de CTE/UNION que dailyStockAll). Para la merma,
+        // totalValue
+        // usa `difference` (la pérdida (normal-merma)*cantidad), la cifra de valor con
+        // significado en bakery_waste_movement para un historial de salidas.
+        return jdbc.sql("""
+                SELECT ('DOC-' || d.id)                     AS row_key,
+                       'NORMAL'                             AS kind,
+                       d.folio                              AS folio,
+                       COALESCE(d.concept_name, 'Salida')   AS concept,
+                       b.name                               AS branch_name,
+                       d.total_qty                          AS total_qty,
+                       d.total_value                        AS total_value,
+                       d.created_by                         AS cashier,
+                       d.created_at                         AS created_at
+                FROM inventory_document d
+                LEFT JOIN branch b ON b.id = d.branch_id
+                WHERE d.doc_type = 'OUT'
+                  AND (CAST(:branch AS bigint) IS NULL OR d.branch_id = CAST(:branch AS bigint))
+
+                UNION ALL
+
+                SELECT ('WASTE-' || w.id)                   AS row_key,
+                       w.origin                             AS kind,
+                       s.folio                              AS folio,
+                       CASE w.origin WHEN 'MANUAL'  THEN 'Paso a merma'
+                                     WHEN 'REPARTO' THEN 'Reparto de merma'
+                                     ELSE w.origin END       AS concept,
+                       b.name                               AS branch_name,
+                       w.quantity                           AS total_qty,
+                       w.difference                         AS total_value,
+                       w.cashier                            AS cashier,
+                       w.created_at                         AS created_at
+                FROM bakery_waste_movement w
+                JOIN branch b ON b.id = w.branch_id
+                LEFT JOIN sale s ON s.id = w.sale_id
+                WHERE w.origin IN ('MANUAL', 'REPARTO')
+                  AND (CAST(:branch AS bigint) IS NULL OR w.branch_id = CAST(:branch AS bigint))
+
+                ORDER BY created_at DESC
+                LIMIT :limit
+                """)
+                .param("branch", branchId)
+                .param("limit", limit <= 0 ? 50 : limit)
+                .query((rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", rs.getString("row_key"));
+                    m.put("kind", rs.getString("kind"));
+                    m.put("folio", rs.getString("folio"));
+                    m.put("concept", rs.getString("concept"));
+                    m.put("branchName", rs.getString("branch_name"));
+                    m.put("totalQty", rs.getBigDecimal("total_qty"));
+                    m.put("totalValue", rs.getBigDecimal("total_value"));
+                    m.put("cashier", rs.getString("cashier"));
+                    m.put("createdAt", rs.getObject("created_at", java.time.OffsetDateTime.class));
+                    return m;
+                })
+                .list();
+    }
+
+    @Override
     public List<Map<String, Object>> productsWithNormalStock(long branchId) {
         return jdbc.sql("""
                 SELECT st.product_id, st.quantity

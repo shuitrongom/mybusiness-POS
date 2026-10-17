@@ -4,6 +4,7 @@ import { Boxes, Search, Calendar, DollarSign, Layers, Trash2 } from 'lucide-reac
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp, staggerContainer, staggerItem } from '@/lib/motion';
+import { InfoBanner } from '@/components/InfoBanner';
 import '@/pages/dashboard.css';
 import '@/pages/inventory.css';
 import '@/pages/inventory-doc.css';
@@ -118,6 +119,13 @@ export function BakeryDayStockPage() {
         )}
       </div>
 
+      <div style={{ marginTop: 'var(--space-3)' }}>
+        <InfoBanner icon={<Boxes size={18} />} tone="brand" title="Existencias del día de panadería">
+          Resumen del día por artículo: lo producido, lo vendido, lo que pasó a merma y lo que queda.
+          Usa el calendario para ver días anteriores; la merma se arrastra de un día a otro.
+        </InfoBanner>
+      </div>
+
       {/* KPIs del día */}
       <motion.div className="inv-kpis" variants={staggerContainer} initial="hidden" animate="visible">
         <Kpi icon={<Layers size={18} />} tint="blue" label="Producido" value={num(totals.produced)} />
@@ -146,27 +154,38 @@ export function BakeryDayStockPage() {
             <span className="iday-right">Vendido</span>
             <span className="iday-right">En merma</span>
             <span className="iday-right">Restante del día</span>
+            <span className="iday-right">Precio</span>
             <span className="iday-right">Valor</span>
           </div>
           <motion.div className="iday-body" variants={staggerContainer} initial="hidden" animate="visible">
-            {filtered.map((r) => (
-              <motion.div className="iday-row" key={r.productId} variants={staggerItem}>
-                <div className="iday-article">
-                  <span className="iday-avatar" style={{ background: avatarColor(r.productName) }}>
-                    {avatarInitials(r.productName)}
-                  </span>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="iday-name">{r.productName}</div>
-                    <div className="iday-unit">{r.unit || 'pieza'}</div>
+            {filtered.map((r) => {
+              const pct = r.produced > 0 ? Math.min(100, Math.round((r.sold / r.produced) * 100)) : 0;
+              return (
+                <motion.div className="iday-row" key={r.productId} variants={staggerItem}>
+                  <div className="iday-article">
+                    <span className="iday-avatar" style={{ background: avatarColor(r.productName) }}>
+                      {avatarInitials(r.productName)}
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="iday-name">{r.productName}</div>
+                      <div className="iday-unit">{r.unit || 'pieza'}</div>
+                    </div>
                   </div>
-                </div>
-                <span className="iday-num">{num(r.produced)}</span>
-                <span className="iday-num is-dim">{num(r.sold)}</span>
-                <span className={`iday-waste ${r.waste > 0 ? '' : 'is-zero'}`}>{num(r.waste)}</span>
-                <span className={`iday-remaining ${r.remaining > 0 ? '' : 'is-zero'}`}>{num(r.remaining)}</span>
-                <span className="iday-value">{money(r.value)}</span>
-              </motion.div>
-            ))}
+                  <span className="iday-num">{num(r.produced)}</span>
+                  <div className="iday-sold">
+                    <div className="iday-sold-top">
+                      <span className="iday-sold-qty">{num(r.sold)}</span>
+                      {r.produced > 0 && <span className="iday-sold-pct">{pct}%</span>}
+                    </div>
+                    <div className="iday-bar"><div className="iday-bar-fill" style={{ width: `${pct}%` }} /></div>
+                  </div>
+                  <span className={`iday-waste ${r.waste > 0 ? '' : 'is-zero'}`}>{num(r.waste)}</span>
+                  <span className={`iday-remaining ${r.remaining > 0 ? '' : 'is-zero'}`}>{num(r.remaining)}</span>
+                  <span className="iday-price">{money(r.price || 0)}</span>
+                  <span className="iday-value">{money(r.value)}</span>
+                </motion.div>
+              );
+            })}
             {filtered.length === 0 && (
               <div className="iday-empty">
                 {busy ? 'Cargando…'
@@ -175,6 +194,20 @@ export function BakeryDayStockPage() {
               </div>
             )}
           </motion.div>
+
+          {filtered.length > 0 && (
+            <div className="iday-row iday-foot">
+              <span className="iday-foot-label">Totales ({filtered.length} artículos)</span>
+              <span className="iday-num">{num(totals.produced)}</span>
+              <span className="iday-num" style={{ textAlign: 'right' }}>{num(totals.sold)}</span>
+              <span className="iday-num" style={{ textAlign: 'right' }}>{num(totals.waste)}</span>
+              <span className="iday-num" style={{ textAlign: 'right' }}>
+                {num(filtered.reduce((s, r) => s + (r.remaining || 0), 0))}
+              </span>
+              <span />
+              <span className="iday-value">{money(totals.value)}</span>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>

@@ -14,6 +14,8 @@ dist-ssr/
 .vite/
 *.local
 coverage/
+*.tsbuildinfo
+build-out.txt
 
 # ===== Flutter / Dart =====
 mobile/.dart_tool/
@@ -65,3 +67,7 @@ _check_import.bat
 .agents/
 domaincheck.txt
 _pw.txt
+
+# ===== Scripts SQL locales (se corren a mano en pgAdmin, no son parte del repo) =====
+iva-cero-panaderia.sql
+reset-tenant-datos-reales.sql

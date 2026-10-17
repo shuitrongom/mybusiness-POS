@@ -77,6 +77,37 @@ public interface BakeryRepository {
     List<Map<String, Object>> listWasteMovements(LocalDate from, LocalDate to, Long productId);
 
     /**
+     * Historial UNIFICADO de salidas de panadería para "Salidas recientes",
+     * ordenado por
+     * {@code created_at} DESC y limitado por {@code limit}. Une tres fuentes vía
+     * {@code UNION ALL}
+     * en una sola consulta (el orden y el límite globales se aplican sobre el
+     * conjunto combinado):
+     * <ul>
+     * <li>Salida normal: {@code inventory_document} con {@code doc_type='OUT'} y su
+     * {@code concept_name} real -&gt; {@code kind = "NORMAL"}.</li>
+     * <li>Merma {@code origin='MANUAL'} de {@code bakery_waste_movement} -&gt;
+     * concepto
+     * "Paso a merma", {@code kind = "MANUAL"}.</li>
+     * <li>Merma {@code origin='REPARTO'} de {@code bakery_waste_movement} -&gt;
+     * concepto
+     * "Reparto de merma", {@code kind = "REPARTO"}.</li>
+     * </ul>
+     * Cada fila expone: {@code id} (clave estable única entre fuentes, con prefijo
+     * {@code DOC-}/{@code WASTE-}), {@code kind}, {@code concept} (ya resuelto),
+     * {@code folio}
+     * (null o {@code sale.folio} para merma), {@code branchName}, {@code totalQty},
+     * {@code totalValue} (para merma la pérdida {@code difference}),
+     * {@code cashier} y
+     * {@code createdAt} (instante ISO). Filtra por sucursal cuando {@code branchId}
+     * no es nulo.
+     *
+     * @param branchId sucursal a mostrar; {@code null} = todas
+     * @param limit    máximo de filas (si &le; 0 se usa 50)
+     */
+    List<Map<String, Object>> listUnifiedExits(Long branchId, int limit);
+
+    /**
      * Productos de pan con existencia normal &gt; 0 en una sucursal, con su
      * cantidad actual.
      * Usado por el cierre de caja para pasar el sobrante a merma (origen CIERRE).

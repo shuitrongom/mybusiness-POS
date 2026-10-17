@@ -138,6 +138,103 @@ class BakeryServiceIT extends AbstractIntegrationTest {
         }
 
         @Test
+        void unifiedExitsMergesNormalOutAndWaste() {
+                long productId = setup("Concha"); // price 8, waste_price 3
+                bakeryService.registerProduction(production(productId, new BigDecimal("50"), new BigDecimal("5")));
+
+                // Merma MANUAL: pasa 20 del stock normal a merma (concepto "Paso a merma").
+                bakeryService.transferToWaste(productId, branchId, new BigDecimal("20"),
+                                WasteOrigin.MANUAL, "cajero", null, null);
+                // Reparto: saca 5 de la merma ya existente (concepto "Reparto de merma").
+                bakeryService.transferToWaste(productId, branchId, new BigDecimal("5"),
+                                WasteOrigin.REPARTO, "repartidor", null, null);
+                // Salida normal: documento OUT con su concepto real.
+                new JdbcTemplate(dataSource).update(
+                                "INSERT INTO inventory_document (folio, doc_type, concept_name, branch_id, "
+                                                + "total_qty, total_value, created_by) "
+                                                + "VALUES ('S-1', 'OUT', 'Consumo interno', ?, 3, 24, 'admin')",
+                                branchId);
+
+                List<Map<String, Object>> rows = bakeryService.listUnifiedExits(branchId, 50);
+
+                // Las tres fuentes aparecen con su tipo y concepto resueltos (ninguno en "—").
+                assertThat(rows).hasSize(3);
+                assertThat(rows).anyMatch(r -> "MANUAL".equals(r.get("kind"))
+                                && "Paso a merma".equals(r.get("concept"))
+                                && String.valueOf(r.get("id")).startsWith("WASTE-"));
+                assertThat(rows).anyMatch(r -> "REPARTO".equals(r.get("kind"))
+                                && "Reparto de merma".equals(r.get("concept"))
+                                && String.valueOf(r.get("id")).startsWith("WASTE-"));
+                assertThat(rows).anyMatch(r -> "NORMAL".equals(r.get("kind"))
+                                && "Consumo interno".equals(r.get("concept"))
+                                && String.valueOf(r.get("id")).startsWith("DOC-"));
+
+                // Orden por createdAt DESC (no creciente a lo largo de la lista).
+                for (int i = 1; i < rows.size(); i++) {
+                        java.time.OffsetDateTime prev = (java.time.OffsetDateTime) rows.get(i - 1).get("createdAt");
+                        java.time.OffsetDateTime cur = (java.time.OffsetDateTime) rows.get(i).get("createdAt");
+                        assertThat(prev).isAfterOrEqualTo(cur);
+                }
+
+                // Folio null en la merma MANUAL/REPARTO (no viene ligada a venta); la salida
+                // normal conserva su folio ('S-1'). Cubre el camino folio-null de la query.
+                assertThat(rows).filteredOn(r -> "MANUAL".equals(r.get("kind")))
+                                .singleElement()
+                                .satisfies(r -> assertThat(r.get("folio")).isNull());
+                assertThat(rows).filteredOn(r -> "REPARTO".equals(r.get("kind")))
+                                .singleElement()
+                                .satisfies(r -> assertThat(r.get("folio")).isNull());
+                assertThat(rows).filteredOn(r -> "NORMAL".equals(r.get("kind")))
+                                .singleElement()
+                                .satisfies(r -> assertThat(r.get("folio")).isEqualTo("S-1"));
+
+                // Tope por limit sobre el conjunto COMBINADO (no por cada fuente): con 3 filas
+                // y limit=2 solo deben volver 2, y por el orden DESC la más antigua (la merma
+                // MANUAL, sembrada primero) queda fuera.
+                List<Map<String, Object>> capped = bakeryService.listUnifiedExits(branchId, 2);
+                assertThat(capped).hasSize(2);
+        }
+
+        @Test
+        void unifiedExitsFiltersByBranch() {
+                long productId = setup("Concha"); // crea la sucursal matriz y la deja en branchId
+                long matrizId = branchId;
+                bakeryService.registerProduction(production(productId, new BigDecimal("50"), new BigDecimal("5")));
+
+                // Segunda sucursal en el MISMO tenant.
+                long otraId = new JdbcTemplate(dataSource).queryForObject(
+                                "INSERT INTO branch (name) VALUES (?) RETURNING id", Long.class, "Sucursal 2");
+
+                // Merma MANUAL en la matriz (una fuente).
+                bakeryService.transferToWaste(productId, matrizId, new BigDecimal("10"),
+                                WasteOrigin.MANUAL, "cajero", null, null);
+                // Salida normal (documento OUT) en la OTRA sucursal (la otra fuente).
+                new JdbcTemplate(dataSource).update(
+                                "INSERT INTO inventory_document (folio, doc_type, concept_name, branch_id, "
+                                                + "total_qty, total_value, created_by) "
+                                                + "VALUES ('S-2', 'OUT', 'Consumo interno', ?, 2, 16, 'admin')",
+                                otraId);
+
+                // Al filtrar por la matriz solo vuelve su merma; el documento OUT de la otra
+                // sucursal queda fuera aunque sea la otra fuente del UNION (filtro en ambas
+                // ramas).
+                List<Map<String, Object>> matriz = bakeryService.listUnifiedExits(matrizId, 50);
+                assertThat(matriz).singleElement()
+                                .satisfies(r -> {
+                                        assertThat(r.get("kind")).isEqualTo("MANUAL");
+                                        assertThat(String.valueOf(r.get("id"))).startsWith("WASTE-");
+                                });
+
+                // Al filtrar por la otra sucursal solo vuelve su documento OUT.
+                List<Map<String, Object>> otra = bakeryService.listUnifiedExits(otraId, 50);
+                assertThat(otra).singleElement()
+                                .satisfies(r -> {
+                                        assertThat(r.get("kind")).isEqualTo("NORMAL");
+                                        assertThat(String.valueOf(r.get("id"))).startsWith("DOC-");
+                                });
+        }
+
+        @Test
         void dailyStockReportsProducedSoldAndRemaining() {
                 long productId = setup("Telera");
                 // Producido 100 hoy.

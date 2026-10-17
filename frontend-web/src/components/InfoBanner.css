@@ -1,0 +1,52 @@
+/* Banner descriptivo premium reutilizable (contexto por pantalla / modo). */
+.infobanner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  position: relative;
+}
+
+.infobanner-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+}
+
+.infobanner-body { min-width: 0; }
+
+.infobanner-title {
+  display: block;
+  color: var(--heading);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.infobanner-text {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+/* Tonos de acento: borde izquierdo + fondo del icono + color del icono. */
+.infobanner.tone-brand   { border-left-color: var(--brand-600, #2e6ef2); }
+.infobanner.tone-brand   .infobanner-icon { background: color-mix(in srgb, #2e6ef2 18%, transparent); color: #4b8bff; }
+.infobanner.tone-amber   { border-left-color: #d97706; }
+.infobanner.tone-amber   .infobanner-icon { background: color-mix(in srgb, #d97706 18%, transparent); color: #f59e0b; }
+.infobanner.tone-sky     { border-left-color: #0ea5e9; }
+.infobanner.tone-sky     .infobanner-icon { background: color-mix(in srgb, #0ea5e9 18%, transparent); color: #38bdf8; }
+.infobanner.tone-green   { border-left-color: #12b886; }
+.infobanner.tone-green   .infobanner-icon { background: color-mix(in srgb, #12b886 18%, transparent); color: #12b886; }
+.infobanner.tone-violet  { border-left-color: #7c5cff; }
+.infobanner.tone-violet  .infobanner-icon { background: color-mix(in srgb, #7c5cff 18%, transparent); color: #a78bfa; }
+.infobanner.tone-neutral { border-left-color: var(--border); }
+.infobanner.tone-neutral .infobanner-icon { background: var(--surface); color: var(--text-muted); }

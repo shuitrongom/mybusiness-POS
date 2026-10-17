@@ -155,6 +155,24 @@ public class BakeryController {
     }
 
     /**
+     * Historial UNIFICADO de "Salidas recientes" de panadería: salida normal
+     * (inventory_document OUT con su concepto) + merma MANUAL ("Paso a merma") +
+     * merma
+     * REPARTO ("Reparto de merma"), ordenado por fecha DESC y limitado por
+     * {@code limit}.
+     * Cada fila trae su tipo en {@code kind}/{@code concept} para que la pantalla
+     * muestre
+     * qué clase de salida es (resuelve el hueco de que la merma MANUAL/REPARTO no
+     * aparecía).
+     */
+    @GetMapping("/exits")
+    public List<Map<String, Object>> exits(
+            @RequestParam(value = "branchId", required = false) Long branchId,
+            @RequestParam(value = "limit", required = false, defaultValue = "50") int limit) {
+        return bakery.listUnifiedExits(branchId, limit);
+    }
+
+    /**
      * Existencia actual EN MERMA de un producto en una sucursal (para que Salidas
      * muestre cuánta
      * merma hay disponible antes de registrar un reparto).
