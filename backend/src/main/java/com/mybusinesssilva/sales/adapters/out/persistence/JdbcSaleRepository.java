@@ -194,6 +194,51 @@ public class JdbcSaleRepository implements SaleRepository {
         }
 
         @Override
+        public java.util.List<RecentSale> recentSales(int limit, String q) {
+                // Normaliza el tope (defensa: <=0 -> 20, máximo 50) para no devolver listados
+                // enormes al selector de devoluciones.
+                int lim = (limit <= 0) ? 20 : Math.min(limit, 50);
+                // Aislamiento por tenant: lo aplica RLS sobre `sale` (igual que el historial de
+                // devoluciones). No se filtra por sucursal manualmente; punto de extensión si
+                // en
+                // multi-sucursal se quiere acotar a la sucursal del cajero.
+                return jdbc.sql("""
+                                SELECT s.id, s.folio, s.created_at, s.total, c.name AS customer_name,
+                                       (SELECT COUNT(*) FROM sale_line sl WHERE sl.sale_id = s.id)
+                                           AS item_count,
+                                       (SELECT COUNT(DISTINCT rl.product_id)
+                                          FROM sales_return_line rl
+                                          JOIN sales_return r ON r.id = rl.return_id
+                                         WHERE r.sale_id = s.id) AS returned_count,
+                                       NOT EXISTS (
+                                         SELECT 1 FROM sale_line sl
+                                         WHERE sl.sale_id = s.id AND sl.product_id IS NOT NULL
+                                           AND sl.quantity > COALESCE((
+                                             SELECT SUM(rl.quantity) FROM sales_return_line rl
+                                             JOIN sales_return r ON r.id = rl.return_id
+                                             WHERE r.sale_id = s.id AND rl.product_id = sl.product_id), 0)
+                                       ) AS fully_returned
+                                FROM sale s
+                                LEFT JOIN customer c ON c.id = s.customer_id
+                                WHERE s.status = 'COMPLETED'
+                                  AND (CAST(:q AS text) IS NULL
+                                       OR s.folio ILIKE '%' || CAST(:q AS text) || '%'
+                                       OR c.name ILIKE '%' || CAST(:q AS text) || '%')
+                                ORDER BY s.created_at DESC
+                                LIMIT :limit
+                                """)
+                                .param("q", q)
+                                .param("limit", lim)
+                                .query((rs, n) -> new RecentSale(
+                                                rs.getLong("id"), rs.getString("folio"),
+                                                rs.getObject("created_at", java.time.OffsetDateTime.class),
+                                                rs.getBigDecimal("total"), rs.getString("customer_name"),
+                                                rs.getInt("item_count"), rs.getInt("returned_count"),
+                                                rs.getBoolean("fully_returned")))
+                                .list();
+        }
+
+        @Override
         public java.math.BigDecimal returnedQuantity(long saleId, long productId) {
                 return jdbc.sql("""
                                 SELECT COALESCE(SUM(rl.quantity), 0)

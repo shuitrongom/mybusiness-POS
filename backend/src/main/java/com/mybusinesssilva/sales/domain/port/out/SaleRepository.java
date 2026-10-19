@@ -54,6 +54,43 @@ public interface SaleRepository {
         BigDecimal returnedQuantity(long saleId, long productId);
 
         /**
+         * Últimas ventas COMPLETED devolvibles, para el selector de devoluciones (que
+         * muestra las ventas recientes sin que el cajero teclee nada, igual que el
+         * buscador de productos). Ordenadas por {@code created_at} DESC y acotadas al
+         * tenant en curso (RLS, igual que el historial de devoluciones; no se filtra
+         * por
+         * sucursal manualmente — punto de extensión si en multi-sucursal se quiere
+         * acotar).
+         *
+         * @param limit tope de ventas a devolver (se normaliza: &le;0 → 20, tope 50)
+         * @param q     texto libre opcional ({@code null} = sin filtro); filtra por
+         *              folio
+         *              o nombre de cliente (ILIKE). Nullable → se compara con CAST.
+         */
+        List<RecentSale> recentSales(int limit, String q);
+
+        /**
+         * Resumen de una venta reciente para el selector de devoluciones.
+         *
+         * @param saleId        id de la venta
+         * @param folio         folio (puede ser {@code null} en datos antiguos; el
+         *                      front
+         *                      cae a {@code "V-"+saleId})
+         * @param createdAt     fecha/hora de la venta (puede ser {@code null})
+         * @param total         total de la venta
+         * @param customerName  nombre del cliente ({@code null} en venta de mostrador)
+         * @param itemCount     número de renglones de la venta
+         * @param returnedCount número de productos de la venta con alguna devolución
+         *                      previa (para el chip "con devoluciones")
+         * @param fullyReturned {@code true} si no queda ningún renglón de producto por
+         *                      devolver (toda la venta ya se saldó)
+         */
+        record RecentSale(long saleId, String folio, java.time.OffsetDateTime createdAt,
+                        BigDecimal total, String customerName, int itemCount, int returnedCount,
+                        boolean fullyReturned) {
+        }
+
+        /**
          * Proyección de un renglón para reposición de inventario.
          *
          * @param productId producto; {@code null} para un artículo libre (no mueve

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
-  Search, Undo2, RotateCcw, Package, Check, Calendar, User, DollarSign, Hash,
+  Search, Undo2, RotateCcw, Package, Check, Calendar, User, DollarSign, Hash, Receipt,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
@@ -76,6 +76,17 @@ interface ReturnRow {
   createdAt: string;
   itemCount?: number;
 }
+// Venta reciente COMPLETED devolvible (selector que aparece al entrar, sin teclear).
+interface RecentSale {
+  saleId: number;
+  folio: string | null;
+  createdAt: string | null;
+  total: number;
+  customerName: string | null;
+  itemCount: number;
+  returnedCount: number;
+  fullyReturned: boolean;
+}
 
 const REFUND_LABEL: Record<string, string> = {
   CASH: 'Efectivo', CREDIT_NOTE: 'Nota de crédito', STORE_CREDIT: 'Saldo a favor',
@@ -84,6 +95,8 @@ const REFUND_LABEL: Record<string, string> = {
 // Grid COMPARTIDO cabecera/filas (alineación por construcción, nunca a mano).
 const LINE_COLS = 'minmax(200px, 1fr) 96px 120px 150px 120px';
 const HIST_COLS = 'minmax(90px, 0.7fr) 96px minmax(140px, 1fr) 150px 120px minmax(120px, 0.8fr) 150px';
+// Grid compartido cabecera/filas del selector de ventas recientes (alineación por construcción).
+const PICK_COLS = 'minmax(180px, 1.2fr) minmax(150px, 1fr) 90px minmax(150px, 0.9fr) 140px';
 
 /**
  * Devoluciones: busca la venta original por folio o id, muestra sus renglones (con avatar, cantidad
@@ -99,6 +112,8 @@ export function ReturnsPage() {
   const [refundMethod, setRefundMethod] = useState('CASH');
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<ReturnRow[]>([]);
+  const [recent, setRecent] = useState<RecentSale[]>([]);
+  const [recentLoading, setRecentLoading] = useState(true);
   const [authOpen, setAuthOpen] = useState(false);
   const [voucher, setVoucher] = useState<VoucherData | null>(null);
 
@@ -111,10 +126,21 @@ export function ReturnsPage() {
     api.get<ReturnRow[]>('/sales/returns', { params: { limit: 20 } })
       .then((r) => setHistory(r.data)).catch(() => setHistory([]));
   };
-  useEffect(loadHistory, []);
+  // Al entrar, carga las últimas ventas COMPLETED devolvibles para mostrarlas sin que el
+  // cajero teclee nada (igual que el buscador de productos muestra la lista completa).
+  const loadRecent = () => {
+    setRecentLoading(true);
+    api.get<RecentSale[]>('/sales/recent', { params: { limit: 20 } })
+      .then((r) => setRecent(r.data))
+      .catch(() => setRecent([]))
+      .finally(() => setRecentLoading(false));
+  };
+  useEffect(() => { loadHistory(); loadRecent(); }, []);
 
-  const findSale = async () => {
-    const id = Number(folio.replace(/[^0-9]/g, ''));
+  // Carga el detalle de una venta (por folio tecleado o por id de una fila seleccionada) y
+  // prepara los steppers. Reusa el flujo actual GET /sales/{id}.
+  const findSale = async (explicitId?: number) => {
+    const id = explicitId ?? Number(folio.replace(/[^0-9]/g, ''));
     if (!id) { toast.info('Escribe un folio válido', 'Ejemplo: V-123 o 123.'); return; }
     setLoading(true);
     try {
@@ -128,6 +154,28 @@ export function ReturnsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // El texto del buscador filtra en vivo la lista de ventas recientes (patrón de ProductPicker:
+  // filtrado en memoria sobre la lista ya cargada). Vacío = muestra todas.
+  const filteredRecent = useMemo(() => {
+    const q = folio.trim().toLowerCase();
+    if (!q) return recent;
+    const digits = q.replace(/[^0-9]/g, '');
+    return recent.filter((s) => {
+      const label = (s.folio || `V-${s.saleId}`).toLowerCase();
+      const customer = (s.customerName || '').toLowerCase();
+      const when = fmtDate(s.createdAt);
+      const date = `${when.date} ${when.time}`.toLowerCase();
+      return label.includes(q) || customer.includes(q) || date.includes(q)
+        || (digits !== '' && String(s.saleId).includes(digits));
+    });
+  }, [folio, recent]);
+
+  // Selecciona una venta de la lista: sincroniza el texto del folio y carga su detalle.
+  const selectRecent = (s: RecentSale) => {
+    setFolio(s.folio || `V-${s.saleId}`);
+    findSale(s.saleId);
   };
 
   // Lo que queda por devolver de un renglón = vendido − ya devuelto (no se excede; segunda
@@ -209,11 +257,70 @@ export function ReturnsPage() {
             <Search size={16} />
             <input value={folio} onChange={(e) => setFolio(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && findSale()}
-              placeholder="Folio del ticket (V-123 o 123)" autoFocus />
+              placeholder="Filtra por folio o cliente… o escribe el folio y Enter" autoFocus />
           </div>
-          <button className="btn-primary" onClick={findSale} disabled={loading}>
+          <button className="btn-primary" onClick={() => findSale()} disabled={loading}>
             <Search size={16} /> {loading ? 'Buscando…' : 'Buscar'}
           </button>
+        </div>
+
+        {/* Ventas recientes devolvibles: aparecen al entrar (sin teclear) y se filtran en vivo.
+            Cada fila es seleccionable y carga el detalle de esa venta. */}
+        <div className="rret-pick">
+          {!recentLoading && recent.length > 0 && filteredRecent.length > 0 && (
+            <div className="rret-pick-head" style={{ gridTemplateColumns: PICK_COLS }}>
+              <span>Venta</span>
+              <span>Cliente</span>
+              <span className="rret-h-center">Artículos</span>
+              <span className="rret-h-right">Total</span>
+              <span className="rret-h-right">Fecha</span>
+            </div>
+          )}
+          {filteredRecent.map((s) => {
+            const label = s.folio || `V-${s.saleId}`;
+            const avatarName = s.customerName || label;
+            const when = fmtDate(s.createdAt);
+            return (
+              <button type="button" className="rret-pick-row" key={s.saleId}
+                style={{ gridTemplateColumns: PICK_COLS }}
+                onClick={() => selectRecent(s)}>
+                <span className="rret-pick-sale">
+                  <span className="rret-article-avatar" style={{ background: avatarColor(avatarName) }}>
+                    {avatarInitials(avatarName)}
+                  </span>
+                  <span className="rret-pick-folio"><Hash size={12} /> {label}</span>
+                  {s.fullyReturned ? (
+                    <span className="rret-chip-fully">Devuelta</span>
+                  ) : s.returnedCount > 0 ? (
+                    <span className="rret-chip-returned">Con devoluciones</span>
+                  ) : null}
+                </span>
+                <span className={`rret-pick-customer ${s.customerName ? '' : 'is-none'}`}>
+                  <User size={13} /> {s.customerName || 'Mostrador'}
+                </span>
+                <span className="rret-pick-count">{num(s.itemCount)}</span>
+                <span className="rret-pick-total">{money(s.total)}</span>
+                <span className="rret-pick-when">
+                  <span className="rret-pick-when-date">{when.date}</span>
+                  {when.time && <span className="rret-pick-when-time">{when.time}</span>}
+                </span>
+              </button>
+            );
+          })}
+          {!recentLoading && recent.length === 0 && (
+            <div className="rret-empty">
+              <span className="rret-empty-icon"><Receipt size={24} /></span>
+              <strong>Aún no hay ventas registradas para devolver</strong>
+              <p>Registra una venta en Punto de venta para poder devolverla aquí.</p>
+            </div>
+          )}
+          {!recentLoading && recent.length > 0 && filteredRecent.length === 0 && (
+            <div className="rret-empty">
+              <span className="rret-empty-icon"><Search size={24} /></span>
+              <strong>Ninguna venta coincide</strong>
+              <p>Prueba con otro folio o cliente, o escribe el folio exacto y pulsa Buscar.</p>
+            </div>
+          )}
         </div>
       </motion.div>
 

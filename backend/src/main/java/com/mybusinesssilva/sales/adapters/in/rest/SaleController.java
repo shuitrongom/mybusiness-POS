@@ -59,6 +59,35 @@ public class SaleController {
         }
 
         /**
+         * Últimas ventas COMPLETED devolvibles para el selector de devoluciones: la
+         * pantalla las muestra al entrar sin que el cajero teclee nada (igual que el
+         * buscador de productos). Ordenadas por fecha DESC y acotadas al tenant (RLS).
+         * {@code q} es opcional (filtro server-side por folio o cliente); el front
+         * filtra
+         * en memoria y no lo usa al montar.
+         */
+        @org.springframework.web.bind.annotation.GetMapping("/recent")
+        public List<java.util.Map<String, Object>> recentSales(
+                        @RequestParam(value = "limit", required = false, defaultValue = "20") int limit,
+                        @RequestParam(value = "q", required = false) String q) {
+                String query = (q == null || q.isBlank()) ? null : q.trim();
+                return saleRepository.recentSales(limit, query).stream()
+                                .map(s -> {
+                                        java.util.Map<String, Object> m = new java.util.HashMap<>();
+                                        m.put("saleId", s.saleId());
+                                        m.put("folio", s.folio());
+                                        m.put("createdAt", s.createdAt());
+                                        m.put("total", s.total());
+                                        m.put("customerName", s.customerName());
+                                        m.put("itemCount", s.itemCount());
+                                        m.put("returnedCount", s.returnedCount());
+                                        m.put("fullyReturned", s.fullyReturned());
+                                        return m;
+                                })
+                                .toList();
+        }
+
+        /**
          * Lista las listas de precio activas del negocio para el selector del punto de
          * venta.
          */
