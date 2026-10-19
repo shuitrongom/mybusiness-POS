@@ -1,6 +1,11 @@
 # Perfil de producción.
 # Toda la configuración sensible se inyecta por variables de entorno / gestor de secretos.
 # No se incluyen credenciales en este archivo.
+#
+# REQUISITO DE SEGURIDAD: la variable de entorno JWT_SECRET DEBE estar definida en Railway con al
+# menos 32 bytes (256 bits) aleatorios. Si falta (o es el default de desarrollo, o es < 32 bytes),
+# el backend aborta el arranque con un mensaje claro (validación en JwtService). Esto evita firmar
+# JWT con un secreto público/débil en producción.
 spring:
   jpa:
     properties:

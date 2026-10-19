@@ -395,6 +395,36 @@
   color: var(--heading);
 }
 
+/* Artículo de la salida en el historial: avatar de color + nombre (o "N artículos" con avatar
+   neutro cuando son varios). Mismo lenguaje visual que la lista de captura (.idoc-article). */
+.idoc-hist-article {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.idoc-hist-article-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.idoc-hist-article-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--heading);
+}
+
 .idoc-hist-amount {
   text-align: right;
   font-weight: 700;
@@ -451,8 +481,9 @@
 .iday-head,
 .iday-row {
   display: grid;
-  /* artículo | producido | vendido(+%barra) | en merma | restante | precio | valor */
-  grid-template-columns: minmax(170px, 1fr) 96px 120px 100px 110px 100px 120px;
+  /* El grid-template-columns lo inyecta el componente (mismo valor en cabecera, filas y pie)
+     para alinear por construcción según el modo. Fallback por si faltara. */
+  grid-template-columns: minmax(170px, 1fr) 92px 120px 100px 104px 116px 100px 120px;
   align-items: center;
   gap: 16px;
   padding: 0 18px;
@@ -474,17 +505,103 @@
   margin-top: 8px;
 }
 
+/* Cada artículo es una tarjeta que envuelve la fila + el panel expandible de movimientos. */
+.iday-card {
+  display: flex;
+  flex-direction: column;
+}
+
 .iday-row {
   height: 60px;
   background: var(--surface-2);
   border: 1px solid transparent;
   border-radius: 14px;
-  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+  cursor: pointer;
 }
 
 .iday-row:hover {
   border-color: color-mix(in srgb, var(--brand-600, #2e6ef2) 38%, var(--border));
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+.iday-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand-600, #2e6ef2) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* Fila abierta: pegada visualmente a su panel de detalle. */
+.iday-row.is-open {
+  border-color: color-mix(in srgb, var(--brand-600, #2e6ef2) 42%, var(--border));
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Chevron que indica que la fila es expandible. */
+.iday-chevron {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  color: var(--text-muted);
+  transition: transform 0.18s ease;
+}
+
+.iday-chevron.is-open {
+  transform: rotate(180deg);
+  color: var(--brand-600, #2e6ef2);
+}
+
+/* Panel expandible: desglose de MOVIMIENTOS del día por artículo (dentro de la misma tarjeta). */
+.iday-detail {
+  overflow: hidden;
+}
+
+.iday-detail-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--brand-600, #2e6ef2) 24%, var(--border));
+  border-top: none;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+}
+
+.iday-detail-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.iday-detail-empty {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.iday-mv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Chip de movimiento: etiqueta + cantidad, con el color por tipo (mismo criterio que Salidas). */
+.iday-mv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.iday-mv-chip strong {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .iday-right {
@@ -513,6 +630,12 @@
 .iday-name {
   font-weight: 650;
   color: var(--heading);
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.iday-name> :first-child {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

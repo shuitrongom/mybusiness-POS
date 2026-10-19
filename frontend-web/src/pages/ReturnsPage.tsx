@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Search, Undo2, RotateCcw, Package, Check } from 'lucide-react';
+import {
+  Search, Undo2, RotateCcw, Package, Check, Calendar, User, DollarSign, Hash,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp } from '@/lib/motion';
+import { InfoBanner } from '@/components/InfoBanner';
 import { SupervisorAuthModal } from '@/components/SupervisorAuthModal';
 import { PrintableVoucher } from '@/components/PrintableVoucher';
 import { type VoucherData } from '@/components/Voucher';
@@ -14,12 +17,42 @@ import '@/pages/returns.css';
 
 const money = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
+const num = (n: number) => new Intl.NumberFormat('es-MX', { maximumFractionDigits: 3 }).format(n || 0);
+
+// Avatar del artículo (color estable + iniciales), coherente con el resto de la app
+// (mismos helpers que BakeryDayStockPage / InventoryDocPage).
+const AVATAR_COLORS = ['#2e6ef2', '#12b886', '#f59e0b', '#e11d48', '#7c5cff', '#0ea5e9', '#d97706', '#0891b2'];
+function avatarColor(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+function avatarInitials(name: string): string {
+  const w = name.trim().split(/\s+/).filter(Boolean);
+  if (w.length === 0) return '?';
+  return (w.length === 1 ? w[0].slice(0, 2) : w[0][0] + w[1][0]).toUpperCase();
+}
+
+// Fecha + hora del registro, apiladas (es-MX), coherente con el historial de Entradas/Salidas.
+function fmtDate(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: '—', time: '' };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: '—', time: '' };
+  return {
+    date: d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
+    time: d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+  };
+}
 
 interface SaleDetailLine {
   productId: number;
   description: string;
   quantity: number;
   unitPrice: number;
+  unit: string | null;
+  productName: string | null;
+  active: boolean;
+  alreadyReturned: number;
 }
 interface SaleDetail {
   saleId: number;
@@ -29,6 +62,8 @@ interface SaleDetail {
   status: string;
   total: number;
   lines: SaleDetailLine[];
+  createdAt: string | null;
+  customerName: string | null;
 }
 interface ReturnRow {
   id: number;
@@ -39,16 +74,22 @@ interface ReturnRow {
   reason: string | null;
   processedBy: string | null;
   createdAt: string;
+  itemCount?: number;
 }
 
 const REFUND_LABEL: Record<string, string> = {
   CASH: 'Efectivo', CREDIT_NOTE: 'Nota de crédito', STORE_CREDIT: 'Saldo a favor',
 };
 
+// Grid COMPARTIDO cabecera/filas (alineación por construcción, nunca a mano).
+const LINE_COLS = 'minmax(200px, 1fr) 96px 120px 150px 120px';
+const HIST_COLS = 'minmax(90px, 0.7fr) 96px minmax(140px, 1fr) 150px 120px minmax(120px, 0.8fr) 150px';
+
 /**
- * Devoluciones: busca la venta original por folio o id, muestra sus renglones y permite
- * seleccionar cantidades a devolver, el motivo y el método de reembolso. Registra la devolución
- * (que valida contra lo vendido, reingresa inventario y deja histórico).
+ * Devoluciones: busca la venta original por folio o id, muestra sus renglones (con avatar, cantidad
+ * vendida vs ya devuelta y precio bloqueado) y permite seleccionar cuánto devolver, el motivo y el
+ * método de reembolso. Registra la devolución (valida contra lo vendido, reingresa inventario y deja
+ * histórico). Mismo lenguaje visual premium que Entradas/Salidas/Existencias.
  */
 export function ReturnsPage() {
   const [folio, setFolio] = useState('');
@@ -88,6 +129,10 @@ export function ReturnsPage() {
       setLoading(false);
     }
   };
+
+  // Lo que queda por devolver de un renglón = vendido − ya devuelto (no se excede; segunda
+  // barrera en backend). El tope del stepper usa ese remanente, no la cantidad vendida.
+  const remainingOf = (l: SaleDetailLine) => Math.max(0, l.quantity - (l.alreadyReturned || 0));
 
   const setQty = (productId: number, q: number, max: number) => {
     setQtys((prev) => ({ ...prev, [productId]: Math.max(0, Math.min(q, max)) }));
@@ -148,114 +193,180 @@ export function ReturnsPage() {
       <h1 className="page-title">Devoluciones</h1>
       <p className="page-sub">Devuelve productos de una venta, reingresa inventario y registra el reembolso</p>
 
-      <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
+      <div style={{ marginTop: 'var(--space-3)' }}>
+        <InfoBanner icon={<Undo2 size={18} />} tone="sky" title="Devoluciones">
+          Busca una venta por su folio para devolver productos: reingresa el inventario y registra el
+          reembolso. El precio lo manda el artículo (bloqueado); solo eliges cuánto devolver de cada
+          renglón.
+        </InfoBanner>
+      </div>
+
+      <motion.div className="card" style={{ marginTop: 'var(--space-4)' }}
+        variants={fadeInUp} initial="hidden" animate="visible">
         <h3 className="sec-title"><Search size={18} /> Buscar venta</h3>
-        <div className="ret-search">
-          <input value={folio} onChange={(e) => setFolio(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && findSale()}
-            placeholder="Folio del ticket (V-123 o 123)" autoFocus />
+        <div className="rret-search">
+          <div className="rret-search-field">
+            <Search size={16} />
+            <input value={folio} onChange={(e) => setFolio(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && findSale()}
+              placeholder="Folio del ticket (V-123 o 123)" autoFocus />
+          </div>
           <button className="btn-primary" onClick={findSale} disabled={loading}>
-            {loading ? 'Buscando…' : 'Buscar'}
+            <Search size={16} /> {loading ? 'Buscando…' : 'Buscar'}
           </button>
         </div>
       </motion.div>
 
-      {sale && (
-        <motion.div className="card" style={{ marginTop: 'var(--space-4)' }}
-          variants={fadeInUp} initial="hidden" animate="visible">
-          <div className="ret-sale-head">
-            <div>
-              <h3 className="sec-title"><Package size={18} /> Venta {sale.folio || `V-${sale.saleId}`}</h3>
-              <span className="ret-sale-sub">Total original: {money(sale.total)}</span>
+      {sale && (() => {
+        const when = fmtDate(sale.createdAt);
+        return (
+          <motion.div className="card" style={{ marginTop: 'var(--space-4)' }}
+            variants={fadeInUp} initial="hidden" animate="visible">
+            <div className="rret-sale-head">
+              <div>
+                <h3 className="sec-title"><Package size={18} /> Venta {sale.folio || `V-${sale.saleId}`}</h3>
+                <div className="rret-sale-meta">
+                  <span className="rret-meta-chip"><Hash size={13} /> {sale.folio || `V-${sale.saleId}`}</span>
+                  {sale.createdAt && (
+                    <span className="rret-meta-chip">
+                      <Calendar size={13} /> {when.date}{when.time && ` · ${when.time}`}
+                    </span>
+                  )}
+                  {sale.customerName && (
+                    <span className="rret-meta-chip is-info"><User size={13} /> {sale.customerName}</span>
+                  )}
+                  <span className="rret-meta-chip is-total">
+                    <DollarSign size={13} /> Total original: {money(sale.total)}
+                  </span>
+                </div>
+              </div>
+              {sale.status === 'VOIDED' && <span className="badge badge-danger">Cancelada</span>}
             </div>
-            {sale.status === 'VOIDED' && <span className="badge badge-danger">Cancelada</span>}
-          </div>
 
-          <table className="ret-table">
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th className="ta-right">Vendido</th>
-                <th className="ta-right">Precio</th>
-                <th className="ta-center">Devolver</th>
-                <th className="ta-right">Reembolso</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sale.lines.map((l) => (
-                <tr key={l.productId}>
-                  <td>{l.description}</td>
-                  <td className="ta-right">{l.quantity}</td>
-                  <td className="ta-right">{money(l.unitPrice)}</td>
-                  <td className="ta-center">
-                    <div className="ret-qty">
-                      <button onClick={() => setQty(l.productId, (qtys[l.productId] || 0) - 1, l.quantity)}>−</button>
-                      <input value={qtys[l.productId] || 0} inputMode="numeric"
-                        onChange={(e) => setQty(l.productId, Number(e.target.value) || 0, l.quantity)} />
-                      <button onClick={() => setQty(l.productId, (qtys[l.productId] || 0) + 1, l.quantity)}>+</button>
+            <div className="rret-lines">
+              <div className="rret-line-head" style={{ gridTemplateColumns: LINE_COLS }}>
+                <span>Artículo</span>
+                <span className="rret-h-center">Vendido</span>
+                <span className="rret-h-center">Precio</span>
+                <span className="rret-h-center">Devolver</span>
+                <span className="rret-h-center">Reembolso</span>
+              </div>
+              {sale.lines.map((l) => {
+                const name = l.productName || l.description;
+                const q = qtys[l.productId] || 0;
+                const max = remainingOf(l);
+                const isFree = l.productId == null;
+                const isDisabled = !isFree && !l.active;
+                return (
+                  <div className="rret-line" key={l.productId} style={{ gridTemplateColumns: LINE_COLS }}>
+                    <div className="rret-article">
+                      <span className="rret-article-avatar" style={{ background: avatarColor(name) }}>
+                        {avatarInitials(name)}
+                      </span>
+                      <div className="rret-article-text">
+                        <div className="rret-article-name">
+                          <span>{name}</span>
+                          {isDisabled && <span className="rret-chip-off">Desactivado</span>}
+                        </div>
+                        <div className="rret-article-unit">{l.unit || 'pieza'}</div>
+                      </div>
                     </div>
-                  </td>
-                  <td className="ta-right">{money((qtys[l.productId] || 0) * l.unitPrice)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <div className="rret-sold">
+                      <span className="rret-sold-qty">{num(l.quantity)}</span>
+                      {l.alreadyReturned > 0 && (
+                        <span className="rret-returned">ya devuelto: {num(l.alreadyReturned)}</span>
+                      )}
+                    </div>
+                    <span className="rret-fixed-price">{money(l.unitPrice)}</span>
+                    <div className={`rret-qty ${q === 0 ? 'is-empty' : ''}`}>
+                      <button onClick={() => setQty(l.productId, q - 1, max)} disabled={q <= 0}>−</button>
+                      <input value={q === 0 ? '' : q} inputMode="numeric" placeholder="0"
+                        onChange={(e) => setQty(l.productId, Number(e.target.value) || 0, max)} />
+                      <button onClick={() => setQty(l.productId, q + 1, max)} disabled={q >= max}>+</button>
+                    </div>
+                    <span className={`rret-refund ${q === 0 ? 'is-zero' : ''}`}>{money(q * l.unitPrice)}</span>
+                  </div>
+                );
+              })}
+            </div>
 
-          <div className="ret-foot">
-            <div className="ret-foot-fields">
-              <label className="field">
-                <span>Motivo</span>
-                <input value={reason} onChange={(e) => setReason(e.target.value)}
-                  placeholder="Producto defectuoso, cambio de opinión…" />
-              </label>
-              <label className="field">
-                <span>Reembolso</span>
-                <select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}>
-                  <option value="CASH">Efectivo</option>
-                  <option value="CREDIT_NOTE">Nota de crédito</option>
-                  <option value="STORE_CREDIT">Saldo a favor</option>
-                </select>
-              </label>
+            <div className="rret-foot">
+              <div className="rret-foot-fields">
+                <label className="field">
+                  <span>Motivo</span>
+                  <input value={reason} onChange={(e) => setReason(e.target.value)}
+                    placeholder="Producto defectuoso, cambio de opinión…" />
+                </label>
+                <label className="field">
+                  <span>Reembolso</span>
+                  <select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}>
+                    <option value="CASH">Efectivo</option>
+                    <option value="CREDIT_NOTE">Nota de crédito</option>
+                    <option value="STORE_CREDIT">Saldo a favor</option>
+                  </select>
+                </label>
+              </div>
+              <div className="rret-total">
+                <span>Total a reembolsar</span>
+                <strong>{money(refundTotal)}</strong>
+                <button className="btn-accent" disabled={!hasItems} onClick={submit}>
+                  <Check size={16} /> Registrar devolución
+                </button>
+              </div>
             </div>
-            <div className="ret-total">
-              <span>Total a reembolsar</span>
-              <strong>{money(refundTotal)}</strong>
-              <button className="btn-accent" disabled={!hasItems} onClick={submit}>
-                <Check size={16} /> Registrar devolución
-              </button>
-            </div>
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        );
+      })()}
 
       <motion.div className="card" style={{ marginTop: 'var(--space-4)' }}
         variants={fadeInUp} initial="hidden" animate="visible">
         <h3 className="sec-title"><RotateCcw size={18} /> Devoluciones recientes</h3>
-        <table className="ret-table">
-          <thead>
-            <tr>
-              <th>Folio</th><th>Venta</th><th>Motivo</th><th>Reembolso</th>
-              <th className="ta-right">Importe</th><th>Procesó</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((r) => (
-              <tr key={r.id}>
-                <td><strong>{r.folio}</strong></td>
-                <td>{r.saleId ? `V-${r.saleId}` : '—'}</td>
-                <td>{r.reason || <span className="muted">—</span>}</td>
-                <td>{REFUND_LABEL[r.refundMethod] || r.refundMethod}</td>
-                <td className="ta-right">{money(r.total)}</td>
-                <td>{r.processedBy || '—'}</td>
-              </tr>
-            ))}
-            {history.length === 0 && (
-              <tr><td colSpan={6} className="ret-empty">
-                <Undo2 size={20} /> Aún no hay devoluciones registradas.
-              </td></tr>
-            )}
-          </tbody>
-        </table>
+        <div className="rret-hist">
+          {history.length > 0 && (
+            <div className="rret-hist-head" style={{ gridTemplateColumns: HIST_COLS }}>
+              <span>Folio</span>
+              <span>Venta</span>
+              <span>Motivo</span>
+              <span>Reembolso</span>
+              <span className="rret-h-right">Importe</span>
+              <span>Procesó</span>
+              <span className="rret-h-right">Fecha</span>
+            </div>
+          )}
+          <div className="rret-hist-body">
+            {history.map((r) => {
+              const when = fmtDate(r.createdAt);
+              return (
+                <div className="rret-hist-row" key={r.id} style={{ gridTemplateColumns: HIST_COLS }}>
+                  <span className="rret-hist-folio">{r.folio}</span>
+                  <span className={`rret-hist-venta ${r.saleId ? '' : 'is-none'}`}>
+                    {r.saleId ? `V-${r.saleId}` : '—'}
+                  </span>
+                  <span className={`rret-chip-reason ${r.reason ? '' : 'is-none'}`} title={r.reason || ''}>
+                    {r.reason || '—'}
+                  </span>
+                  <span className="rret-chip-refund">{REFUND_LABEL[r.refundMethod] || r.refundMethod}</span>
+                  <span className="rret-hist-amount">{money(r.total)}</span>
+                  <span className={`rret-hist-who ${r.processedBy ? '' : 'is-none'}`}>
+                    {r.processedBy || '—'}
+                  </span>
+                  <span className="rret-hist-when">
+                    <span className="rret-hist-when-date">{when.date}</span>
+                    {when.time && <span className="rret-hist-when-time">{when.time}</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {history.length === 0 && (
+            <div className="rret-empty">
+              <span className="rret-empty-icon"><Undo2 size={24} /></span>
+              <strong>Aún no hay devoluciones</strong>
+              <p>Busca una venta por su folio arriba para registrar la primera: se reingresa el
+                inventario y se registra el reembolso.</p>
+            </div>
+          )}
+        </div>
       </motion.div>
 
       <SupervisorAuthModal

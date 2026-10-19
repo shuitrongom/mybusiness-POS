@@ -30,6 +30,24 @@ export function setRefreshToken(token: string | null): void {
   else localStorage.removeItem(REFRESH_KEY);
 }
 
+// Callback que se notifica cuando el access token se RENUEVA de forma transparente (no en el
+// login normal). Lo registra el store de sesión (useSession) para mantener el token en memoria
+// sincronizado con localStorage. Se usa un callback registrado desde session.ts hacia api.ts para
+// evitar el ciclo de imports (session.ts ya importa de api.ts; api.ts no debe importar session.ts).
+type TokenRefreshedListener = (accessToken: string) => void;
+let onTokenRefreshed: TokenRefreshedListener | null = null;
+
+/** Registra un listener que se invoca con el nuevo access token cada vez que se renueva. */
+export function setOnTokenRefreshed(listener: TokenRefreshedListener | null): void {
+  onTokenRefreshed = listener;
+}
+
+/** Persiste el token nuevo en localStorage y notifica al store (si hay listener registrado). */
+function applyRefreshedToken(accessToken: string): void {
+  setToken(accessToken);
+  onTokenRefreshed?.(accessToken);
+}
+
 // URL base del API. En desarrollo usa '/api/v1' (proxy de Vite al backend local). En producción
 // se define VITE_API_URL (ej. https://api.tudominio.com) en el build del frontend.
 const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -72,9 +90,7 @@ api.interceptors.request.use(async (config) => {
 
   let token = getToken();
   if (!isAuthCall && tokenCasiExpirado(token) && getRefreshToken()) {
-    refreshPromise = refreshPromise ?? renewAccessToken();
-    const fresh = await refreshPromise;
-    refreshPromise = null;
+    const fresh = await sharedRefresh();
     if (fresh) token = fresh;
   }
   if (token) {
@@ -92,9 +108,29 @@ function forceLogout(): void {
   }
 }
 
-// Control de una única renovación concurrente: si varias peticiones fallan a la vez con 401,
-// todas esperan al mismo refresh en curso en vez de disparar múltiples renovaciones.
+// Control de una ÚNICA renovación concurrente (single-flight real): si varias peticiones necesitan
+// renovar a la vez (401 o refresh proactivo), todas esperan EXACTAMENTE la misma promesa. La
+// promesa compartida se limpia una sola vez, cuando termina, dentro de su propio .finally(); así
+// nunca se disparan dos refresh (que, al rotar el refresh token en backend, revocarían el reintento
+// y causaban el 401 persistente).
 let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Devuelve la renovación en curso si ya hay una; si no, inicia una nueva y la deja compartida
+ * hasta que termine. La limpieza de {@link refreshPromise} ocurre UNA sola vez en el .finally de
+ * esta misma promesa, de modo que todas las peticiones concurrentes esperan la misma renovación.
+ */
+function sharedRefresh(): Promise<string | null> {
+  if (!refreshPromise) {
+    const p = renewAccessToken();
+    refreshPromise = p;
+    p.finally(() => {
+      // Solo se limpia si sigue siendo ESTA promesa (evita borrar una renovación posterior).
+      if (refreshPromise === p) refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
 
 /** Intenta obtener un access token nuevo con el refresh token. Devuelve el nuevo access o null. */
 async function renewAccessToken(): Promise<string | null> {
@@ -109,7 +145,8 @@ async function renewAccessToken(): Promise<string | null> {
       { headers: { 'Content-Type': 'application/json' } },
     );
     if (data.accessToken) {
-      setToken(data.accessToken);
+      // Persiste en localStorage Y sincroniza el store en memoria (useSession) para que no diverjan.
+      applyRefreshedToken(data.accessToken);
       if (data.refreshToken) setRefreshToken(data.refreshToken);
       return data.accessToken;
     }
@@ -133,16 +170,14 @@ api.interceptors.response.use(
 
     if (status === 401 && original && !original._retried && !isAuthCall) {
       original._retried = true;
-      // Reutiliza una renovación en curso si ya hay una.
-      refreshPromise = refreshPromise ?? renewAccessToken();
-      const newToken = await refreshPromise;
-      refreshPromise = null;
+      // Reutiliza EXACTAMENTE la misma renovación en curso (single-flight real) si ya hay una.
+      const newToken = await sharedRefresh();
 
       if (newToken) {
-        // Persiste el token nuevo (por si renewAccessToken no lo guardó aún) y fuerza su uso en el
+        // Persiste el token nuevo y sincroniza el store (por si acaso) y fuerza su uso en el
         // reintento, tanto en el header del request original como vía getToken() del interceptor
         // de request. Así el reintento NUNCA viaja con el token viejo (causa del 401 persistente).
-        setToken(newToken);
+        applyRefreshedToken(newToken);
         original.headers = original.headers ?? {};
         (original.headers as Record<string, string>).Authorization = `Bearer ${newToken}`;
         return api(original); // reintenta la petición original con el token renovado

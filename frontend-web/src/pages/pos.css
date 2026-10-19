@@ -756,6 +756,27 @@
   box-shadow: none;
 }
 
+/* Acciones de cierre con dos modos: envuelven para no apretar en pantallas chicas. */
+.pos-close-actions {
+  flex-wrap: wrap;
+}
+
+.pos-close-actions .pos-confirm {
+  flex: 1 1 160px;
+}
+
+/* "Cerrar turno (relevo)": tono sky (no destructivo, el pan sigue vendible). */
+.pos-confirm-sky {
+  background: linear-gradient(135deg, var(--sky-600, #0284c7), var(--sky-500, #0ea5e9));
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--sky-600, #0284c7) 38%, transparent);
+}
+
+/* "Cerrar fin del día": tono amber de advertencia (manda el sobrante a merma). */
+.pos-confirm-amber {
+  background: linear-gradient(135deg, var(--amber-600, #d97706), var(--amber-500, #f59e0b));
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--amber-600, #d97706) 38%, transparent);
+}
+
 /* =====================================================================
    Ticket de venta imprimible.
    ===================================================================== */
@@ -1249,26 +1270,74 @@
   color: var(--accent-600);
 }
 
-/* Botón de MERMA en el renglón (solo artículos de panadería). */
-.pos-line-waste {
+/* Chip "máx. X": existencia disponible del renglón (candado por existencia, giro panadería).
+   Gris/neutro cuando queda holgura; ámbar cuando el renglón ya llegó al tope disponible. */
+.pos-line-stock {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin-top: 4px;
+  margin-right: 6px;
   padding: 2px 8px;
-  border: 1px solid #f59e0b;
   border-radius: 999px;
-  background: transparent;
+  background: var(--surface-3, #f1f5f9);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-line-stock.is-max {
+  background: #fef3c7;
+  color: #b45309;
+  font-weight: 700;
+}
+
+/* Chip "Vender como merma" en el renglón (solo artículos de panadería). Acento ÁMBAR = merma
+   (jerarquía de color del steering), coherente con el chip "máx. X": bordes suaves (no óvalo),
+   hover sutil, estado activo claro en ámbar (no rojo). */
+.pos-line-waste {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 3px 10px;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  background: #fffbeb;
   color: #b45309;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.pos-line-waste svg {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.pos-line-waste:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
+.pos-line-waste:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
 }
 
 .pos-line-waste.is-active {
-  background: #e11d48;
-  border-color: #e11d48;
+  background: #f59e0b;
+  border-color: #f59e0b;
   color: #fff;
+}
+
+.pos-line-waste.is-active:hover {
+  background: #d97706;
+  border-color: #d97706;
 }
 
 .pos-summary-promo {
@@ -1824,6 +1893,34 @@
 .pos-qty-modal-price span {
   font-size: var(--fs-sm);
   opacity: 0.8;
+}
+
+/* Chip de existencia disponible dentro del modal de cantidad (candado por existencia). */
+.pos-qty-modal-stock {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-3, #f1f5f9);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-qty-modal-stock.is-max {
+  background: #fef3c7;
+  color: #b45309;
+  font-weight: 700;
+}
+
+/* Aviso al intentar pasar del tope disponible en el modal de cantidad. */
+.pos-qty-modal-warn {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: #b45309;
+  text-align: center;
+  max-width: 320px;
 }
 
 .pos-qty-modal-stepper {

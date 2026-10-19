@@ -12,9 +12,13 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Casos de uso de DEVOLUCIONES.
  *
- * <p>Una devolución se persiste como documento (cabecera + renglones), ligada opcionalmente a la
- * venta original. Cuando hay venta origen, se valida que no se devuelva más de lo vendido menos
- * lo ya devuelto. En todos los casos reingresa el inventario y registra el reembolso.
+ * <p>
+ * Una devolución se persiste como documento (cabecera + renglones), ligada
+ * opcionalmente a la
+ * venta original. Cuando hay venta origen, se valida que no se devuelva más de
+ * lo vendido menos
+ * lo ya devuelto. En todos los casos reingresa el inventario y registra el
+ * reembolso.
  */
 @Service
 public class SalesReturnService {
@@ -24,14 +28,15 @@ public class SalesReturnService {
     private final InventoryPort inventoryPort;
 
     public SalesReturnService(JdbcClient jdbc, SaleRepository saleRepository,
-                              InventoryPort inventoryPort) {
+            InventoryPort inventoryPort) {
         this.jdbc = jdbc;
         this.saleRepository = saleRepository;
         this.inventoryPort = inventoryPort;
     }
 
     /**
-     * Registra una devolución. Valida contra la venta origen (si se indica), persiste el
+     * Registra una devolución. Valida contra la venta origen (si se indica),
+     * persiste el
      * documento, reingresa inventario y devuelve el resultado.
      *
      * @param command datos de la devolución
@@ -47,7 +52,8 @@ public class SalesReturnService {
         long branchId = command.branchId();
         Long customerId = command.customerId();
 
-        // Si hay venta origen, valida existencia, sucursal y que no se exceda lo vendido.
+        // Si hay venta origen, valida existencia, sucursal y que no se exceda lo
+        // vendido.
         if (command.saleId() != null) {
             var detail = saleRepository.findDetail(command.saleId())
                     .orElseThrow(() -> new IllegalArgumentException(
@@ -71,7 +77,7 @@ public class SalesReturnService {
                 if (item.quantity().compareTo(remaining) > 0) {
                     throw new IllegalArgumentException(
                             "No se puede devolver " + item.quantity() + " de '" + soldLine.description()
-                            + "': solo quedan " + remaining + " por devolver");
+                                    + "': solo quedan " + remaining + " por devolver");
                 }
             }
         }
@@ -120,12 +126,17 @@ public class SalesReturnService {
         return new ReturnResult(returnId, "D-" + returnId, total);
     }
 
-    /** Lista las devoluciones recientes (para el historial de la pantalla de devoluciones). */
+    /**
+     * Lista las devoluciones recientes (para el historial de la pantalla de
+     * devoluciones).
+     */
     public List<java.util.Map<String, Object>> listRecent(int limit) {
         int max = limit <= 0 ? 50 : Math.min(limit, 200);
         return jdbc.sql("""
                 SELECT r.id, r.folio, r.sale_id, r.total, r.refund_method, r.reason,
-                       r.processed_by, r.created_at
+                       r.processed_by, r.created_at,
+                       (SELECT COUNT(*) FROM sales_return_line rl WHERE rl.return_id = r.id)
+                           AS item_count
                 FROM sales_return r
                 ORDER BY r.created_at DESC
                 LIMIT :max
@@ -141,6 +152,7 @@ public class SalesReturnService {
                     m.put("reason", rs.getString("reason"));
                     m.put("processedBy", rs.getString("processed_by"));
                     m.put("createdAt", rs.getObject("created_at", java.time.OffsetDateTime.class));
+                    m.put("itemCount", rs.getInt("item_count"));
                     return m;
                 })
                 .list();
@@ -148,12 +160,12 @@ public class SalesReturnService {
 
     /** Datos de una devolución a registrar. */
     public record ReturnCommand(Long saleId, long branchId, Long customerId, String reason,
-                                String refundMethod, List<ReturnItem> items) {
+            String refundMethod, List<ReturnItem> items) {
     }
 
     /** Renglón de la devolución. */
     public record ReturnItem(long productId, String description, BigDecimal quantity,
-                             BigDecimal unitPrice) {
+            BigDecimal unitPrice) {
     }
 
     /** Resultado de registrar una devolución. */

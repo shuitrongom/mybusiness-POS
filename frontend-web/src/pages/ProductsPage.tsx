@@ -249,7 +249,7 @@ export function ProductsPage() {
       setDeleting(null);
       queryClient.invalidateQueries({ queryKey: ['products'] });
       if (data.hardDeleted) toast.success('Producto eliminado', 'Se borró del catálogo.');
-      else toast.info('Producto desactivado', 'Tenía ventas registradas, así que se ocultó en vez de borrarse.');
+      else toast.info('Producto desactivado', 'Tiene historial registrado (ventas, movimientos de inventario, conteos o producción), así que se ocultó en vez de borrarse para conservar la trazabilidad.');
     },
     onError: () => toast.error('No se pudo eliminar el producto'),
   });
@@ -655,7 +655,8 @@ export function ProductsPage() {
               </div>
               <p className="modal-text">
                 ¿Seguro que quieres eliminar <strong>{deleting.name}</strong>? Si el producto tiene
-                ventas registradas, se desactivará en lugar de borrarse para conservar el histórico.
+                historial (ventas, movimientos de inventario, conteos o producción), se desactivará
+                en lugar de borrarse para conservar el histórico.
               </p>
               <div className="modal-actions">
                 <button className="btn-ghost" onClick={() => setDeleting(null)}>Cancelar</button>

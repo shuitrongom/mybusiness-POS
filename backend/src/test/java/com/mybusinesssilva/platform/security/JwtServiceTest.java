@@ -7,9 +7,11 @@ import io.jsonwebtoken.Claims;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.env.MockEnvironment;
 
 /**
- * Pruebas unitarias del servicio de JWT: emisión y validación de tokens de acceso y refresh,
+ * Pruebas unitarias del servicio de JWT: emisión y validación de tokens de
+ * acceso y refresh,
  * y rechazo de tokens manipulados.
  */
 class JwtServiceTest {
@@ -21,7 +23,47 @@ class JwtServiceTest {
         var jwt = new SecurityProperties.Jwt(
                 "unit-test-secret-key-with-at-least-32-bytes-123456",
                 15, 7, "mybusiness-silva-test");
-        jwtService = new JwtService(new SecurityProperties(jwt));
+        // Sin perfil 'prod' activo: la validación de secreto no aplica en dev/test.
+        jwtService = new JwtService(new SecurityProperties(jwt), new MockEnvironment());
+    }
+
+    @Test
+    void failsToStartInProdWhenSecretIsDevDefault() {
+        var jwt = new SecurityProperties.Jwt(
+                "dev-secret-change-me-please-32bytes-minimum-0123456789",
+                15, 7, "mybusiness-silva");
+        var prodEnv = new MockEnvironment();
+        prodEnv.setActiveProfiles("prod");
+
+        assertThatThrownBy(() -> new JwtService(new SecurityProperties(jwt), prodEnv))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("JWT_SECRET");
+    }
+
+    @Test
+    void failsToStartInProdWhenSecretTooShort() {
+        var jwt = new SecurityProperties.Jwt("too-short", 15, 7, "mybusiness-silva");
+        var prodEnv = new MockEnvironment();
+        prodEnv.setActiveProfiles("prod");
+
+        assertThatThrownBy(() -> new JwtService(new SecurityProperties(jwt), prodEnv))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("JWT_SECRET");
+    }
+
+    @Test
+    void startsInProdWhenSecretIsStrong() {
+        var jwt = new SecurityProperties.Jwt(
+                "prod-secret-super-fuerte-con-mas-de-32-bytes-aleatorios-xyz",
+                15, 7, "mybusiness-silva");
+        var prodEnv = new MockEnvironment();
+        prodEnv.setActiveProfiles("prod");
+
+        var prodJwtService = new JwtService(new SecurityProperties(jwt), prodEnv);
+
+        String token = prodJwtService.issueAccessToken(
+                "owner@negocio.mx", "tenant_10", List.of(Roles.OWNER), List.of("sales"));
+        assertThat(prodJwtService.isAccessToken(prodJwtService.parse(token))).isTrue();
     }
 
     @Test

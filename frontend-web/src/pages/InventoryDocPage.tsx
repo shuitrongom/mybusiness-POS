@@ -66,6 +66,12 @@ interface ExitRow {
   totalValue: number;
   cashier: string | null;
   createdAt: string;     // instante ISO
+  // Artículo(s) de la salida (resueltos en el backend): nombre si es 1 solo artículo, null si son
+  // varios/0; productCount = número de artículos distintos; itemsLabel = texto premium listo para
+  // pintar ("Concha" | "3 artículos" | "—").
+  productName: string | null;
+  productCount: number;
+  itemsLabel: string;
 }
 
 /**
@@ -562,34 +568,45 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
           // así ninguna fila queda en "—" como antes. Grid compartido cabecera/filas.
           <div className="idoc-hist">
             {(() => {
-              const cols = '150px 110px minmax(150px, 1fr) 150px 100px 130px 150px';
+              const cols = '140px 100px minmax(140px, 1fr) minmax(160px, 1.2fr) 120px 90px 120px 130px';
               return (
                 <>
                   <div className="idoc-hist-head" style={{ gridTemplateColumns: cols }}>
                     <span>Tipo</span>
                     <span>Folio</span>
                     <span>Concepto</span>
+                    <span>Artículo</span>
                     <span>Almacén</span>
                     <span className="idoc-hist-right">Unidades</span>
                     <span className="idoc-hist-right">Valor</span>
                     <span>Registró</span>
                   </div>
                   <div className="idoc-hist-body">
-                    {exits.map((r) => (
-                      <div className="idoc-hist-row" key={r.id} style={{ gridTemplateColumns: cols }}>
-                        <span className="idoc-hist-chip" style={{ background: exitKindColor(r.kind) }}>
-                          {EXIT_KIND_LABEL[r.kind]}
-                        </span>
-                        {r.folio
-                          ? <span className="idoc-hist-folio">{r.folio}</span>
-                          : <span className="idoc-hist-muted">—</span>}
-                        <span className="idoc-hist-name">{r.concept}</span>
-                        <span>{r.branchName || '—'}</span>
-                        <span className="idoc-hist-num">{r.totalQty}</span>
-                        <span className="idoc-hist-amount">{money(r.totalValue)}</span>
-                        <span className="idoc-hist-muted">{r.cashier || '—'}</span>
-                      </div>
-                    ))}
+                    {exits.map((r) => {
+                      const single = r.productCount === 1 && !!r.productName;
+                      return (
+                        <div className="idoc-hist-row" key={r.id} style={{ gridTemplateColumns: cols }}>
+                          <span className="idoc-hist-chip" style={{ background: exitKindColor(r.kind) }}>
+                            {EXIT_KIND_LABEL[r.kind]}
+                          </span>
+                          {r.folio
+                            ? <span className="idoc-hist-folio">{r.folio}</span>
+                            : <span className="idoc-hist-muted">—</span>}
+                          <span className="idoc-hist-name">{r.concept}</span>
+                          <span className="idoc-hist-article">
+                            <span className="idoc-hist-article-avatar"
+                              style={{ background: single ? avatarColor(r.productName as string) : '#64748b' }}>
+                              {single ? avatarInitials(r.productName as string) : <PackageOpen size={13} />}
+                            </span>
+                            <span className="idoc-hist-article-name">{r.itemsLabel}</span>
+                          </span>
+                          <span>{r.branchName || '—'}</span>
+                          <span className="idoc-hist-num">{r.totalQty}</span>
+                          <span className="idoc-hist-amount">{money(r.totalValue)}</span>
+                          <span className="idoc-hist-muted">{r.cashier || '—'}</span>
+                        </div>
+                      );
+                    })}
                     {exits.length === 0 && <div className="idoc-hist-empty">Sin salidas registradas.</div>}
                   </div>
                 </>

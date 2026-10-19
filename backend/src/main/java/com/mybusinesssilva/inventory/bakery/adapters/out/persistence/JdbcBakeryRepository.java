@@ -299,7 +299,12 @@ public class JdbcBakeryRepository implements BakeryRepository {
                        d.total_qty                          AS total_qty,
                        d.total_value                        AS total_value,
                        d.created_by                         AS cashier,
-                       d.created_at                         AS created_at
+                       d.created_at                         AS created_at,
+                       (SELECT COUNT(*) FROM inventory_document_line dl
+                          WHERE dl.document_id = d.id)       AS product_count,
+                       (SELECT MIN(p.name) FROM inventory_document_line dl
+                          JOIN product p ON p.id = dl.product_id
+                          WHERE dl.document_id = d.id)        AS one_name
                 FROM inventory_document d
                 LEFT JOIN branch b ON b.id = d.branch_id
                 WHERE d.doc_type = 'OUT'
@@ -312,16 +317,20 @@ public class JdbcBakeryRepository implements BakeryRepository {
                        s.folio                              AS folio,
                        CASE w.origin WHEN 'MANUAL'  THEN 'Paso a merma'
                                      WHEN 'REPARTO' THEN 'Reparto de merma'
+                                     WHEN 'CIERRE'  THEN 'Sobrante a merma (fin del día)'
                                      ELSE w.origin END       AS concept,
                        b.name                               AS branch_name,
                        w.quantity                           AS total_qty,
                        w.difference                         AS total_value,
                        w.cashier                            AS cashier,
-                       w.created_at                         AS created_at
+                       w.created_at                         AS created_at,
+                       1                                    AS product_count,
+                       pw.name                              AS one_name
                 FROM bakery_waste_movement w
                 JOIN branch b ON b.id = w.branch_id
+                JOIN product pw ON pw.id = w.product_id
                 LEFT JOIN sale s ON s.id = w.sale_id
-                WHERE w.origin IN ('MANUAL', 'REPARTO')
+                WHERE w.origin IN ('MANUAL', 'REPARTO', 'CIERRE')
                   AND (CAST(:branch AS bigint) IS NULL OR w.branch_id = CAST(:branch AS bigint))
 
                 ORDER BY created_at DESC
@@ -340,6 +349,19 @@ public class JdbcBakeryRepository implements BakeryRepository {
                     m.put("totalValue", rs.getBigDecimal("total_value"));
                     m.put("cashier", rs.getString("cashier"));
                     m.put("createdAt", rs.getObject("created_at", java.time.OffsetDateTime.class));
+                    // Artículo(s) de la salida: una fila de merma = un producto; una salida normal
+                    // puede tener varios renglones. productName solo cuando es 1 artículo;
+                    // itemsLabel
+                    // es el texto premium listo para pintar (nombre | "N artículos" | "—").
+                    int productCount = rs.getInt("product_count");
+                    String oneName = rs.getString("one_name");
+                    String productName = productCount == 1 ? oneName : null;
+                    String itemsLabel = productCount == 0 ? "—"
+                            : productCount == 1 ? (oneName != null ? oneName : "—")
+                                    : productCount + " artículos";
+                    m.put("productCount", productCount);
+                    m.put("productName", productName);
+                    m.put("itemsLabel", itemsLabel);
                     return m;
                 })
                 .list();
@@ -509,29 +531,72 @@ public class JdbcBakeryRepository implements BakeryRepository {
 
     @Override
     public List<Map<String, Object>> dailyStockAll(long branchId, LocalDate date) {
-        // Una sola consulta: por cada producto de pan (activo), producido y vendido del
-        // día natural,
-        // existencia normal actual y existencia de merma actual. El filtro de "vendido"
-        // usa el rango
-        // crudo sobre created_at (sargable). Se incluyen productos con producción/venta
-        // ese día o con
-        // existencia (normal o merma) distinta de cero, para no listar ruido con todo
-        // en cero.
+        // Desglose cuadrado por artículo del día natural (America/Mexico_City). Todas
+        // las cifras
+        // salen del kardex inventory_movement (clasificado por movement_type + prefijo
+        // de reference)
+        // + bakery_waste_movement (separa pasó-a-merma de reparto) + los saldos
+        // actuales
+        // (inventory_stock, bakery_waste_stock). Así "Restante" = existencia REAL (no
+        // producido −
+        // vendido) y cada movimiento se ve a dónde fue, sin descomponer la pantalla.
+        //
+        // Clasificación del kardex (todo acotado al día con el rango crudo sobre
+        // created_at):
+        // prodProd = PURCHASE con reference LIKE 'PROD:%' -> producción de panadería
+        // del día
+        // soldPos = SALE con reference LIKE 'SALE:%' -> venta real POS (cantidad
+        // negada)
+        // otherOut = SALE con reference LIKE 'OUT-DOC:%' -> salida normal con concepto
+        // (negada)
+        // wasteOut = WASTE_OUT -> lo que pasó del stock normal a merma
+        // De bakery_waste_movement, agregado por producto y día:
+        // pasoMerma = origin='MANUAL' (pan que entró a merma)
+        // reparto = origin='REPARTO' (merma que salió a repartidor)
+        // Saldos actuales: norm (inventory_stock), merma (bakery_waste_stock, saldo
+        // arrastrado).
         return jdbc.sql("""
-                WITH prod AS (
-                    SELECT l.product_id, SUM(l.quantity) AS produced
-                    FROM bakery_production_line l
-                    JOIN bakery_production p ON l.production_id = p.id
-                    WHERE p.branch_id = :bid AND p.production_date = CAST(:date AS date)
-                    GROUP BY l.product_id
+                WITH prodProd AS (
+                    SELECT m.product_id, SUM(m.quantity) AS produced
+                    FROM inventory_movement m
+                    WHERE m.branch_id = :bid AND m.movement_type = 'PURCHASE' AND m.reference LIKE 'PROD:%%'
+                      AND m.created_at >= (CAST(:date AS date)) AT TIME ZONE '%s'
+                      AND m.created_at <  (CAST(:date AS date) + 1) AT TIME ZONE '%s'
+                    GROUP BY m.product_id
                 ),
-                sold AS (
+                soldPos AS (
                     SELECT m.product_id, -SUM(m.quantity) AS sold
                     FROM inventory_movement m
                     WHERE m.branch_id = :bid AND m.movement_type = 'SALE' AND m.reference LIKE 'SALE:%%'
                       AND m.created_at >= (CAST(:date AS date)) AT TIME ZONE '%s'
                       AND m.created_at <  (CAST(:date AS date) + 1) AT TIME ZONE '%s'
                     GROUP BY m.product_id
+                ),
+                otherOut AS (
+                    SELECT m.product_id, -SUM(m.quantity) AS other_exits
+                    FROM inventory_movement m
+                    WHERE m.branch_id = :bid AND m.movement_type = 'SALE' AND m.reference LIKE 'OUT-DOC:%%'
+                      AND m.created_at >= (CAST(:date AS date)) AT TIME ZONE '%s'
+                      AND m.created_at <  (CAST(:date AS date) + 1) AT TIME ZONE '%s'
+                    GROUP BY m.product_id
+                ),
+                wasteOut AS (
+                    SELECT m.product_id, -SUM(m.quantity) AS waste_out
+                    FROM inventory_movement m
+                    WHERE m.branch_id = :bid AND m.movement_type = 'WASTE_OUT'
+                      AND m.created_at >= (CAST(:date AS date)) AT TIME ZONE '%s'
+                      AND m.created_at <  (CAST(:date AS date) + 1) AT TIME ZONE '%s'
+                    GROUP BY m.product_id
+                ),
+                wmov AS (
+                    SELECT w.product_id,
+                           SUM(CASE WHEN w.origin = 'MANUAL'  THEN w.quantity ELSE 0 END) AS paso_merma,
+                           SUM(CASE WHEN w.origin = 'REPARTO' THEN w.quantity ELSE 0 END) AS reparto
+                    FROM bakery_waste_movement w
+                    WHERE w.branch_id = :bid
+                      AND w.created_at >= (CAST(:date AS date)) AT TIME ZONE '%s'
+                      AND w.created_at <  (CAST(:date AS date) + 1) AT TIME ZONE '%s'
+                    GROUP BY w.product_id
                 ),
                 norm AS (
                     SELECT product_id, quantity FROM inventory_stock WHERE branch_id = :bid
@@ -540,42 +605,79 @@ public class JdbcBakeryRepository implements BakeryRepository {
                     SELECT product_id, quantity FROM bakery_waste_stock WHERE branch_id = :bid
                 )
                 SELECT p.id, p.name, p.unit, p.price,
-                       COALESCE(prod.produced, 0)   AS produced,
-                       COALESCE(sold.sold, 0)       AS sold,
-                       COALESCE(norm.quantity, 0)   AS current_stock,
-                       COALESCE(merma.quantity, 0)  AS waste
+                       COALESCE(prodProd.produced, 0)    AS produced,
+                       COALESCE(soldPos.sold, 0)         AS sold_pos,
+                       COALESCE(otherOut.other_exits, 0) AS other_exits,
+                       COALESCE(wasteOut.waste_out, 0)   AS waste_out,
+                       COALESCE(wmov.paso_merma, 0)      AS paso_merma,
+                       COALESCE(wmov.reparto, 0)         AS reparto,
+                       COALESCE(norm.quantity, 0)        AS current_stock,
+                       COALESCE(merma.quantity, 0)       AS waste
                 FROM product p
-                LEFT JOIN prod  ON prod.product_id  = p.id
-                LEFT JOIN sold  ON sold.product_id  = p.id
-                LEFT JOIN norm  ON norm.product_id  = p.id
-                LEFT JOIN merma ON merma.product_id = p.id
+                LEFT JOIN prodProd ON prodProd.product_id = p.id
+                LEFT JOIN soldPos  ON soldPos.product_id  = p.id
+                LEFT JOIN otherOut ON otherOut.product_id = p.id
+                LEFT JOIN wasteOut ON wasteOut.product_id = p.id
+                LEFT JOIN wmov     ON wmov.product_id     = p.id
+                LEFT JOIN norm     ON norm.product_id     = p.id
+                LEFT JOIN merma    ON merma.product_id    = p.id
                 WHERE p.active = TRUE
-                  AND (prod.produced IS NOT NULL OR sold.sold IS NOT NULL
+                  AND (prodProd.produced IS NOT NULL OR soldPos.sold IS NOT NULL
+                       OR otherOut.other_exits IS NOT NULL OR wasteOut.waste_out IS NOT NULL
+                       OR wmov.product_id IS NOT NULL
                        OR COALESCE(norm.quantity, 0) <> 0 OR COALESCE(merma.quantity, 0) <> 0)
                 ORDER BY p.name
-                """.formatted(TZ, TZ))
+                """.formatted(TZ, TZ, TZ, TZ, TZ, TZ, TZ, TZ, TZ, TZ))
                 .param("bid", branchId)
                 .param("date", date)
                 .query((rs, n) -> {
                     BigDecimal produced = rs.getBigDecimal("produced");
-                    BigDecimal sold = rs.getBigDecimal("sold");
-                    BigDecimal waste = rs.getBigDecimal("waste");
+                    BigDecimal soldPos = rs.getBigDecimal("sold_pos");
+                    BigDecimal otherExits = rs.getBigDecimal("other_exits");
+                    BigDecimal wasteOut = rs.getBigDecimal("waste_out");
+                    BigDecimal pasoMerma = rs.getBigDecimal("paso_merma");
+                    BigDecimal reparto = rs.getBigDecimal("reparto");
+                    BigDecimal wasteBalance = rs.getBigDecimal("waste");
                     BigDecimal current = rs.getBigDecimal("current_stock");
                     BigDecimal price = rs.getBigDecimal("price");
+
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("productId", rs.getLong("id"));
                     m.put("productName", rs.getString("name"));
                     m.put("unit", rs.getString("unit"));
                     m.put("price", price);
                     m.put("produced", produced);
-                    m.put("sold", sold);
-                    m.put("waste", waste);
+                    // "sold" se mantiene = venta POS por compatibilidad con consumidores previos.
+                    m.put("sold", soldPos);
+                    m.put("soldPos", soldPos);
+                    m.put("otherExits", otherExits);
+                    m.put("wasteOut", wasteOut);
+                    m.put("pasoMerma", pasoMerma);
+                    m.put("reparto", reparto);
+                    // "waste" = saldo arrastrado de merma (regla del dueño: la merma se arrastra
+                    // entre días por sucursal). Se expone también como wasteBalance explícito.
+                    m.put("waste", wasteBalance);
+                    m.put("wasteBalance", wasteBalance);
                     m.put("currentStock", current);
-                    // Restante del día = producido - vendido (lo que quedó de la producción del
-                    // día).
-                    m.put("remaining", produced.subtract(sold));
+                    // Restante del día = EXISTENCIA REAL actual (cuadra con Salidas), no un
+                    // cálculo.
+                    m.put("remaining", current);
                     // Valor = existencia normal actual * precio.
                     m.put("value", current.multiply(price == null ? BigDecimal.ZERO : price));
+                    // Existencia inicial reconstruida: solo fiable para HOY (la BD no guarda
+                    // snapshot
+                    // histórico). Para días pasados se envía null y el front lo oculta.
+                    // inicial = actual − producido + vendidoPOS + otrasSalidas + pasóAMerma
+                    if (date != null && date.equals(LocalDate.now(java.time.ZoneId.of(TZ)))) {
+                        BigDecimal initial = current
+                                .subtract(produced)
+                                .add(soldPos)
+                                .add(otherExits)
+                                .add(wasteOut);
+                        m.put("initialStock", initial);
+                    } else {
+                        m.put("initialStock", null);
+                    }
                     return m;
                 })
                 .list();

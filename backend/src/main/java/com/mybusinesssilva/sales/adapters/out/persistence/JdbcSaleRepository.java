@@ -150,32 +150,47 @@ public class JdbcSaleRepository implements SaleRepository {
         @Override
         public java.util.Optional<SaleDetail> findDetail(long saleId) {
                 var header = jdbc.sql("""
-                                SELECT id, folio, branch_id, customer_id, status, total
-                                FROM sale WHERE id = :id
+                                SELECT s.id, s.folio, s.branch_id, s.customer_id, s.status, s.total,
+                                       s.created_at, c.name AS customer_name
+                                FROM sale s
+                                LEFT JOIN customer c ON c.id = s.customer_id
+                                WHERE s.id = :id
                                 """)
                                 .param("id", saleId)
                                 .query((rs, n) -> new Object[] {
                                                 rs.getLong("id"), rs.getString("folio"), rs.getLong("branch_id"),
                                                 (Long) rs.getObject("customer_id"), rs.getString("status"),
-                                                rs.getBigDecimal("total") })
+                                                rs.getBigDecimal("total"),
+                                                rs.getObject("created_at", java.time.OffsetDateTime.class),
+                                                rs.getString("customer_name") })
                                 .optional();
                 if (header.isEmpty()) {
                         return java.util.Optional.empty();
                 }
                 Object[] h = header.get();
                 var lines = jdbc.sql("""
-                                SELECT product_id, description, quantity, unit_price, unit
-                                FROM sale_line WHERE sale_id = :id ORDER BY id
+                                SELECT sl.product_id, sl.description, sl.quantity, sl.unit_price, sl.unit,
+                                       p.name AS product_name, COALESCE(p.active, TRUE) AS active,
+                                       COALESCE((SELECT SUM(rl.quantity)
+                                                 FROM sales_return_line rl
+                                                 JOIN sales_return r ON r.id = rl.return_id
+                                                 WHERE r.sale_id = :id AND rl.product_id = sl.product_id), 0)
+                                           AS already_returned
+                                FROM sale_line sl
+                                LEFT JOIN product p ON p.id = sl.product_id
+                                WHERE sl.sale_id = :id ORDER BY sl.id
                                 """)
                                 .param("id", saleId)
                                 .query((rs, n) -> new SaleDetailLine(
                                                 (Long) rs.getObject("product_id"), rs.getString("description"),
                                                 rs.getBigDecimal("quantity"), rs.getBigDecimal("unit_price"),
-                                                rs.getString("unit")))
+                                                rs.getString("unit"), rs.getString("product_name"),
+                                                rs.getBoolean("active"), rs.getBigDecimal("already_returned")))
                                 .list();
                 return java.util.Optional.of(new SaleDetail(
                                 (Long) h[0], (String) h[1], (Long) h[2], (Long) h[3], (String) h[4],
-                                (java.math.BigDecimal) h[5], lines));
+                                (java.math.BigDecimal) h[5], lines,
+                                (java.time.OffsetDateTime) h[6], (String) h[7]));
         }
 
         @Override

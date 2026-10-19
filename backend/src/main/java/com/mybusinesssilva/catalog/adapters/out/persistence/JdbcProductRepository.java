@@ -159,24 +159,89 @@ public class JdbcProductRepository implements ProductRepository {
         insertBarcodes(p.id(), p.barcodes());
     }
 
+    /**
+     * Tablas que referencian product(id) y representan HISTORIAL o uso real
+     * (ventas, kardex,
+     * conteos físicos, documentos, compras, devoluciones, panadería, series). Si el
+     * producto
+     * aparece en cualquiera de ellas, NO se borra físicamente: se desactiva
+     * (soft-delete) para
+     * preservar la trazabilidad. Esta lista evita el fallo de foreign key al
+     * borrar: en vez de
+     * ir limpiando tabla por tabla (parche que olvida alguna), se decide por
+     * existencia de
+     * referencia. Las dependencias ACCESORIAS (stock, lotes, códigos de barras) no
+     * están aquí
+     * porque no son historial y se eliminan con el producto cuando sí procede el
+     * borrado físico.
+     */
+    private static final java.util.List<String> HISTORY_TABLES = java.util.List.of(
+            "sale_line",
+            "inventory_movement",
+            "physical_count_line",
+            "inventory_document_line",
+            "purchase_line",
+            "sales_return_line",
+            "purchase_return_line",
+            "bakery_production_line",
+            "bakery_waste_movement",
+            "bakery_waste_sale",
+            "product_serial");
+
     @Override
     public boolean delete(long id) {
-        // Si el producto tiene ventas, no se borra físicamente (rompería el histórico):
-        // se desactiva.
-        long soldTimes = jdbc.sql("SELECT count(*) FROM sale_line WHERE product_id = :id")
-                .param("id", id).query(Long.class).single();
-        if (soldTimes > 0) {
+        // Regla de raíz: un producto con CUALQUIER historial/uso real se DESACTIVA, no
+        // se borra
+        // (borrarlo rompería la trazabilidad y chocaría con las foreign keys). Solo se
+        // elimina
+        // físicamente un producto "virgen" (creado por error, sin ninguna referencia de
+        // historial).
+        if (hasHistory(id)) {
             jdbc.sql("UPDATE product SET active = FALSE, updated_at = now() WHERE id = :id")
                     .param("id", id).update();
-            return false;
+            return false; // desactivado (soft-delete)
         }
-        // Sin ventas: se elimina físicamente junto con sus dependencias directas.
-        jdbc.sql("DELETE FROM inventory_movement WHERE product_id = :id").param("id", id).update();
+        // Sin historial: se elimina físicamente junto con sus dependencias ACCESORIAS
+        // (no-historial).
+        // promotion_product y customer_special_price tienen ON DELETE CASCADE, así que
+        // caen solas.
         jdbc.sql("DELETE FROM inventory_stock WHERE product_id = :id").param("id", id).update();
         jdbc.sql("DELETE FROM product_lot WHERE product_id = :id").param("id", id).update();
         jdbc.sql("DELETE FROM product_barcode WHERE product_id = :id").param("id", id).update();
         jdbc.sql("DELETE FROM product WHERE id = :id").param("id", id).update();
-        return true;
+        return true; // borrado físico
+    }
+
+    /**
+     * @return true si el producto está referenciado en alguna tabla de historial
+     *         (ver
+     *         {@link #HISTORY_TABLES}). Se consulta cada tabla con EXISTS y se
+     *         corta en la primera
+     *         coincidencia; las tablas que no existan en el esquema del tenant se
+     *         ignoran.
+     */
+    private boolean hasHistory(long id) {
+        for (String table : HISTORY_TABLES) {
+            // Defensivo: solo consulta la tabla si existe en el esquema actual del tenant
+            // (to_regclass devuelve NULL si no existe). Evita romper si un tenant no tiene
+            // alguna tabla (p. ej. módulos no instalados).
+            Boolean exists = jdbc.sql("SELECT to_regclass(:qualified) IS NOT NULL")
+                    .param("qualified", table)
+                    .query(Boolean.class)
+                    .single();
+            if (!Boolean.TRUE.equals(exists)) {
+                continue;
+            }
+            Boolean referenced = jdbc.sql(
+                    "SELECT EXISTS (SELECT 1 FROM " + table + " WHERE product_id = :id)")
+                    .param("id", id)
+                    .query(Boolean.class)
+                    .single();
+            if (Boolean.TRUE.equals(referenced)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

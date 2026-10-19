@@ -69,24 +69,39 @@ public interface SaleRepository {
         /**
          * Detalle de una venta para el flujo de devoluciones.
          *
-         * @param saleId     id de la venta
-         * @param folio      folio
-         * @param branchId   sucursal
-         * @param customerId cliente (puede ser null)
-         * @param status     estado
-         * @param total      total de la venta
-         * @param lines      renglones con producto, cantidad y precio
+         * @param saleId       id de la venta
+         * @param folio        folio
+         * @param branchId     sucursal
+         * @param customerId   cliente (puede ser null)
+         * @param status       estado
+         * @param total        total de la venta
+         * @param lines        renglones con producto, cantidad y precio
+         * @param createdAt    fecha/hora en que se registró la venta original (puede
+         *                     ser {@code null} en datos antiguos)
+         * @param customerName nombre del cliente de la venta (puede ser {@code null} si
+         *                     fue venta de mostrador)
          */
         record SaleDetail(long saleId, String folio, long branchId, Long customerId, String status,
-                        BigDecimal total, List<SaleDetailLine> lines) {
+                        BigDecimal total, List<SaleDetailLine> lines,
+                        java.time.OffsetDateTime createdAt, String customerName) {
         }
 
         /**
          * Renglón detallado de una venta. {@code productId} es {@code null} para un
          * artículo libre.
          * {@code unit} es la unidad del renglón (pz, kg, ...); puede ser {@code null}.
+         *
+         * @param productName     nombre ACTUAL del producto en catálogo (puede ser
+         *                        {@code null} para artículo libre); el front cae a
+         *                        {@code description} cuando falta
+         * @param active          {@code true} si el producto sigue activo en catálogo
+         *                        (no soft-deleted); {@code true} por defecto para
+         *                        artículo libre
+         * @param alreadyReturned cantidad ya devuelta de este producto para la venta
+         *                        (para mostrar cuánto queda por devolver)
          */
         record SaleDetailLine(Long productId, String description, BigDecimal quantity,
-                        BigDecimal unitPrice, String unit) {
+                        BigDecimal unitPrice, String unit, String productName, boolean active,
+                        BigDecimal alreadyReturned) {
         }
 }

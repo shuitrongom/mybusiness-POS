@@ -49,6 +49,9 @@ app:
     jwt:
       # En producción, DB_* y este secreto deben venir de variables de entorno / gestor de secretos.
       # El secreto debe tener al menos 32 bytes (256 bits) para HMAC-SHA256.
+      # IMPORTANTE: en el perfil 'prod' NO se permite este default de desarrollo. Si JWT_SECRET no
+      # está definido (o es igual a este default, o mide < 32 bytes), el backend FALLA al arrancar
+      # (ver JwtService). En Railway hay que definir la variable de entorno JWT_SECRET (>= 32 bytes).
       secret: ${JWT_SECRET:dev-secret-change-me-please-32bytes-minimum-0123456789}
       # Vida del token de acceso. 8 horas (480 min) = una jornada de trabajo: el cajero/dueño
       # opera todo el día sin que el token expire a media operación (antes 15 min era muy corto y,

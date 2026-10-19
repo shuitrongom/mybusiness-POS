@@ -3,10 +3,12 @@ import { motion } from 'motion/react';
 import {
   Wallet, Banknote, CreditCard, Landmark, Ticket as TicketIcon, Receipt,
   TrendingUp, Package, ArrowDownCircle, ArrowUpCircle, Clock, LockKeyhole,
+  CheckCircle2, Scale,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
+import { InfoBanner } from '@/components/InfoBanner';
 import { staggerContainer, staggerItem } from '@/lib/motion';
 import './dashboard.css';
 
@@ -21,6 +23,11 @@ interface ShiftSummary {
   expectedCash: number; totalSales: number; salesCount: number; units: number; averageTicket: number;
   lastSales: { id: number; folio: string | null; total: number; createdAt: string }[];
   topProducts: { name: string; quantity: number; revenue: number }[];
+  // Campos del resumen del día (my-day): si el turno ya cerró hoy, se muestra en solo lectura.
+  closed?: boolean;
+  closedAt?: string | null;
+  countedCash?: number | null;
+  difference?: number | null;
 }
 
 const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
@@ -28,22 +35,26 @@ const int = (n: number) => new Intl.NumberFormat('es-MX').format(Math.round(n ||
 const timeOf = (s: string) => new Date(s).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 
 /**
- * Resumen del CAJERO: su corte del día EN VIVO sobre la caja abierta. Muestra el total vendido
- * hoy en su turno, el desglose por método de pago, el efectivo esperado en caja, entradas/salidas,
- * las últimas ventas y sus productos más vendidos del turno. Se refresca solo.
+ * Resumen del CAJERO sobre su ÚLTIMO turno del día (endpoint {@code /shifts/my-day}). Si el turno
+ * está ABIERTO, es su corte EN VIVO (se refresca solo). Si ya CERRÓ hoy (relevo o fin de día),
+ * muestra EXACTAMENTE el mismo resumen pero en SOLO LECTURA, más su corte final (efectivo esperado
+ * vs contado y diferencia): puramente informativo, sin ocultar nada. La cajera que ya cerró no
+ * puede vender ni abrir caja de nuevo hoy, pero sí ver cómo le fue.
  */
 export function CashierDashboardPage() {
   const navigate = useNavigate();
   const summary = useQuery({
-    queryKey: ['cashier', 'my-summary'],
+    queryKey: ['cashier', 'my-day'],
     queryFn: async () => {
-      const res = await api.get<ShiftSummary>('/shifts/my-summary');
+      const res = await api.get<ShiftSummary>('/shifts/my-day');
       return res.status === 204 || !res.data ? null : res.data;
     },
-    refetchInterval: 20000, // refresco en vivo cada 20s
+    // Solo refresca en vivo mientras el turno siga abierto; tras cerrar es un resumen estático.
+    refetchInterval: (query) => (query.state.data?.closed ? false : 20000),
   });
 
   const s = summary.data;
+  const closed = s?.closed === true;
 
   if (summary.isLoading) {
     return <div className="dash-head"><div><h1 className="page-title">Mi caja</h1><p className="page-sub">Cargando tu resumen…</p></div></div>;
@@ -67,9 +78,11 @@ export function CashierDashboardPage() {
     <div>
       <div className="dash-head">
         <div>
-          <h1 className="page-title">Mi caja de hoy</h1>
+          <h1 className="page-title">{closed ? 'Resumen de tu día' : 'Mi caja de hoy'}</h1>
           <p className="page-sub">
-            {s.registerName ?? 'Caja'} · abierta {timeOf(s.openedAt)} · fondo inicial {money(s.openingFloat)}
+            {s.registerName ?? 'Caja'} · abierta {timeOf(s.openedAt)}
+            {closed && s.closedAt ? ` · cerrada ${timeOf(s.closedAt)}` : ''}
+            {' · fondo inicial '}{money(s.openingFloat)}
           </p>
         </div>
         <span className="dash-date">
@@ -77,12 +90,21 @@ export function CashierDashboardPage() {
         </span>
       </div>
 
+      {closed && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <InfoBanner icon={<CheckCircle2 size={18} />} title="Tu turno de hoy ya cerró" tone="sky">
+            Este es tu resumen del día. Es solo informativo: puedes verlo completo, pero ya no podrás
+            vender ni abrir caja de nuevo hasta el día siguiente.
+          </InfoBanner>
+        </div>
+      )}
+
       {/* Héroe: total vendido en el turno + KPIs */}
       <motion.div className="dash-hero-grid" variants={staggerContainer} initial="hidden" animate="visible">
         <motion.div className="hero-metric" variants={staggerItem}>
           <div className="hero-metric-top">
-            <span className="hero-metric-label">Vendido en tu turno</span>
-            <span className="hero-metric-badge"><TrendingUp size={14} /> En vivo</span>
+            <span className="hero-metric-label">{closed ? 'Vendido en tu día' : 'Vendido en tu turno'}</span>
+            {!closed && <span className="hero-metric-badge"><TrendingUp size={14} /> En vivo</span>}
           </div>
           <div className="hero-metric-value">{money(s.totalSales)}</div>
           <div className="hero-metric-foot">
@@ -93,11 +115,28 @@ export function CashierDashboardPage() {
 
         <div className="kpi-column">
           <Kpi icon={<Banknote size={18} />} tint="green" label="Efectivo esperado en caja" value={money(s.expectedCash)} hint="fondo + efectivo − retiros" />
-          <Kpi icon={<Receipt size={18} />} tint="blue" label="Ventas del turno" value={int(s.salesCount)} />
+          <Kpi icon={<Receipt size={18} />} tint="blue" label={closed ? 'Ventas del día' : 'Ventas del turno'} value={int(s.salesCount)} />
           <Kpi icon={<Package size={18} />} tint="amber" label="Unidades vendidas" value={int(s.units)} />
           <Kpi icon={<CreditCard size={18} />} tint="violet" label="Ticket promedio" value={money(s.averageTicket)} />
         </div>
       </motion.div>
+
+      {closed && (
+        <motion.div className="card" style={{ marginTop: 'var(--space-4)' }} variants={staggerItem} initial="hidden" animate="visible">
+          <div className="sec-title"><Scale size={18} /><h3>Tu corte final</h3></div>
+          <div className="cash-cut-grid">
+            <Kpi icon={<Banknote size={18} />} tint="green" label="Efectivo esperado" value={money(s.expectedCash)} />
+            <Kpi icon={<Wallet size={18} />} tint="blue" label="Efectivo contado" value={money(s.countedCash ?? 0)} />
+            <Kpi
+              icon={<Scale size={18} />}
+              tint={(s.difference ?? 0) === 0 ? 'green' : 'amber'}
+              label="Diferencia"
+              value={money(s.difference ?? 0)}
+              hint={(s.difference ?? 0) === 0 ? 'cuadró exacto' : ((s.difference ?? 0) > 0 ? 'sobrante' : 'faltante')}
+            />
+          </div>
+        </motion.div>
+      )}
 
       {/* Desglose por método + movimientos de efectivo */}
       <div className="dash-two-col">

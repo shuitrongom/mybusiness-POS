@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getToken, setToken, setRefreshToken } from '@/lib/api';
+import { getToken, setToken, setRefreshToken, setOnTokenRefreshed } from '@/lib/api';
 
 /**
  * Estado de sesión del usuario en el cliente. Guarda el token de acceso y expone acciones
@@ -28,3 +28,11 @@ export const useSession = create<SessionState>((set) => ({
     set({ token: null, isAuthenticated: false });
   },
 }));
+
+// Mantiene el token en memoria sincronizado cuando api.ts lo RENUEVA de forma transparente
+// (refresh proactivo o reintento tras 401). Sin esto, componentes que derivan datos del token
+// (p. ej. el POS: isBakery/hasModule) se quedarían con el token viejo hasta recargar. El callback
+// se registra desde el store para evitar que api.ts importe session.ts (ciclo de imports).
+setOnTokenRefreshed((accessToken: string) => {
+  useSession.setState({ token: accessToken, isAuthenticated: true });
+});

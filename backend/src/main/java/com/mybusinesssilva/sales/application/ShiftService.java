@@ -180,7 +180,78 @@ public class ShiftService {
                 }
                 java.util.Map<String, Object> active = activeOpt.get();
                 long shiftId = ((Number) active.get("shiftId")).longValue();
+                return java.util.Optional.of(summaryForShift(shiftId, active));
+        }
 
+        /**
+         * Resumen del DÍA del cajero en solo lectura: busca su ÚLTIMO turno de hoy
+         * ({@code business_date = CURRENT_DATE}), esté abierto o cerrado, y devuelve el
+         * mismo mapa que {@link #myShiftSummary(String)} MÁS los campos de cierre
+         * ({@code closed}, {@code closedAt}; {@code countedCash}/{@code difference}
+         * cuando el turno esté cerrado). Vacío si el cajero no tiene ningún turno hoy.
+         *
+         * <p>
+         * Es puramente informativo: permite que una cajera que ya cerró su turno hoy
+         * siga viendo cómo le fue en el día, sin poder vender ni reabrir caja.
+         */
+        public java.util.Optional<java.util.Map<String, Object>> myDaySummary(String cashier) {
+                java.util.Optional<java.util.Map<String, Object>> lastOpt = jdbc.sql("""
+                                SELECT s.id, s.cash_register_id, s.branch_id, s.opening_float, s.opened_at,
+                                       s.business_date, s.status, s.counted_cash, s.closed_at,
+                                       cr.name AS register_name
+                                FROM shift s
+                                LEFT JOIN cash_register cr ON cr.id = s.cash_register_id
+                                WHERE s.opened_by = :by AND s.business_date = CURRENT_DATE
+                                ORDER BY s.opened_at DESC LIMIT 1
+                                """)
+                                .param("by", cashier)
+                                .query((rs, n) -> {
+                                        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                                        m.put("shiftId", rs.getLong("id"));
+                                        m.put("cashRegisterId", rs.getLong("cash_register_id"));
+                                        m.put("branchId", (Object) rs.getObject("branch_id"));
+                                        m.put("registerName", rs.getString("register_name"));
+                                        m.put("openingFloat", rs.getBigDecimal("opening_float"));
+                                        m.put("openedAt", rs.getObject("opened_at", java.time.OffsetDateTime.class));
+                                        m.put("businessDate", rs.getObject("business_date", java.time.LocalDate.class));
+                                        m.put("status", rs.getString("status"));
+                                        m.put("countedCash", rs.getBigDecimal("counted_cash"));
+                                        m.put("closedAt", rs.getObject("closed_at", java.time.OffsetDateTime.class));
+                                        return m;
+                                })
+                                .optional();
+                if (lastOpt.isEmpty()) {
+                        return java.util.Optional.empty();
+                }
+                java.util.Map<String, Object> meta = lastOpt.get();
+                long shiftId = ((Number) meta.get("shiftId")).longValue();
+                boolean closed = "CLOSED".equals(meta.get("status"));
+                java.util.Map<String, Object> out = summaryForShift(shiftId, meta);
+                out.put("closed", closed);
+                out.put("closedAt", meta.get("closedAt"));
+                if (closed) {
+                        BigDecimal counted = (BigDecimal) meta.get("countedCash");
+                        BigDecimal expected = (BigDecimal) out.get("expectedCash");
+                        out.put("countedCash", counted);
+                        out.put("difference", counted == null ? null : counted.subtract(expected));
+                } else {
+                        out.put("countedCash", null);
+                        out.put("difference", null);
+                }
+                return java.util.Optional.of(out);
+        }
+
+        /**
+         * Calcula el mapa de resumen de un turno (abierto o cerrado) a partir de su id
+         * y un mapa con los metadatos del turno ({@code registerName},
+         * {@code openedAt},
+         * {@code businessDate}). Reutilizado por el resumen en vivo
+         * ({@link #myShiftSummary(String)}) y por el resumen del día tras cierre
+         * ({@link #myDaySummary(String)}), para no duplicar las consultas de métodos,
+         * unidades, top y últimas ventas.
+         */
+        private java.util.Map<String, Object> summaryForShift(long shiftId,
+                        java.util.Map<String, Object> meta) {
                 BigDecimal openingFloat = jdbc.sql("SELECT opening_float FROM shift WHERE id = :id")
                                 .param("id", shiftId).query(BigDecimal.class).single();
                 BigDecimal cashSales = sumSalesByMethod(shiftId, "CASH");
@@ -249,9 +320,9 @@ public class ShiftService {
 
                 java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
                 out.put("shiftId", shiftId);
-                out.put("registerName", active.get("registerName"));
-                out.put("openedAt", active.get("openedAt"));
-                out.put("businessDate", active.get("businessDate"));
+                out.put("registerName", meta.get("registerName"));
+                out.put("openedAt", meta.get("openedAt"));
+                out.put("businessDate", meta.get("businessDate"));
                 out.put("openingFloat", openingFloat);
                 out.put("cashSales", cashSales);
                 out.put("cardSales", cardSales);
@@ -271,7 +342,7 @@ public class ShiftService {
                 out.put("specialSalesTotal", split.specialTotal());
                 out.put("lastSales", lastSales);
                 out.put("topProducts", topProducts);
-                return java.util.Optional.of(out);
+                return out;
         }
 
         /**
@@ -355,11 +426,41 @@ public class ShiftService {
         }
 
         /**
-         * Cierra el turno con el efectivo contado (arqueo) y devuelve el corte con la
-         * diferencia.
+         * Modo de cierre de turno.
+         *
+         * <ul>
+         * <li>{@code TURNO}: relevo intermedio. Hace el corte y cierra el turno, pero
+         * <strong>NO</strong> convierte el pan sobrante a merma: queda vendible para la
+         * siguiente cajera (hereda el stock normal de la sucursal).</li>
+         * <li>{@code FIN_DIA}: cierre de fin de jornada. Hace el corte Y además dispara
+         * el candado de merma, pasando el pan sobrante del stock normal a merma (origen
+         * {@code CIERRE}) en la misma transacción.</li>
+         * </ul>
+         */
+        public enum CloseMode {
+                TURNO,
+                FIN_DIA
+        }
+
+        /**
+         * Compatibilidad: cierre de turno simple (modo {@link CloseMode#TURNO}, sin
+         * conversión de sobrante a merma). Delega en la sobrecarga con modo.
          */
         @Transactional
         public ShiftClosure closeShift(long shiftId, String closedBy, BigDecimal countedCash) {
+                return closeShift(shiftId, closedBy, countedCash, CloseMode.TURNO);
+        }
+
+        /**
+         * Cierra el turno con el efectivo contado (arqueo) y devuelve el corte con la
+         * diferencia. El candado de merma (sobrante de pan a merma) SOLO se dispara en
+         * modo {@link CloseMode#FIN_DIA}; en modo {@link CloseMode#TURNO} (relevo) el
+         * pan sobrante queda vendible para la siguiente cajera.
+         */
+        @Transactional
+        public ShiftClosure closeShift(long shiftId, String closedBy, BigDecimal countedCash, CloseMode mode) {
+                CloseMode effectiveMode = (mode == null) ? CloseMode.TURNO : mode;
+
                 BigDecimal openingFloat = jdbc.sql("SELECT opening_float FROM shift WHERE id = :id")
                                 .param("id", shiftId).query(BigDecimal.class).single();
 
@@ -392,10 +493,13 @@ public class ShiftService {
                 persistCut(shiftId, "Z", openingFloat, cashSales, cardSales, transferSales, voucherSales,
                                 cashIn, cashOut, expectedCash, countedCash, difference, split, closedBy);
 
-                // Candado de merma (giro panadería): el sobrante del stock normal de la
-                // sucursal del
-                // turno pasa a merma automáticamente, en esta misma transacción del cierre.
-                transferLeftoverToWasteOnClose(shiftId, closedBy);
+                // Candado de merma (giro panadería): SOLO en cierre de fin de jornada. En el
+                // relevo intermedio (CloseMode.TURNO) el sobrante NO se convierte: queda
+                // vendible
+                // para la siguiente cajera, que hereda el stock normal de la sucursal.
+                if (effectiveMode == CloseMode.FIN_DIA) {
+                        transferLeftoverToWasteOnClose(shiftId, closedBy);
+                }
 
                 return new ShiftClosure(shiftId, openingFloat, cashSales, cardSales, transferSales,
                                 voucherSales, cashIn, cashOut, expectedCash, countedCash, difference,

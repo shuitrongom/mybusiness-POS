@@ -18,7 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.mybusinesssilva.platform.security.AuthenticatedUser;
 
 /**
- * Endpoints de turnos y cortes de caja. Requieren el módulo {@code cash} habilitado.
+ * Endpoints de turnos y cortes de caja. Requieren el módulo {@code cash}
+ * habilitado.
  */
 @RestController
 @RequestMapping("/api/v1/shifts")
@@ -35,8 +36,10 @@ public class ShiftController {
     public ResponseEntity<Map<String, Long>> open(
             @AuthenticationPrincipal AuthenticatedUser actor,
             @Valid @RequestBody OpenShiftRequest request) {
-        // Abrir caja es operar caja: lo hace el personal operativo (cajeros), NO administración ni
-        // supervisión. Dueño/Admin administran, Supervisor supervisa; ninguno abre caja ni vende.
+        // Abrir caja es operar caja: lo hace el personal operativo (cajeros), NO
+        // administración ni
+        // supervisión. Dueño/Admin administran, Supervisor supervisa; ninguno abre caja
+        // ni vende.
         boolean adminLike = actor != null
                 && (actor.hasRole("OWNER") || actor.hasRole("ADMIN") || actor.hasRole("SUPERVISOR"));
         if (adminLike) {
@@ -56,7 +59,8 @@ public class ShiftController {
     }
 
     /**
-     * Estado del día del cajero: si ya cerró su caja hoy, el POS lo bloquea con un mensaje claro
+     * Estado del día del cajero: si ya cerró su caja hoy, el POS lo bloquea con un
+     * mensaje claro
      * ("tu corte ya se cerró, vuelve mañana"). No aplica a Dueño/Admin/Supervisor.
      */
     @GetMapping("/day-status")
@@ -67,7 +71,10 @@ public class ShiftController {
         return Map.of("closedToday", closedToday);
     }
 
-    /** Turno abierto del cajero actual (para que el POS decida si pedir apertura de caja). */
+    /**
+     * Turno abierto del cajero actual (para que el POS decida si pedir apertura de
+     * caja).
+     */
     @GetMapping("/active")
     public ResponseEntity<Map<String, Object>> active(@AuthenticationPrincipal AuthenticatedUser actor) {
         return shiftService.activeShiftOf(actor == null ? "unknown" : actor.subject())
@@ -75,10 +82,29 @@ public class ShiftController {
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
-    /** Resumen en vivo del turno de hoy del cajero (su corte parcial). 204 si no tiene caja abierta. */
+    /**
+     * Resumen en vivo del turno de hoy del cajero (su corte parcial). 204 si no
+     * tiene caja abierta.
+     */
     @GetMapping("/my-summary")
     public ResponseEntity<Map<String, Object>> mySummary(@AuthenticationPrincipal AuthenticatedUser actor) {
         return shiftService.myShiftSummary(actor == null ? "unknown" : actor.subject())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /**
+     * Resumen del DÍA del cajero (su último turno de hoy, abierto o cerrado) en
+     * solo lectura.
+     * A diferencia de {@code /my-summary}, sigue respondiendo con datos aunque el
+     * turno ya esté
+     * cerrado, para que la cajera que ya cortó pueda ver cómo le fue en el día. 204
+     * si no abrió
+     * ninguna caja hoy.
+     */
+    @GetMapping("/my-day")
+    public ResponseEntity<Map<String, Object>> myDay(@AuthenticationPrincipal AuthenticatedUser actor) {
+        return shiftService.myDaySummary(actor == null ? "unknown" : actor.subject())
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
@@ -106,8 +132,20 @@ public class ShiftController {
             @AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable long id,
             @Valid @RequestBody CloseShiftRequest request) {
+        // Modo de cierre: TURNO (relevo, no convierte sobrante a merma) o FIN_DIA (sí
+        // convierte).
+        // Default defensivo TURNO si viene nulo o inválido, para no mandar pan a merma
+        // por accidente.
+        ShiftService.CloseMode mode = ShiftService.CloseMode.TURNO;
+        if (request.mode() != null) {
+            try {
+                mode = ShiftService.CloseMode.valueOf(request.mode().trim().toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException ignored) {
+                mode = ShiftService.CloseMode.TURNO;
+            }
+        }
         return shiftService.closeShift(id,
-                actor == null ? "unknown" : actor.subject(), request.countedCash());
+                actor == null ? "unknown" : actor.subject(), request.countedCash(), mode);
     }
 
     /** Corte X: lectura parcial del turno sin cerrarlo. */
@@ -126,13 +164,13 @@ public class ShiftController {
     }
 
     public record OpenShiftRequest(@NotNull Long cashRegisterId, BigDecimal openingFloat,
-                                   Long branchId, Long handoverFrom, String notes) {
+            Long branchId, Long handoverFrom, String notes) {
     }
 
     public record CashMovementRequest(
             @NotNull String direction, @NotNull BigDecimal amount, String reason) {
     }
 
-    public record CloseShiftRequest(@NotNull BigDecimal countedCash) {
+    public record CloseShiftRequest(@NotNull BigDecimal countedCash, String mode) {
     }
 }

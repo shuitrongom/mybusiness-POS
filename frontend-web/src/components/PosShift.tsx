@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { LockKeyhole, Wallet, DoorOpen, AlertTriangle, Check, RefreshCw, BadgeCheck } from 'lucide-react';
+import { LockKeyhole, Wallet, DoorOpen, Check, RefreshCw, BadgeCheck, Moon, Sunrise } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { PrintableVoucher } from '@/components/PrintableVoucher';
 import { type VoucherData } from '@/components/Voucher';
+import { InfoBanner } from '@/components/InfoBanner';
 import '@/pages/pos.css';
+
+/** Modo de cierre de caja: relevo intermedio (no manda sobrante a merma) o fin de jornada (sí). */
+type CloseMode = 'TURNO' | 'FIN_DIA';
 
 const money = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
@@ -237,10 +241,12 @@ function CloseShiftModal({ open, shift, onClose, onClosed }:
     footer: 'Conserva este corte como respaldo del turno.',
   });
 
-  const doClose = async () => {
+  const doClose = async (mode: CloseMode) => {
     setBusy(true);
     try {
-      const { data } = await api.post<Closure>(`/shifts/${shift.shiftId}/close`, { countedCash: Number(counted) || 0 });
+      const { data } = await api.post<Closure>(`/shifts/${shift.shiftId}/close`, {
+        countedCash: Number(counted) || 0, mode,
+      });
       setClosure(data);
       // Imprime automáticamente el comprobante del corte Z en la impresora de tickets.
       setVoucher(buildVoucher(data));
@@ -248,9 +254,14 @@ function CloseShiftModal({ open, shift, onClose, onClosed }:
       api.post('/documents', {
         docType: 'CUT_Z', folio: `Z-${shift.shiftId}`, title: 'Corte de caja Z',
         shiftId: shift.shiftId, branchId: shift.branchId, amount: data.expectedCash, reprint: false,
-        payload: { ...data, registerName: shift.registerName },
+        payload: { ...data, registerName: shift.registerName, closeMode: mode },
       }).catch(() => { });
-      toast.success('Caja cerrada', 'Se generó e imprimió tu corte Z. Ya no podrás vender más hoy.');
+      toast.success(
+        mode === 'FIN_DIA' ? 'Fin del día cerrado' : 'Turno cerrado',
+        mode === 'FIN_DIA'
+          ? 'Se generó e imprimió tu corte Z y el pan sobrante pasó a merma. Ya no podrás vender más hoy.'
+          : 'Se generó e imprimió tu corte Z. El pan sobrante queda vendible para la siguiente cajera.',
+      );
     } catch {
       toast.error('No se pudo cerrar la caja', 'Inténtalo de nuevo.');
     } finally { setBusy(false); }
@@ -270,19 +281,26 @@ function CloseShiftModal({ open, shift, onClose, onClosed }:
 
             {!closure ? (
               <>
-                <div style={{ padding: 'var(--space-4) var(--space-5)' }}>
-                  <div className="pos-shift-warning">
-                    <AlertTriangle size={18} />
-                    <span><strong>Importante:</strong> al cerrar tu caja se genera tu corte y <strong>no podrás registrar más ventas en este turno el día de hoy</strong>. Si es cambio de cajero, el siguiente cajero deberá abrir su propia caja.</span>
-                  </div>
-                  <label className="field" style={{ marginTop: 'var(--space-3)' }}><span>Efectivo contado en caja (arqueo)</span>
+                <div style={{ padding: 'var(--space-4) var(--space-5)', display: 'grid', gap: 'var(--space-3)' }}>
+                  <label className="field"><span>Efectivo contado en caja (arqueo)</span>
                     <input type="number" step="0.01" min={0} value={counted} onChange={(e) => setCounted(e.target.value)} autoFocus />
                   </label>
+                  <InfoBanner icon={<Sunrise size={18} />} title="Cerrar turno (relevo)" tone="sky">
+                    Hace tu corte y cierra tu turno. El pan que quede sigue disponible para la
+                    siguiente cajera (no pasa a merma). Hoy ya no podrás vender.
+                  </InfoBanner>
+                  <InfoBanner icon={<Moon size={18} />} title="Cerrar fin del día" tone="amber">
+                    Hace tu corte <strong>y manda el pan sobrante a merma automáticamente</strong>.
+                    Úsalo solo en el ÚLTIMO cierre del día. Hoy ya no podrás vender.
+                  </InfoBanner>
                 </div>
-                <div className="pos-modal-actions">
+                <div className="pos-modal-actions pos-close-actions">
                   <button className="btn-ghost" onClick={onClose}>Cancelar</button>
-                  <button className="pos-confirm" onClick={doClose} disabled={busy}>
-                    <Check size={15} /> {busy ? 'Cerrando…' : 'Cerrar caja'}
+                  <button className="pos-confirm pos-confirm-sky" onClick={() => doClose('TURNO')} disabled={busy}>
+                    <Sunrise size={15} /> {busy ? 'Cerrando…' : 'Cerrar turno (relevo)'}
+                  </button>
+                  <button className="pos-confirm pos-confirm-amber" onClick={() => doClose('FIN_DIA')} disabled={busy}>
+                    <Moon size={15} /> {busy ? 'Cerrando…' : 'Cerrar fin del día'}
                   </button>
                 </div>
               </>

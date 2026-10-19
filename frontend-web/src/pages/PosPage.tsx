@@ -173,6 +173,10 @@ export function PosPage() {
   // Existencia por producto en la sucursal activa (productId -> cantidad). En giro panadería el POS
   // solo muestra y vende panes CON existencia > 0: no se puede vender lo que no está en inventario.
   const [stockMap, setStockMap] = useState<Record<number, number>>({});
+  // Existencia EN MERMA por producto en la sucursal activa (productId -> piezas en merma). En giro
+  // panadería el botón "Vender como merma" solo aparece y se topa si hay piezas en merma (> 0):
+  // "no se vende lo que no hay" también para la merma.
+  const [wasteStockMap, setWasteStockMap] = useState<Record<number, number>>({});
   const [globalDiscount, setGlobalDiscount] = useState(0);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -278,6 +282,24 @@ export function PosPage() {
     return () => { cancelled = true; };
   }, [bakeryEnabled, branchId, ticket]);
 
+  // Carga la existencia EN MERMA de la sucursal (solo giro panadería) para habilitar/topar el
+  // botón "Vender como merma": solo panes CON existencia de merma > 0 pueden venderse como merma
+  // ("no se vende lo que no hay"). Se recarga al cambiar de sucursal y tras cada venta (misma
+  // señal 'ticket' que el stock normal). Fuera del giro no se carga.
+  useEffect(() => {
+    if (!bakeryEnabled || !branchId) { setWasteStockMap({}); return; }
+    let cancelled = false;
+    api.get<{ productId: number; quantity: number }[]>('/bakery/stock/available', { params: { branchId, kind: 'waste' } })
+      .then((r) => {
+        if (cancelled) return;
+        const m: Record<number, number> = {};
+        for (const row of r.data) m[row.productId] = Number(row.quantity) || 0;
+        setWasteStockMap(m);
+      })
+      .catch(() => { if (!cancelled) setWasteStockMap({}); });
+    return () => { cancelled = true; };
+  }, [bakeryEnabled, branchId, ticket]);
+
 
   useEffect(() => {
     localStorage.setItem(PRICELIST_KEY, String(priceListId));
@@ -358,6 +380,35 @@ export function PosPage() {
     setQtyInput('1');
   };
 
+  /**
+   * Tope de piezas vendibles de un renglón según su existencia disponible en la sucursal activa
+   * ("no se vende lo que no hay"). Devuelve null cuando NO se puede/debe topar en el cliente:
+   *  - fuera del giro panadería (no se filtra por existencia),
+   *  - artículos libres (sin productId, no tienen existencia en catálogo).
+   * Para renglones de MERMA el tope es la existencia EN MERMA (wasteStockMap[productId]); para
+   * renglones normales, la existencia normal (stockMap[productId]). En ambos casos el backend es
+   * la segunda barrera (409 INSUFFICIENT_STOCK sobre inventory_stock / bakery_waste_stock).
+   */
+  const stockCapOf = useCallback((line: Pick<CartLine, 'productId' | 'waste'>): number | null => {
+    if (!bakeryEnabled || line.productId == null) return null;
+    const source = line.waste ? wasteStockMap : stockMap;
+    return Math.max(0, Math.floor(source[line.productId] ?? 0));
+  }, [bakeryEnabled, stockMap, wasteStockMap]);
+
+  /** Tope por producto para la cuadrícula/modal de cantidad (misma regla, sin renglón todavía). */
+  const stockCapForProduct = useCallback((productId: number): number | null => {
+    if (!bakeryEnabled) return null;
+    return Math.max(0, Math.floor(stockMap[productId] ?? 0));
+  }, [bakeryEnabled, stockMap]);
+
+  // Red de seguridad visual: ¿algún renglón quedó por encima de su existencia disponible? (p. ej.
+  // tras recargar el stockMap post-venta). Si lo hay, el botón de cobro se bloquea para no
+  // sobrevender; el tope del renglón normalmente lo evita, esto es la última barrera del cliente.
+  const hasOverStockLine = useMemo(() => cart.some((l) => {
+    const cap = stockCapOf(l);
+    return cap != null && l.quantity > cap;
+  }), [cart, stockCapOf]);
+
   const addProduct = (p: Product, qty = 1) => {
     addLine({
       id: crypto.randomUUID(), productId: p.id, categoryId: p.categoryId, description: p.name,
@@ -374,14 +425,28 @@ export function PosPage() {
       if (line.productId != null) {
         const existing = prev.find((l) => l.productId === line.productId);
         if (existing) {
+          // Candado por existencia: al reagregar, la suma no puede superar lo disponible. Si
+          // excede, se fija al máximo y se avisa sin interrumpir el flujo del cajero.
+          const cap = stockCapOf(existing);
+          const desired = existing.quantity + line.quantity;
+          const next = cap != null ? Math.min(desired, cap) : desired;
+          if (cap != null && desired > cap) {
+            toast.info('Sin más existencia', `Solo hay ${cap} ${cap === 1 ? 'pieza' : 'piezas'} de ${existing.description}.`);
+          }
           setLastLineId(existing.id);
           return prev.map((l) =>
-            l.id === existing.id ? { ...l, quantity: l.quantity + line.quantity } : l,
+            l.id === existing.id ? { ...l, quantity: Math.max(1, next) } : l,
           );
         }
       }
-      setLastLineId(line.id);
-      return [...prev, line];
+      // Renglón nuevo: topa la cantidad inicial a lo disponible.
+      const cap = stockCapOf(line);
+      if (cap != null && line.quantity > cap) {
+        toast.info('Sin más existencia', `Solo hay ${cap} ${cap === 1 ? 'pieza' : 'piezas'} de ${line.description}.`);
+      }
+      const capped = cap != null ? { ...line, quantity: Math.max(1, Math.min(line.quantity, cap)) } : line;
+      setLastLineId(capped.id);
+      return [...prev, capped];
     });
   };
 
@@ -390,7 +455,17 @@ export function PosPage() {
     // el renglón se usa el botón Eliminar (bote), no bajando la cantidad a 0. Se identifica por
     // id estable para que los artículos libres (sin productId) también funcionen.
     const q = Math.max(1, Math.floor(quantity) || 1);
-    setCart((prev) => prev.map((l) => (l.id === id ? { ...l, quantity: q } : l)));
+    setCart((prev) => prev.map((l) => {
+      if (l.id !== id) return l;
+      // Candado por existencia ("no se vende lo que no hay"): la cantidad del renglón no puede
+      // superar lo disponible. Al exceder se fija al máximo y se avisa de forma no intrusiva.
+      const cap = stockCapOf(l);
+      if (cap != null && q > cap) {
+        toast.info('Sin más existencia', `Solo hay ${cap} ${cap === 1 ? 'pieza' : 'piezas'} de ${l.description}.`);
+        return { ...l, quantity: Math.max(1, cap) };
+      }
+      return { ...l, quantity: q };
+    }));
   };
 
   const setUnitPrice = (id: string, unitPrice: number) => {
@@ -419,7 +494,17 @@ export function PosPage() {
       if (wastePrice <= 0) {
         return l; // sin precio de merma configurado no se puede vender como merma
       }
-      return { ...l, waste: true, normalPrice: l.unitPrice, unitPrice: wastePrice };
+      // "No se vende lo que no hay" también para la merma: topa la cantidad a la existencia EN
+      // MERMA del artículo al activar el modo (un renglón con cantidad normal alta no puede
+      // superar lo disponible en merma). Si no hay existencia de merma no se activa (barrera; el
+      // botón ya no se muestra por Fix 1).
+      const cap = l.productId != null ? Math.max(0, Math.floor(wasteStockMap[l.productId] ?? 0)) : 0;
+      if (cap <= 0) return l;
+      const capped = Math.max(1, Math.min(l.quantity, cap));
+      if (capped < l.quantity) {
+        toast.info('Sin más existencia', `Solo hay ${cap} ${cap === 1 ? 'pieza' : 'piezas'} en merma de ${l.description}.`);
+      }
+      return { ...l, waste: true, normalPrice: l.unitPrice, unitPrice: wastePrice, quantity: capped };
     }));
   };
 
@@ -438,8 +523,13 @@ export function PosPage() {
       toast.info('Abre tu caja', 'Debes abrir tu caja con el fondo inicial antes de cobrar.');
       return;
     }
+    // No se cobra si un renglón quedó por encima de su existencia ("no se vende lo que no hay").
+    if (hasOverStockLine) {
+      toast.error('Ajusta la cantidad', 'Hay un artículo por encima de su existencia. Corrige la cantidad para cobrar.');
+      return;
+    }
     if (cart.length > 0) setCheckoutOpen(true);
-  }, [cart.length, shift]);
+  }, [cart.length, shift, hasOverStockLine]);
 
   // Cierra el modal post-venta y deja la caja lista para la siguiente venta.
   const cerrarTicket = useCallback(() => {
@@ -481,10 +571,20 @@ export function PosPage() {
       const id = lastLineId ?? prev[prev.length - 1]?.id;
       if (id == null) return prev;
       return prev
-        .map((l) => (l.id === id ? { ...l, quantity: l.quantity + delta } : l))
+        .map((l) => {
+          if (l.id !== id) return l;
+          const desired = l.quantity + delta;
+          // Candado por existencia también para los atajos +/− del teclado.
+          const cap = stockCapOf(l);
+          if (cap != null && delta > 0 && desired > cap) {
+            toast.info('Sin más existencia', `Solo hay ${cap} ${cap === 1 ? 'pieza' : 'piezas'} de ${l.description}.`);
+            return { ...l, quantity: cap };
+          }
+          return { ...l, quantity: desired };
+        })
         .filter((l) => l.quantity > 0);
     });
-  }, [lastLineId]);
+  }, [lastLineId, stockCapOf]);
 
   // Atajos de teclado del cajero (flujo rápido sin mouse):
   //   F2 enfocar código · F4 cliente · F9 o Enter cobrar · +/- cantidad del último ·
@@ -855,9 +955,15 @@ export function PosPage() {
             {cart.map((l) => {
               const promoLabel = l.productId != null ? promoResult.labelByProduct[l.productId] : undefined;
               const promoDisc = l.productId != null ? (promoResult.discountByProduct[l.productId] || 0) : 0;
-              // En giro panadería, un renglón de catálogo con precio de merma configurado (>0)
-              // puede venderse como merma. "Todos son pan por giro": no depende de una bandera.
-              const canSellAsWaste = bakeryEnabled && l.productId != null && (l.wastePrice ?? 0) > 0;
+              // En giro panadería, un renglón de catálogo puede venderse como merma solo si TIENE
+              // precio de merma (>0) Y EXISTENCIA en merma (>0): "no se vende lo que no hay"
+              // aplicado a la merma. Sin piezas en merma, el botón no aparece.
+              const wasteCap = l.productId != null ? Math.max(0, Math.floor(wasteStockMap[l.productId] ?? 0)) : 0;
+              const canSellAsWaste = bakeryEnabled && l.productId != null && (l.wastePrice ?? 0) > 0 && wasteCap > 0;
+              // Chip "máx. X": existencia disponible del renglón (giro panadería, no merma). Guía
+              // al cajero sobre cuántas piezas puede vender y resalta en ámbar si ya topó.
+              const cap = stockCapOf(l);
+              const atCap = cap != null && l.quantity >= cap;
               return (
                 <motion.div key={l.id} className="pos-line" layout
                   initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
@@ -886,6 +992,12 @@ export function PosPage() {
                         <Tag size={11} /> {promoLabel} · -{money(promoDisc)}
                       </span>
                     )}
+                    {cap != null && (
+                      <span className={`pos-line-stock ${atCap ? 'is-max' : ''}`}
+                        title="Existencia disponible de este artículo en la sucursal">
+                        máx. {cap}
+                      </span>
+                    )}
                     {canSellAsWaste && (
                       <button
                         type="button"
@@ -911,7 +1023,9 @@ export function PosPage() {
                       onChange={(e) => setQuantity(l.id, Number(e.target.value) || 1)}
                       inputMode="numeric"
                     />
-                    <button onClick={() => setQuantity(l.id, l.quantity + 1)} aria-label="Más">
+                    <button onClick={() => setQuantity(l.id, l.quantity + 1)} aria-label="Más"
+                      disabled={atCap}
+                      title={atCap ? `Solo hay ${cap} ${cap === 1 ? 'pieza' : 'piezas'} de ${l.description}` : undefined}>
                       <Plus size={14} />
                     </button>
                   </div>
@@ -956,11 +1070,17 @@ export function PosPage() {
           </div>
           <button
             className="pos-pay"
-            disabled={cart.length === 0 || !shift}
+            disabled={cart.length === 0 || !shift || hasOverStockLine}
             onClick={openCheckout}
-            title={!shift ? 'Abre tu caja para poder cobrar' : undefined}
+            title={!shift
+              ? 'Abre tu caja para poder cobrar'
+              : hasOverStockLine ? 'Hay un artículo por encima de su existencia. Ajusta la cantidad.' : undefined}
           >
-            {!shift ? 'Abre tu caja para vender' : <>Cobrar {money(total)} <kbd className="pos-pay-kbd">F9 / Enter</kbd></>}
+            {!shift
+              ? 'Abre tu caja para vender'
+              : hasOverStockLine
+                ? 'Ajusta la cantidad para cobrar'
+                : <>Cobrar {money(total)} <kbd className="pos-pay-kbd">F9 / Enter</kbd></>}
           </button>
           <div className="pos-hotkeys">
             <span><kbd>F2</kbd> código</span>
@@ -1025,6 +1145,7 @@ export function PosPage() {
           <QuantityModal
             product={qtyModalProduct}
             price={effectivePrice(qtyModalProduct)}
+            maxQuantity={stockCapForProduct(qtyModalProduct.id)}
             onCancel={() => setQtyModalProduct(null)}
             onConfirm={(qty) => {
               addProduct(qtyModalProduct, qty);
@@ -1175,13 +1296,22 @@ function CustomerPicker({ onClose, onPick }:
  * agregar. Mínimo 1 (nunca 0; para quitar se usa el botón Eliminar del carrito). Botones −/+ a los
  * lados y campo editable en medio. Enter confirma.
  */
-function QuantityModal({ product, price, onCancel, onConfirm }:
-  { product: Product; price: number; onCancel: () => void; onConfirm: (qty: number) => void }) {
+function QuantityModal({ product, price, maxQuantity, onCancel, onConfirm }:
+  {
+    product: Product; price: number; maxQuantity: number | null;
+    onCancel: () => void; onConfirm: (qty: number) => void
+  }) {
   // La cantidad se maneja como TEXTO para permitir el campo vacío mientras el cajero teclea.
   // El mínimo 1 se aplica solo al CONFIRMAR, no en cada tecla (así no "rebota" a 1).
   const [qtyText, setQtyText] = useState('1');
   const inputRef = useRef<HTMLInputElement>(null);
   const qtyNum = Number(qtyText) || 0;
+  // Candado por existencia ("no se vende lo que no hay"): el modal no deja pedir más piezas de las
+  // que hay en la sucursal. maxQuantity es null fuera del giro panadería (sin tope).
+  const hasCap = maxQuantity != null;
+  const cap = maxQuantity ?? Infinity;
+  const overCap = hasCap && qtyNum > cap;
+  const confirmQty = Math.max(1, Math.min(Math.floor(Number(qtyText) || 1), hasCap ? cap : Infinity));
 
   useEffect(() => {
     // Selecciona el valor al abrir para que el cajero pueda teclear la cantidad de inmediato.
@@ -1190,9 +1320,10 @@ function QuantityModal({ product, price, onCancel, onConfirm }:
   }, []);
 
   const dec = () => setQtyText(String(Math.max(1, (Number(qtyText) || 1) - 1)));
-  const inc = () => setQtyText(String((Number(qtyText) || 0) + 1));
-  // Al confirmar: mínimo 1 (si quedó vacío o 0, se toma 1).
-  const confirmar = () => onConfirm(Math.max(1, Math.floor(Number(qtyText) || 1)));
+  // "+" no pasa del tope de existencia.
+  const inc = () => setQtyText(String(Math.min((Number(qtyText) || 0) + 1, hasCap ? cap : Infinity)));
+  // Al confirmar: mínimo 1 (si quedó vacío o 0, se toma 1) y máximo la existencia disponible.
+  const confirmar = () => onConfirm(confirmQty);
 
   const money2 = (n: number) =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
@@ -1210,6 +1341,11 @@ function QuantityModal({ product, price, onCancel, onConfirm }:
         </div>
         <div className="pos-qty-modal-body">
           <div className="pos-qty-modal-price">{money2(price)} <span>c/u</span></div>
+          {hasCap && (
+            <span className={`pos-qty-modal-stock ${overCap ? 'is-max' : ''}`}>
+              máx. {cap} {cap === 1 ? 'pieza disponible' : 'piezas disponibles'}
+            </span>
+          )}
           <div className="pos-qty-modal-stepper">
             <button className="pos-qty-modal-btn" onClick={dec} disabled={qtyNum <= 1} aria-label="Menos">
               <Minus size={22} />
@@ -1227,19 +1363,29 @@ function QuantityModal({ product, price, onCancel, onConfirm }:
                 v = v.replace(/^0+/, '');
                 setQtyText(v);
               }}
-              onBlur={() => { if (qtyText === '') setQtyText('1'); }}
+              onBlur={() => {
+                if (qtyText === '') { setQtyText('1'); return; }
+                // Al salir del campo, topa a la existencia disponible (candado por existencia).
+                if (hasCap && (Number(qtyText) || 0) > cap) setQtyText(String(cap));
+              }}
               aria-label="Cantidad"
             />
-            <button className="pos-qty-modal-btn" onClick={inc} aria-label="Más">
+            <button className="pos-qty-modal-btn" onClick={inc} aria-label="Más"
+              disabled={hasCap && qtyNum >= cap}>
               <Plus size={22} />
             </button>
           </div>
-          <div className="pos-qty-modal-total">Importe: <strong>{money2(price * Math.max(1, qtyNum))}</strong></div>
+          {overCap && (
+            <div className="pos-qty-modal-warn">
+              Solo hay {cap} {cap === 1 ? 'pieza' : 'piezas'} de {product.name}. Se agregará el máximo disponible.
+            </div>
+          )}
+          <div className="pos-qty-modal-total">Importe: <strong>{money2(price * confirmQty)}</strong></div>
         </div>
         <div className="pos-modal-actions">
           <button className="btn-ghost" onClick={onCancel}>Cancelar</button>
           <button className="pos-confirm" onClick={confirmar}>
-            Agregar {Math.max(1, qtyNum)} {Math.max(1, qtyNum) === 1 ? 'pieza' : 'piezas'}
+            Agregar {confirmQty} {confirmQty === 1 ? 'pieza' : 'piezas'}
           </button>
         </div>
       </motion.div>
