@@ -858,14 +858,15 @@
   flex: 0 0 auto;
 }
 
-/* Chip ámbar "Con devoluciones" (venta con alguna devolución previa). */
-.rret-chip-returned {
+/* Estado de devolución con TRES estados (chip, jerarquía por color): gris=sin devoluciones,
+   ámbar=parcial (queda remanente), verde=devuelta (saldada por completo). */
+.rret-chip-none,
+.rret-chip-partial,
+.rret-chip-done {
   display: inline-flex;
   align-items: center;
   padding: 2px 9px;
   border-radius: 999px;
-  background: color-mix(in srgb, #d97706 16%, transparent);
-  color: #f59e0b;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -873,19 +874,19 @@
   white-space: nowrap;
 }
 
-/* Chip gris/neutro "Devuelta" (venta totalmente saldada; ya no hay remanente). */
-.rret-chip-fully {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+.rret-chip-none {
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
+}
+
+.rret-chip-partial {
+  background: color-mix(in srgb, #d97706 16%, transparent);
+  color: #f59e0b;
+}
+
+.rret-chip-done {
+  background: color-mix(in srgb, #12b886 16%, transparent);
+  color: #12b886;
 }
 
 /* Columna cliente (morado/info si hay cliente, tenue si es mostrador). */
@@ -910,12 +911,102 @@
   color: var(--text-muted);
 }
 
-/* Número de artículos (centrado sobre su columna, tabular). */
-.rret-pick-count {
-  justify-self: center;
-  font-weight: 600;
+/* Columna cajero (quién hizo la venta, tono tenue). */
+.rret-pick-cashier {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   color: var(--heading);
-  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rret-pick-cashier svg {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.rret-pick-cashier.is-none {
+  color: var(--text-muted);
+}
+
+/* Columna de métodos de pago: uno o varios chips de color por jerarquía. */
+.rret-pick-pays {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rret-pick-pays-none {
+  color: var(--text-muted);
+}
+
+.rret-chip-pay {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--heading);
+}
+
+.rret-chip-pay svg {
+  flex: 0 0 auto;
+}
+
+/* Efectivo = verde (ok/dinero). */
+.rret-chip-pay.is-cash {
+  background: color-mix(in srgb, #12b886 14%, transparent);
+  border-color: color-mix(in srgb, #12b886 30%, transparent);
+  color: #12b886;
+}
+
+/* Tarjeta = sky (info/tarjeta). */
+.rret-chip-pay.is-card {
+  background: color-mix(in srgb, #0ea5e9 14%, transparent);
+  border-color: color-mix(in srgb, #0ea5e9 30%, transparent);
+  color: #0ea5e9;
+}
+
+/* Transferencia = morado (info). */
+.rret-chip-pay.is-transfer {
+  background: color-mix(in srgb, #7c5cff 15%, transparent);
+  border-color: color-mix(in srgb, #7c5cff 30%, transparent);
+  color: #7c5cff;
+}
+
+/* Vale/monedero = ámbar (alerta/atención). */
+.rret-chip-pay.is-voucher {
+  background: color-mix(in srgb, #d97706 16%, transparent);
+  border-color: color-mix(in srgb, #d97706 32%, transparent);
+  color: #f59e0b;
+}
+
+/* Preview de artículos de la venta (texto tenue + icono; cae a "N artículos" si es largo). */
+.rret-pick-items {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rret-pick-items svg {
+  flex: 0 0 auto;
 }
 
 /* Total de la venta (chip verde, alineado a la derecha). */

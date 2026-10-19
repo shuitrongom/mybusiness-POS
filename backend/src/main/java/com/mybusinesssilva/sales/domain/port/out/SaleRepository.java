@@ -72,22 +72,31 @@ public interface SaleRepository {
         /**
          * Resumen de una venta reciente para el selector de devoluciones.
          *
-         * @param saleId        id de la venta
-         * @param folio         folio (puede ser {@code null} en datos antiguos; el
-         *                      front
-         *                      cae a {@code "V-"+saleId})
-         * @param createdAt     fecha/hora de la venta (puede ser {@code null})
-         * @param total         total de la venta
-         * @param customerName  nombre del cliente ({@code null} en venta de mostrador)
-         * @param itemCount     número de renglones de la venta
-         * @param returnedCount número de productos de la venta con alguna devolución
-         *                      previa (para el chip "con devoluciones")
-         * @param fullyReturned {@code true} si no queda ningún renglón de producto por
-         *                      devolver (toda la venta ya se saldó)
+         * @param saleId         id de la venta
+         * @param folio          folio (puede ser {@code null} en datos antiguos; el
+         *                       front
+         *                       cae a {@code "V-"+saleId})
+         * @param createdAt      fecha/hora de la venta (puede ser {@code null})
+         * @param total          total de la venta
+         * @param customerName   nombre del cliente ({@code null} en venta de mostrador)
+         * @param itemCount      número de renglones de la venta
+         * @param returnedCount  número de productos de la venta con alguna devolución
+         *                       previa (para el chip "con devoluciones")
+         * @param fullyReturned  {@code true} si no queda ningún renglón de producto por
+         *                       devolver (toda la venta ya se saldó)
+         * @param cashier        usuario de caja que registró la venta ({@code null} en
+         *                       datos antiguos sin cajero)
+         * @param paymentMethods CSV de métodos de pago distintos de la venta (p.ej.
+         *                       {@code "CASH,CARD"}); {@code null} si no tiene pagos
+         *                       (venta a crédito sin pago registrado)
+         * @param itemsPreview   descripciones de los primeros renglones unidas con
+         *                       {@code " · "} (vista previa de artículos); {@code null}
+         *                       si no hay renglones
          */
         record RecentSale(long saleId, String folio, java.time.OffsetDateTime createdAt,
                         BigDecimal total, String customerName, int itemCount, int returnedCount,
-                        boolean fullyReturned) {
+                        boolean fullyReturned, String cashier, String paymentMethods,
+                        String itemsPreview) {
         }
 
         /**

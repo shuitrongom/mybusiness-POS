@@ -1476,6 +1476,54 @@
 }
 
 /* =====================================================================
+   Modal premium de resumen del día al cerrar caja (DaySummaryModal).
+   Reutiliza el lenguaje visual del dashboard del cajero (héroe + KPIs +
+   métodos). No imprime nada: solo informa la actividad de la jornada.
+   ===================================================================== */
+.day-summary-modal {
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+.day-summary-body {
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+}
+
+.day-summary-hero {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: var(--space-3);
+}
+
+@media (max-width: 620px) {
+  .day-summary-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+.day-summary-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: var(--space-4);
+}
+
+/* Números siempre con cifras tabulares (alinean decimales). */
+.day-summary-modal .num {
+  font-variant-numeric: tabular-nums;
+}
+
+.day-summary-modal .pos-modal-actions {
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+/* =====================================================================
    Modal de cobro premium (billetes rápidos + captura de efectivo).
    ===================================================================== */
 .pos-checkout {

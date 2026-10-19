@@ -50,7 +50,10 @@ public class SaleController {
          * Detalle de una venta (cabecera + renglones) para buscar el ticket en
          * devoluciones.
          */
-        @org.springframework.web.bind.annotation.GetMapping("/{id}")
+        // El id se restringe a dígitos ({id:\\d+}) para que esta ruta NO capture rutas
+        // hermanas como /sales/recent o /sales/returns (antes "recent" se intentaba
+        // convertir a long y producía un 422 "For input string: recent").
+        @org.springframework.web.bind.annotation.GetMapping("/{id:\\d+}")
         public ResponseEntity<com.mybusinesssilva.sales.domain.port.out.SaleRepository.SaleDetail> detail(
                         @PathVariable long id) {
                 return saleRepository.findDetail(id)
@@ -82,6 +85,9 @@ public class SaleController {
                                         m.put("itemCount", s.itemCount());
                                         m.put("returnedCount", s.returnedCount());
                                         m.put("fullyReturned", s.fullyReturned());
+                                        m.put("cashier", s.cashier());
+                                        m.put("paymentMethods", s.paymentMethods());
+                                        m.put("itemsPreview", s.itemsPreview());
                                         return m;
                                 })
                                 .toList();

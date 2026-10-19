@@ -203,7 +203,8 @@ public class JdbcSaleRepository implements SaleRepository {
                 // en
                 // multi-sucursal se quiere acotar a la sucursal del cajero.
                 return jdbc.sql("""
-                                SELECT s.id, s.folio, s.created_at, s.total, c.name AS customer_name,
+                                SELECT s.id, s.folio, s.created_at, s.total, s.cashier,
+                                       c.name AS customer_name,
                                        (SELECT COUNT(*) FROM sale_line sl WHERE sl.sale_id = s.id)
                                            AS item_count,
                                        (SELECT COUNT(DISTINCT rl.product_id)
@@ -217,7 +218,14 @@ public class JdbcSaleRepository implements SaleRepository {
                                              SELECT SUM(rl.quantity) FROM sales_return_line rl
                                              JOIN sales_return r ON r.id = rl.return_id
                                              WHERE r.sale_id = s.id AND rl.product_id = sl.product_id), 0)
-                                       ) AS fully_returned
+                                       ) AS fully_returned,
+                                       (SELECT string_agg(DISTINCT sp.method, ',')
+                                          FROM sale_payment sp WHERE sp.sale_id = s.id)
+                                           AS payment_methods,
+                                       (SELECT string_agg(d.description, ' · ')
+                                          FROM (SELECT sl.description FROM sale_line sl
+                                                 WHERE sl.sale_id = s.id ORDER BY sl.id LIMIT 3) d)
+                                           AS items_preview
                                 FROM sale s
                                 LEFT JOIN customer c ON c.id = s.customer_id
                                 WHERE s.status = 'COMPLETED'
@@ -234,7 +242,9 @@ public class JdbcSaleRepository implements SaleRepository {
                                                 rs.getObject("created_at", java.time.OffsetDateTime.class),
                                                 rs.getBigDecimal("total"), rs.getString("customer_name"),
                                                 rs.getInt("item_count"), rs.getInt("returned_count"),
-                                                rs.getBoolean("fully_returned")))
+                                                rs.getBoolean("fully_returned"), rs.getString("cashier"),
+                                                rs.getString("payment_methods"),
+                                                rs.getString("items_preview")))
                                 .list();
         }
 

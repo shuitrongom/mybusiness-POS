@@ -2,16 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Search, Undo2, RotateCcw, Package, Check, Calendar, User, DollarSign, Hash, Receipt,
+  CreditCard, ShoppingBag,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp } from '@/lib/motion';
 import { InfoBanner } from '@/components/InfoBanner';
-import { SupervisorAuthModal } from '@/components/SupervisorAuthModal';
 import { PrintableVoucher } from '@/components/PrintableVoucher';
 import { type VoucherData } from '@/components/Voucher';
-import { useSession } from '@/store/session';
-import { decodeToken, isBusinessAdmin, hasPermission } from '@/lib/jwt';
 import '@/pages/dashboard.css';
 import '@/pages/returns.css';
 
@@ -86,17 +84,37 @@ interface RecentSale {
   itemCount: number;
   returnedCount: number;
   fullyReturned: boolean;
+  cashier: string | null;
+  paymentMethods: string | null;
+  itemsPreview: string | null;
 }
 
 const REFUND_LABEL: Record<string, string> = {
   CASH: 'Efectivo', CREDIT_NOTE: 'Nota de crédito', STORE_CREDIT: 'Saldo a favor',
 };
 
+// Método de pago de la venta → etiqueta es-MX + tono de chip por jerarquía (verde=efectivo,
+// sky=tarjeta, morado=transferencia, ámbar=vale). El CSV viene del backend (sale_payment.method).
+const PAY_META: Record<string, { label: string; tone: string }> = {
+  CASH: { label: 'Efectivo', tone: 'is-cash' },
+  CARD: { label: 'Tarjeta', tone: 'is-card' },
+  TRANSFER: { label: 'Transferencia', tone: 'is-transfer' },
+  VOUCHER: { label: 'Vale', tone: 'is-voucher' },
+};
+function payMethods(csv: string | null): { label: string; tone: string }[] {
+  if (!csv) return [];
+  return csv.split(',').map((m) => m.trim()).filter(Boolean)
+    .map((m) => PAY_META[m] || { label: m, tone: 'is-neutral' });
+}
+
 // Grid COMPARTIDO cabecera/filas (alineación por construcción, nunca a mano).
 const LINE_COLS = 'minmax(200px, 1fr) 96px 120px 150px 120px';
 const HIST_COLS = 'minmax(90px, 0.7fr) 96px minmax(140px, 1fr) 150px 120px minmax(120px, 0.8fr) 150px';
 // Grid compartido cabecera/filas del selector de ventas recientes (alineación por construcción).
-const PICK_COLS = 'minmax(180px, 1.2fr) minmax(150px, 1fr) 90px minmax(150px, 0.9fr) 140px';
+// Columnas: Venta(folio+avatar+estado) · Cliente · Cajero · Pago · Artículos(preview+n) · Total · Fecha.
+const PICK_COLS =
+  'minmax(170px, 1.1fr) minmax(120px, 0.9fr) minmax(110px, 0.8fr) minmax(130px, 0.9fr) '
+  + 'minmax(160px, 1.2fr) 120px 130px';
 
 /**
  * Devoluciones: busca la venta original por folio o id, muestra sus renglones (con avatar, cantidad
@@ -114,13 +132,7 @@ export function ReturnsPage() {
   const [history, setHistory] = useState<ReturnRow[]>([]);
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
-  const [authOpen, setAuthOpen] = useState(false);
   const [voucher, setVoucher] = useState<VoucherData | null>(null);
-
-  const token = useSession((s) => s.token);
-  const claims = decodeToken(token);
-  // Puede devolver sin autorización si es Dueño/Admin o su rol tiene el permiso sales:RETURN.
-  const canReturnDirectly = isBusinessAdmin(claims) || hasPermission(claims, 'sales', 'RETURN');
 
   const loadHistory = () => {
     api.get<ReturnRow[]>('/sales/returns', { params: { limit: 20 } })
@@ -228,12 +240,11 @@ export function ReturnsPage() {
     }
   };
 
-  // Las devoluciones requieren autorización: si el usuario no puede devolver por su rol, pide
-  // el PIN de un supervisor antes de procesar.
+  // La cajera registra la devolución directamente (sin autorización de supervisor); la guarda
+  // evita procesar sin venta o sin renglones seleccionados.
   const submit = () => {
     if (!sale || !hasItems) return;
-    if (canReturnDirectly) doReturn();
-    else setAuthOpen(true);
+    doReturn();
   };
 
   return (
@@ -271,7 +282,9 @@ export function ReturnsPage() {
             <div className="rret-pick-head" style={{ gridTemplateColumns: PICK_COLS }}>
               <span>Venta</span>
               <span>Cliente</span>
-              <span className="rret-h-center">Artículos</span>
+              <span>Cajero</span>
+              <span>Pago</span>
+              <span>Artículos</span>
               <span className="rret-h-right">Total</span>
               <span className="rret-h-right">Fecha</span>
             </div>
@@ -280,6 +293,18 @@ export function ReturnsPage() {
             const label = s.folio || `V-${s.saleId}`;
             const avatarName = s.customerName || label;
             const when = fmtDate(s.createdAt);
+            const pays = payMethods(s.paymentMethods);
+            // Estado de devolución con TRES estados: sin devoluciones (gris) / parcial (ámbar) /
+            // devuelta (verde). Parcial = ya tiene devoluciones pero aún queda remanente.
+            const retState = s.fullyReturned
+              ? { cls: 'rret-chip-done', label: 'Devuelta' }
+              : s.returnedCount > 0
+                ? { cls: 'rret-chip-partial', label: 'Parcial' }
+                : { cls: 'rret-chip-none', label: 'Sin devoluciones' };
+            // Preview de artículos: si el texto es largo o hay muchos renglones, cae a "N artículos".
+            const preview = s.itemsPreview && s.itemsPreview.length <= 48 && s.itemCount <= 3
+              ? s.itemsPreview
+              : `${num(s.itemCount)} ${s.itemCount === 1 ? 'artículo' : 'artículos'}`;
             return (
               <button type="button" className="rret-pick-row" key={s.saleId}
                 style={{ gridTemplateColumns: PICK_COLS }}
@@ -289,16 +314,24 @@ export function ReturnsPage() {
                     {avatarInitials(avatarName)}
                   </span>
                   <span className="rret-pick-folio"><Hash size={12} /> {label}</span>
-                  {s.fullyReturned ? (
-                    <span className="rret-chip-fully">Devuelta</span>
-                  ) : s.returnedCount > 0 ? (
-                    <span className="rret-chip-returned">Con devoluciones</span>
-                  ) : null}
+                  <span className={retState.cls}>{retState.label}</span>
                 </span>
                 <span className={`rret-pick-customer ${s.customerName ? '' : 'is-none'}`}>
                   <User size={13} /> {s.customerName || 'Mostrador'}
                 </span>
-                <span className="rret-pick-count">{num(s.itemCount)}</span>
+                <span className={`rret-pick-cashier ${s.cashier ? '' : 'is-none'}`}>
+                  <User size={13} /> {s.cashier || '—'}
+                </span>
+                <span className="rret-pick-pays">
+                  {pays.length > 0 ? pays.map((p, i) => (
+                    <span key={i} className={`rret-chip-pay ${p.tone}`}>
+                      <CreditCard size={11} /> {p.label}
+                    </span>
+                  )) : <span className="rret-pick-pays-none">—</span>}
+                </span>
+                <span className="rret-pick-items" title={s.itemsPreview || ''}>
+                  <ShoppingBag size={13} /> {preview}
+                </span>
                 <span className="rret-pick-total">{money(s.total)}</span>
                 <span className="rret-pick-when">
                   <span className="rret-pick-when-date">{when.date}</span>
@@ -475,13 +508,6 @@ export function ReturnsPage() {
           )}
         </div>
       </motion.div>
-
-      <SupervisorAuthModal
-        open={authOpen}
-        action="Registrar devolución"
-        onClose={() => setAuthOpen(false)}
-        onAuthorized={(by) => { setAuthOpen(false); toast.info('Autorizado', `Por ${by}.`); doReturn(); }}
-      />
 
       {voucher && <PrintableVoucher data={voucher} onDone={() => setVoucher(null)} />}
     </div>

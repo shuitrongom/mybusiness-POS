@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { ShieldCheck, Plus, Save, KeyRound } from 'lucide-react';
+import { ShieldCheck, Plus, Save } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp } from '@/lib/motion';
@@ -17,7 +17,7 @@ interface CatalogEntry { key: string; name: string; }
 interface Catalog { modules: CatalogEntry[]; actions: CatalogEntry[]; }
 interface Perm { moduleKey: string; action: string; }
 
-/** Acciones sensibles del cajero que el admin activa (libre) o desactiva (pide autorización). */
+/** Acciones del cajero que el admin habilita (activa) o deja sin permiso (desactiva) por rol. */
 const SENSITIVE: { module: string; action: string; label: string }[] = [
   { module: 'sales', action: 'VOID', label: 'Cancelar venta' },
   { module: 'sales', action: 'RETURN', label: 'Hacer devoluciones' },
@@ -36,7 +36,6 @@ export function RolesPage() {
   const [maxDiscount, setMaxDiscount] = useState('0');
   const [canAuthorize, setCanAuthorize] = useState(false);
   const [newRole, setNewRole] = useState({ code: '', name: '' });
-  const [myPin, setMyPin] = useState('');
 
   const roles = useQuery({ queryKey: ['roles'], queryFn: async () => (await api.get<Role[]>('/roles')).data });
   const catalog = useQuery({ queryKey: ['roles', 'catalog'], queryFn: async () => (await api.get<Catalog>('/roles/catalog')).data });
@@ -95,17 +94,6 @@ export function RolesPage() {
     }
   };
 
-  const savePin = async () => {
-    if (myPin.length < 4) { toast.error('PIN inválido', 'El PIN debe tener al menos 4 dígitos.'); return; }
-    try {
-      await api.post('/authorize/set-pin', { pin: myPin });
-      toast.success('PIN guardado', 'Podrás autorizar acciones sensibles con este PIN.');
-      setMyPin('');
-    } catch {
-      toast.error('No se pudo guardar el PIN', '');
-    }
-  };
-
   useEffect(() => {
     if (!selected && roles.data && roles.data.length > 0) loadPerms(roles.data[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,12 +125,6 @@ export function RolesPage() {
           <label className="field"><span>Nombre</span>
             <input value={newRole.name} onChange={(e) => setNewRole({ ...newRole, name: e.target.value })} placeholder="Vendedor de piso" /></label>
           <button className="btn-ghost" onClick={createRole}><Plus size={14} /> Crear rol</button>
-
-          <h3 className="sec-title" style={{ marginTop: 'var(--space-4)' }}><KeyRound size={16} /> Mi PIN de supervisor</h3>
-          <p className="page-sub" style={{ margin: '0 0 8px' }}>Para autorizar acciones sensibles en el POS.</p>
-          <label className="field"><span>PIN (mín. 4 dígitos)</span>
-            <input type="password" inputMode="numeric" value={myPin} onChange={(e) => setMyPin(e.target.value.replace(/\D/g, '').slice(0, 8))} /></label>
-          <button className="btn-ghost" onClick={savePin}><Save size={14} /> Guardar PIN</button>
         </motion.div>
 
         <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
@@ -161,10 +143,10 @@ export function RolesPage() {
                   <span style={{ margin: 0 }}>Puede autorizar acciones de otros</span></label>
               </div>
 
-              {/* Acciones sensibles: toggles claros. Activado = el rol lo hace LIBRE (sin PIN);
-                  desactivado = requiere autorización de un supervisor. */}
+              {/* Acciones del cajero: toggles claros. Activado = el rol puede hacerlo;
+                  desactivado = el rol no tiene ese permiso. */}
               <div className="role-sensitive">
-                <div className="role-sensitive-title">Acciones del cajero (activa = libre, sin autorización)</div>
+                <div className="role-sensitive-title">Acciones del cajero (activa = permitida para este rol)</div>
                 <div className="role-toggles">
                   {SENSITIVE.map((s) => {
                     const on = checked.has(key(s.module, s.action));
@@ -173,7 +155,7 @@ export function RolesPage() {
                         <span className="role-toggle-switch"><span className="role-toggle-dot" /></span>
                         <span className="role-toggle-text">
                           <span className="role-toggle-label">{s.label}</span>
-                          <span className="role-toggle-hint">{on ? 'Libre para este rol' : 'Pide autorización'}</span>
+                          <span className="role-toggle-hint">{on ? 'Permitida para este rol' : 'No permitida para este rol'}</span>
                         </span>
                       </button>
                     );
@@ -186,36 +168,36 @@ export function RolesPage() {
 
               <details className="role-advanced">
                 <summary>Permisos avanzados (matriz completa)</summary>
-              <div className="inv-table-wrap" style={{ marginTop: 'var(--space-3)' }}>
-                <table className="inv-table">
-                  <thead>
-                    <tr>
-                      <th>Módulo</th>
-                      {actions.map((a) => <th key={a.key} style={{ textAlign: 'center' }}>{a.name}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {modules.map((m) => {
-                      const allActions = actions.map((a) => a.key);
-                      const allOn = allActions.every((a) => checked.has(key(m.key, a)));
-                      return (
-                        <tr key={m.key}>
-                          <td>
-                            <button className="btn-ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => toggleModuleRow(m.key, allActions)}>
-                              {allOn ? '−' : '+'}
-                            </button> {m.name}
-                          </td>
-                          {actions.map((a) => (
-                            <td key={a.key} style={{ textAlign: 'center' }}>
-                              <input type="checkbox" checked={checked.has(key(m.key, a.key))} onChange={() => toggle(m.key, a.key)} style={{ width: 16, height: 16 }} />
+                <div className="inv-table-wrap" style={{ marginTop: 'var(--space-3)' }}>
+                  <table className="inv-table">
+                    <thead>
+                      <tr>
+                        <th>Módulo</th>
+                        {actions.map((a) => <th key={a.key} style={{ textAlign: 'center' }}>{a.name}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modules.map((m) => {
+                        const allActions = actions.map((a) => a.key);
+                        const allOn = allActions.every((a) => checked.has(key(m.key, a)));
+                        return (
+                          <tr key={m.key}>
+                            <td>
+                              <button className="btn-ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => toggleModuleRow(m.key, allActions)}>
+                                {allOn ? '−' : '+'}
+                              </button> {m.name}
                             </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            {actions.map((a) => (
+                              <td key={a.key} style={{ textAlign: 'center' }}>
+                                <input type="checkbox" checked={checked.has(key(m.key, a.key))} onChange={() => toggle(m.key, a.key)} style={{ width: 16, height: 16 }} />
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </details>
             </>
           )}

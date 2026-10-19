@@ -5,9 +5,6 @@ import { Printer, Search, ReceiptText, ChevronLeft, ChevronRight, Eye } from 'lu
 import { api } from '@/lib/api';
 import { fadeInUp, staggerContainer, staggerItem } from '@/lib/motion';
 import { Ticket, defaultTicketSettings, type TicketSettings, type TicketData } from '@/components/Ticket';
-import { SupervisorAuthModal } from '@/components/SupervisorAuthModal';
-import { useSession } from '@/store/session';
-import { decodeToken, isBusinessAdmin, hasPermission } from '@/lib/jwt';
 import { toast } from '@/store/toast';
 import { setPaperWidth } from '@/lib/thermalPrint';
 import { printSale } from '@/lib/printRouter';
@@ -38,14 +35,6 @@ export function TicketReprintPage() {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<number | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);
-
-  const token = useSession((s) => s.token);
-  const claims = decodeToken(token);
-  // Reimprime sin autorización si es Dueño/Admin o su rol tiene el permiso. Configurable desde
-  // Administración → Roles y permisos (Ventas → Reimprimir, o Impresión → Crear).
-  const canReprintDirectly = isBusinessAdmin(claims)
-    || hasPermission(claims, 'sales', 'REPRINT') || hasPermission(claims, 'printing', 'CREATE');
 
   const sales = useQuery({
     queryKey: ['ticket', 'recent-sales'],
@@ -92,7 +81,8 @@ export function TicketReprintPage() {
       else toast.error('No se pudo reimprimir', 'No se detectó impresora. Verifica que esté conectada y encendida.');
     });
   };
-  const reprint = () => { if (canReprintDirectly) doPrint(); else setAuthOpen(true); };
+  // La cajera reimprime el ticket directamente (sin autorización de supervisor).
+  const reprint = () => doPrint();
 
   return (
     <div>
@@ -179,13 +169,6 @@ export function TicketReprintPage() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      <SupervisorAuthModal
-        open={authOpen}
-        action="Reimprimir ticket"
-        onClose={() => setAuthOpen(false)}
-        onAuthorized={(by) => { setAuthOpen(false); toast.info('Autorizado', `Por ${by}.`); doPrint(); }}
-      />
     </div>
   );
 }

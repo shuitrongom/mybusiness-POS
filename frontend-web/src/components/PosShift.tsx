@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { LockKeyhole, Wallet, DoorOpen, Check, RefreshCw, BadgeCheck, Moon, Sunrise } from 'lucide-react';
+import { LockKeyhole, Wallet, DoorOpen, Check, BadgeCheck, Moon, Sunrise } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
-import { PrintableVoucher } from '@/components/PrintableVoucher';
-import { type VoucherData } from '@/components/Voucher';
 import { InfoBanner } from '@/components/InfoBanner';
+import { DaySummaryModal, type DaySummary } from '@/components/DaySummaryModal';
 import '@/pages/pos.css';
 
 /** Modo de cierre de caja: relevo intermedio (no manda sobrante a merma) o fin de jornada (sí). */
@@ -207,39 +206,25 @@ function OpenShiftModal({ open, branchId, onOpened }: { open: boolean; branchId:
   );
 }
 
+/** Corte Z que devuelve POST /shifts/{id}/close (solo para la bitácora en BD, sin impresión). */
 interface Closure {
   openingFloat: number; cashSales: number; cardSales: number; transferSales: number;
-  cashIn: number; cashOut: number; expectedCash: number; countedCash: number; difference: number;
+  voucherSales: number; cashIn: number; cashOut: number; expectedCash: number;
+  countedCash: number; difference: number;
 }
 
-/** Modal de cierre/entrega de caja con arqueo y ADVERTENCIA clara de que no podrá vender después. */
+/**
+ * Modal de cierre/entrega de caja con arqueo y ADVERTENCIA clara de que no podrá vender después.
+ * El cierre NO imprime nada (ahorro de papel): solo registra el corte en BD y, al terminar, muestra
+ * un resumen premium del día (DaySummaryModal) con la actividad de la jornada de la cajera.
+ */
 function CloseShiftModal({ open, shift, onClose, onClosed }:
   { open: boolean; shift: ActiveShift; onClose: () => void; onClosed: () => void }) {
   const [counted, setCounted] = useState('');
   const [busy, setBusy] = useState(false);
-  const [closure, setClosure] = useState<Closure | null>(null);
-  const [voucher, setVoucher] = useState<VoucherData | null>(null);
-
-  const buildVoucher = (c: Closure): VoucherData => ({
-    title: 'CORTE DE CAJA Z',
-    storeName: shift.registerName ?? 'Caja',
-    folio: `Z-${shift.shiftId}`,
-    dateTime: new Date(),
-    branchName: shift.registerName,
-    rows: [
-      { label: 'Fondo inicial', value: money(c.openingFloat) },
-      { label: 'Ventas efectivo', value: money(c.cashSales) },
-      { label: 'Ventas tarjeta', value: money(c.cardSales) },
-      { label: 'Ventas transferencia', value: money(c.transferSales) },
-      { label: 'Entradas de efectivo', value: money(c.cashIn) },
-      { label: 'Salidas / retiros', value: `-${money(c.cashOut)}` },
-      { label: 'Efectivo esperado', value: money(c.expectedCash), strong: true },
-      { label: 'Efectivo contado', value: money(c.countedCash), strong: true },
-      { label: 'Diferencia', value: money(c.difference), strong: true, danger: c.difference !== 0 },
-    ],
-    signature: true,
-    footer: 'Conserva este corte como respaldo del turno.',
-  });
+  // Tras el cierre: resumen del día (GET /shifts/my-day) + modo con el que se cerró, para el modal.
+  const [summary, setSummary] = useState<DaySummary | null>(null);
+  const [closedMode, setClosedMode] = useState<CloseMode>('TURNO');
 
   const doClose = async (mode: CloseMode) => {
     setBusy(true);
@@ -247,88 +232,81 @@ function CloseShiftModal({ open, shift, onClose, onClosed }:
       const { data } = await api.post<Closure>(`/shifts/${shift.shiftId}/close`, {
         countedCash: Number(counted) || 0, mode,
       });
-      setClosure(data);
-      // Imprime automáticamente el comprobante del corte Z en la impresora de tickets.
-      setVoucher(buildVoucher(data));
-      // Registra la evidencia del corte Z (bitácora de comprobantes para el dueño).
+      // Registra la evidencia del corte Z (bitácora de comprobantes para el dueño). SIN impresión.
       api.post('/documents', {
         docType: 'CUT_Z', folio: `Z-${shift.shiftId}`, title: 'Corte de caja Z',
         shiftId: shift.shiftId, branchId: shift.branchId, amount: data.expectedCash, reprint: false,
         payload: { ...data, registerName: shift.registerName, closeMode: mode },
       }).catch(() => { });
+      // El resumen completo del día (# ventas, unidades, ticket, split) vive en /shifts/my-day
+      // (misma fuente del dashboard del cajero); /close no trae esos agregados. Si fallara, se
+      // arma un resumen mínimo con lo que sí devolvió /close para no dejar al usuario sin cierre.
+      const day = await api.get<DaySummary>('/shifts/my-day')
+        .then((r) => (r.status === 204 || !r.data ? null : r.data))
+        .catch(() => null);
+      setClosedMode(mode);
+      setSummary(day ?? {
+        registerName: shift.registerName,
+        openingFloat: data.openingFloat,
+        cashSales: data.cashSales, cardSales: data.cardSales, transferSales: data.transferSales,
+        voucherSales: data.voucherSales ?? 0, creditSales: 0,
+        cashIn: data.cashIn, cashOut: data.cashOut,
+        expectedCash: data.expectedCash, totalSales: 0, salesCount: 0, units: 0, averageTicket: 0,
+        countedCash: data.countedCash, difference: data.difference,
+      });
       toast.success(
         mode === 'FIN_DIA' ? 'Fin del día cerrado' : 'Turno cerrado',
         mode === 'FIN_DIA'
-          ? 'Se generó e imprimió tu corte Z y el pan sobrante pasó a merma. Ya no podrás vender más hoy.'
-          : 'Se generó e imprimió tu corte Z. El pan sobrante queda vendible para la siguiente cajera.',
+          ? 'Se generó tu corte Z y el pan sobrante pasó a merma. Ya no podrás vender más hoy.'
+          : 'Se generó tu corte Z. El pan sobrante queda vendible para la siguiente cajera.',
       );
     } catch {
       toast.error('No se pudo cerrar la caja', 'Inténtalo de nuevo.');
     } finally { setBusy(false); }
   };
 
+  // Tras cerrar con éxito: modal premium del día (sin impresión). "Entendido" bloquea el POS.
+  if (summary) {
+    return <DaySummaryModal summary={summary} mode={closedMode} onDone={onClosed} />;
+  }
+
   return (
     <AnimatePresence>
       {open && (
-        <motion.div className="pos-modal-overlay" onClick={closure ? undefined : onClose}
+        <motion.div className="pos-modal-overlay" onClick={onClose}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
           <motion.div className="pos-modal pos-modal-sm" onClick={(e) => e.stopPropagation()}
             initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}>
             <div className="pos-modal-head">
               <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><DoorOpen size={18} /> Cerrar / entregar caja</h3>
-              {!closure && <button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button>}
+              <button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button>
             </div>
 
-            {!closure ? (
-              <>
-                <div style={{ padding: 'var(--space-4) var(--space-5)', display: 'grid', gap: 'var(--space-3)' }}>
-                  <label className="field"><span>Efectivo contado en caja (arqueo)</span>
-                    <input type="number" step="0.01" min={0} value={counted} onChange={(e) => setCounted(e.target.value)} autoFocus />
-                  </label>
-                  <InfoBanner icon={<Sunrise size={18} />} title="Cerrar turno (relevo)" tone="sky">
-                    Hace tu corte y cierra tu turno. El pan que quede sigue disponible para la
-                    siguiente cajera (no pasa a merma). Hoy ya no podrás vender.
-                  </InfoBanner>
-                  <InfoBanner icon={<Moon size={18} />} title="Cerrar fin del día" tone="amber">
-                    Hace tu corte <strong>y manda el pan sobrante a merma automáticamente</strong>.
-                    Úsalo solo en el ÚLTIMO cierre del día. Hoy ya no podrás vender.
-                  </InfoBanner>
-                </div>
-                <div className="pos-modal-actions pos-close-actions">
-                  <button className="btn-ghost" onClick={onClose}>Cancelar</button>
-                  <button className="pos-confirm pos-confirm-sky" onClick={() => doClose('TURNO')} disabled={busy}>
-                    <Sunrise size={15} /> {busy ? 'Cerrando…' : 'Cerrar turno (relevo)'}
-                  </button>
-                  <button className="pos-confirm pos-confirm-amber" onClick={() => doClose('FIN_DIA')} disabled={busy}>
-                    <Moon size={15} /> {busy ? 'Cerrando…' : 'Cerrar fin del día'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ padding: 'var(--space-4) var(--space-5)' }} className="pos-closure">
-                  <div><span>Fondo inicial</span><strong>{money(closure.openingFloat)}</strong></div>
-                  <div><span>Ventas efectivo</span><strong>{money(closure.cashSales)}</strong></div>
-                  <div><span>Ventas tarjeta</span><strong>{money(closure.cardSales)}</strong></div>
-                  <div><span>Entradas / salidas</span><strong>{money(closure.cashIn)} / {money(closure.cashOut)}</strong></div>
-                  <div><span>Efectivo esperado</span><strong>{money(closure.expectedCash)}</strong></div>
-                  <div><span>Efectivo contado</span><strong>{money(closure.countedCash)}</strong></div>
-                  <div className={closure.difference === 0 ? '' : 'pos-closure-diff'}>
-                    <span>Diferencia</span><strong>{money(closure.difference)}</strong>
-                  </div>
-                </div>
-                <div className="pos-modal-actions">
-                  <button className="btn-ghost" onClick={() => closure && setVoucher(buildVoucher(closure))}>
-                    <DoorOpen size={15} /> Reimprimir corte
-                  </button>
-                  <button className="pos-confirm" onClick={onClosed}><RefreshCw size={15} /> Entendido</button>
-                </div>
-              </>
-            )}
+            <div style={{ padding: 'var(--space-4) var(--space-5)', display: 'grid', gap: 'var(--space-3)' }}>
+              <label className="field"><span>Efectivo contado en caja (arqueo)</span>
+                <input type="number" step="0.01" min={0} value={counted} onChange={(e) => setCounted(e.target.value)} autoFocus />
+              </label>
+              <InfoBanner icon={<Sunrise size={18} />} title="Cerrar turno (relevo)" tone="sky">
+                Hace tu corte y cierra tu turno. El pan que quede sigue disponible para la
+                siguiente cajera (no pasa a merma). Hoy ya no podrás vender.
+              </InfoBanner>
+              <InfoBanner icon={<Moon size={18} />} title="Cerrar fin del día" tone="amber">
+                Hace tu corte <strong>y manda el pan sobrante a merma automáticamente</strong>.
+                Úsalo solo en el ÚLTIMO cierre del día. Hoy ya no podrás vender.
+              </InfoBanner>
+            </div>
+            <div className="pos-modal-actions pos-close-actions">
+              <button className="btn-ghost" onClick={onClose}>Cancelar</button>
+              <button className="pos-confirm pos-confirm-sky" onClick={() => doClose('TURNO')} disabled={busy}>
+                <Sunrise size={15} /> {busy ? 'Cerrando…' : 'Cerrar turno (relevo)'}
+              </button>
+              <button className="pos-confirm pos-confirm-amber" onClick={() => doClose('FIN_DIA')} disabled={busy}>
+                <Moon size={15} /> {busy ? 'Cerrando…' : 'Cerrar fin del día'}
+              </button>
+            </div>
           </motion.div>
         </motion.div>
       )}
-      {voucher && <PrintableVoucher data={voucher} onDone={() => setVoucher(null)} />}
     </AnimatePresence>
   );
 }
