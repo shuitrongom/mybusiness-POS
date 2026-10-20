@@ -27,10 +27,12 @@ public class JdbcSaleRepository implements SaleRepository {
                                 INSERT INTO sale
                                     (folio, branch_id, cash_register_id, shift_id, cashier, salesperson,
                                      customer_id, price_list_id, subtotal, discount, global_discount, tax,
-                                     total, amount_paid, on_credit, note, status, sale_type, idempotency_key)
+                                     total, amount_paid, on_credit, note, status, sale_type, idempotency_key,
+                                     is_test)
                                 VALUES (:folio, :branch, :reg, :shift, :cashier, :salesperson,
                                         :customer, :priceList, :subtotal, :discount, :globalDiscount, 0,
-                                        :total, :amountPaid, :onCredit, :note, :status, :saleType, :idem)
+                                        :total, :amountPaid, :onCredit, :note, :status, :saleType, :idem,
+                                        :isTest)
                                 RETURNING id
                                 """)
                                 .param("folio", sale.getFolio())
@@ -51,6 +53,7 @@ public class JdbcSaleRepository implements SaleRepository {
                                 .param("status", sale.getStatus().name())
                                 .param("saleType", sale.getSaleType().name())
                                 .param("idem", sale.getIdempotencyKey())
+                                .param("isTest", sale.isTest())
                                 .query(Long.class)
                                 .single();
 
@@ -229,10 +232,14 @@ public class JdbcSaleRepository implements SaleRepository {
         }
 
         @Override
-        public java.util.List<RecentSale> recentSales(int limit, String q) {
+        public java.util.List<RecentSale> recentSales(int limit, String q, String scope) {
                 // Normaliza el tope (defensa: <=0 -> 20, máximo 50) para no devolver listados
                 // enormes al selector de devoluciones.
                 int lim = (limit <= 0) ? 20 : Math.min(limit, 50);
+                // El scope ya viene resuelto por el controller; null/desconocido = BOTH.
+                String testPredicate = com.mybusinesssilva.sales.application.ReportScope
+                                .resolve(scope == null ? "both" : scope, true)
+                                .sqlPredicate("s.is_test");
                 // Aislamiento por tenant: lo aplica RLS sobre `sale` (igual que el historial de
                 // devoluciones). No se filtra por sucursal manualmente; punto de extensión si
                 // en
@@ -263,7 +270,7 @@ public class JdbcSaleRepository implements SaleRepository {
                                            AS items_preview
                                 FROM sale s
                                 LEFT JOIN customer c ON c.id = s.customer_id
-                                WHERE s.status = 'COMPLETED'
+                                WHERE s.status = 'COMPLETED'""" + testPredicate + """
                                   AND (CAST(:q AS text) IS NULL
                                        OR s.folio ILIKE '%' || CAST(:q AS text) || '%'
                                        OR c.name ILIKE '%' || CAST(:q AS text) || '%')

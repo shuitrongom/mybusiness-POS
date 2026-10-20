@@ -1,0 +1,50 @@
+/* Selector de scope (modo prueba): chips/tabs premium, coherentes con diseno-premium. */
+.scope-selector {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.scope-chip {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.scope-chip:hover {
+  color: var(--text);
+  border-color: var(--brand-600);
+}
+
+.scope-chip.is-active {
+  background: var(--surface-1, #fff);
+  color: var(--text);
+  border-color: var(--brand-600);
+  box-shadow: 0 2px 8px rgba(46, 110, 242, 0.18);
+}
+
+/* Punto de acento por tono en el chip activo (verde ok, ámbar prueba, gris neutral). */
+.scope-chip.is-active::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+
+.scope-chip.tone-green.is-active::before { background: #16a34a; }
+.scope-chip.tone-amber.is-active::before { background: #d97706; }
+.scope-chip.tone-neutral.is-active::before { background: #9ca3af; }

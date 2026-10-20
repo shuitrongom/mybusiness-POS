@@ -20,6 +20,7 @@ export function saleTicketHtml(settings: TicketSettings, d: TicketData): string 
   let h = '<div class="t-center">';
   if (settings.showLogo && settings.logoUrl) h += `<img class="t-logo" src="${esc(settings.logoUrl)}" />`;
   h += `<div class="t-store">${esc(store)}</div>`;
+  if (d.isTest) h += `<div class="t-test">** VENTA DE PRUEBA **</div>`;
   if (settings.headerMessage) h += `<div class="t-tag">${esc(settings.headerMessage)}</div>`;
   if (settings.showAddress && settings.address) h += `<div class="t-info">${esc(settings.address)}</div>`;
   if (settings.showPhone && settings.phone) h += `<div class="t-info">Tel. ${esc(settings.phone)}</div>`;

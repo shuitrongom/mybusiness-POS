@@ -203,6 +203,22 @@ public class ModuleAccessEvaluator {
         return user.isSuperAdmin() || isOwnerOrAdmin(user);
     }
 
+    /**
+     * Administración del MODO PRUEBA (activar/desactivar): solo el DUEÑO (rol
+     * {@code OWNER}); ni ADMIN ni cajeras. Es una decisión del negocio que corta
+     * ventas de práctica a reales, por eso se reserva al dueño. El Super Admin
+     * (plataforma) también puede, por consistencia con el resto de evaluadores.
+     *
+     * @return true si el usuario puede activar/desactivar el modo prueba
+     */
+    public boolean canManageTestMode() {
+        AuthenticatedUser user = currentUser();
+        if (user == null) {
+            return false;
+        }
+        return user.isSuperAdmin() || user.hasRole(Roles.OWNER);
+    }
+
     private boolean isOwnerOrAdmin(AuthenticatedUser user) {
         return user.hasRole(Roles.OWNER) || user.hasRole(Roles.ADMIN);
     }

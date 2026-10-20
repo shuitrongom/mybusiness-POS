@@ -37,6 +37,8 @@ export interface TicketData {
   received?: number;
   change?: number;
   offline?: boolean;
+  /** true si la venta se registró en MODO PRUEBA: el ticket lo marca visiblemente. */
+  isTest?: boolean;
 }
 
 const money = (n: number) =>
@@ -66,6 +68,7 @@ export function Ticket({ settings, data }: { settings: TicketSettings; data: Tic
           <img src={settings.logoUrl} alt="Logo" className="ticket-logo" />
         )}
         <div className="ticket-store">{storeName}</div>
+        {data.isTest && <div className="ticket-test">** VENTA DE PRUEBA **</div>}
         {settings.headerMessage && <div className="ticket-tagline">{settings.headerMessage}</div>}
         {settings.showAddress && settings.address && <div className="ticket-info">{settings.address}</div>}
         {settings.showPhone && settings.phone && <div className="ticket-info">Tel. {settings.phone}</div>}

@@ -36,15 +36,29 @@ public class SaleController {
         private final SaleService saleService;
         private final SalesReturnService salesReturnService;
         private final com.mybusinesssilva.sales.domain.port.out.SaleRepository saleRepository;
+        private final com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort testModeQueryPort;
         private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
         public SaleController(SaleService saleService, SalesReturnService salesReturnService,
                         com.mybusinesssilva.sales.domain.port.out.SaleRepository saleRepository,
+                        com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort testModeQueryPort,
                         org.springframework.jdbc.core.simple.JdbcClient jdbc) {
                 this.saleService = saleService;
                 this.salesReturnService = salesReturnService;
                 this.saleRepository = saleRepository;
+                this.testModeQueryPort = testModeQueryPort;
                 this.jdbc = jdbc;
+        }
+
+        /**
+         * Resuelve el scope efectivo (modo prueba) para los reportes de este
+         * controller: usa el pedido si viene, o el default por modo (both si el modo
+         * prueba está ON, real si OFF), y lo devuelve como texto canónico.
+         */
+        private String resolveScope(String scope) {
+                return com.mybusinesssilva.sales.application.ReportScope
+                                .resolve(scope, testModeQueryPort.isTestModeActive())
+                                .name().toLowerCase(java.util.Locale.ROOT);
         }
 
         /**
@@ -73,9 +87,10 @@ public class SaleController {
         @org.springframework.web.bind.annotation.GetMapping("/recent")
         public List<java.util.Map<String, Object>> recentSales(
                         @RequestParam(value = "limit", required = false, defaultValue = "20") int limit,
-                        @RequestParam(value = "q", required = false) String q) {
+                        @RequestParam(value = "q", required = false) String q,
+                        @RequestParam(value = "scope", required = false) String scope) {
                 String query = (q == null || q.isBlank()) ? null : q.trim();
-                return saleRepository.recentSales(limit, query).stream()
+                return saleRepository.recentSales(limit, query, resolveScope(scope)).stream()
                                 .map(s -> {
                                         java.util.Map<String, Object> m = new java.util.HashMap<>();
                                         m.put("saleId", s.saleId());
@@ -196,8 +211,9 @@ public class SaleController {
         /** Historial de devoluciones recientes. */
         @org.springframework.web.bind.annotation.GetMapping("/returns")
         public List<java.util.Map<String, Object>> listReturns(
-                        @RequestParam(value = "limit", required = false, defaultValue = "50") int limit) {
-                return salesReturnService.listRecent(limit);
+                        @RequestParam(value = "limit", required = false, defaultValue = "50") int limit,
+                        @RequestParam(value = "scope", required = false) String scope) {
+                return salesReturnService.listRecent(limit, resolveScope(scope));
         }
 
         /** Registra una cotizacion o apartado (no cobra ni descuenta inventario). */

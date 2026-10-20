@@ -48,6 +48,14 @@ export function isBusinessAdmin(claims: TokenClaims | null): boolean {
   return !!claims && (claims.roles.includes('OWNER') || claims.roles.includes('ADMIN'));
 }
 
+/**
+ * @returns true si el usuario es EXCLUSIVAMENTE el Dueño (rol OWNER). A diferencia de
+ * {@link isBusinessAdmin}, NO incluye ADMIN: el MODO PRUEBA lo administra solo el dueño.
+ */
+export function isOwner(claims: TokenClaims | null): boolean {
+  return !!claims && claims.roles.includes('OWNER');
+}
+
 /** @returns true si el usuario es cajero (rol CASHIER). */
 export function isCashier(claims: TokenClaims | null): boolean {
   return !!claims && claims.roles.includes('CASHIER') && !isBusinessAdmin(claims);

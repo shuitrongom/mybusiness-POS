@@ -95,8 +95,11 @@ public interface SaleRepository {
          * @param q     texto libre opcional ({@code null} = sin filtro); filtra por
          *              folio
          *              o nombre de cliente (ILIKE). Nullable → se compara con CAST.
+         * @param scope alcance de modo prueba ya resuelto ({@code real|test|both}); el
+         *              controller resuelve el default. {@code null} / desconocido se
+         *              trata como {@code both} (sin filtro por {@code is_test}).
          */
-        List<RecentSale> recentSales(int limit, String q);
+        List<RecentSale> recentSales(int limit, String q, String scope);
 
         /**
          * Resumen de una venta reciente para el selector de devoluciones.

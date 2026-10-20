@@ -10,6 +10,7 @@ import com.mybusinesssilva.sales.domain.port.out.CustomerCreditPort;
 import com.mybusinesssilva.sales.domain.port.out.PricingQueryPort;
 import com.mybusinesssilva.sales.domain.port.out.ProductCatalogQueryPort;
 import com.mybusinesssilva.sales.domain.port.out.SaleRepository;
+import com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -57,18 +58,21 @@ public class SaleService {
     private final ProductCatalogQueryPort productCatalogQueryPort;
     private final PricingQueryPort pricingQueryPort;
     private final BakeryUseCase bakeryUseCase;
+    private final TestModeQueryPort testModeQueryPort;
 
     public SaleService(SaleRepository saleRepository, InventoryPort inventoryPort,
             CustomerCreditPort customerCreditPort,
             ProductCatalogQueryPort productCatalogQueryPort,
             PricingQueryPort pricingQueryPort,
-            BakeryUseCase bakeryUseCase) {
+            BakeryUseCase bakeryUseCase,
+            TestModeQueryPort testModeQueryPort) {
         this.saleRepository = saleRepository;
         this.inventoryPort = inventoryPort;
         this.customerCreditPort = customerCreditPort;
         this.productCatalogQueryPort = productCatalogQueryPort;
         this.pricingQueryPort = pricingQueryPort;
         this.bakeryUseCase = bakeryUseCase;
+        this.testModeQueryPort = testModeQueryPort;
     }
 
     /**
@@ -139,6 +143,13 @@ public class SaleService {
         Sale sale = Sale.complete(cmd.branchId(), cmd.cashRegisterId(), cmd.shiftId(), cmd.cashier(),
                 cmd.salesperson(), cmd.customerId(), cmd.priceListId(), globalDiscount, cmd.note(),
                 cmd.onCredit(), lines, cmd.payments(), cmd.idempotencyKey());
+
+        // MODO PRUEBA: la decisión es server-side (el POS no la manda). Si el negocio
+        // está en test_mode, la venta nace is_test=true (práctica, Opción B: se
+        // conserva como histórico). Se lee por vía ligera (admin.business del tenant),
+        // sin acoplar inventario. Solo para ventas NUEVAS: un reenvío idempotente ya
+        // devolvió el id existente arriba (short-circuit), no se re-marca.
+        sale.markTest(testModeQueryPort.isTestModeActive());
 
         // (4) Insert con red de seguridad contra la colisión concurrente de la UNIQUE.
         try {

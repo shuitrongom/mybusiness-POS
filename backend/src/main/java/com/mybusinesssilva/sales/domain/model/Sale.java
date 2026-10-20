@@ -35,6 +35,12 @@ public class Sale {
     private final List<Payment> payments;
     private final String idempotencyKey;
     private SaleStatus status;
+    /**
+     * Marca de VENTA DE PRUEBA (modo prueba). La decide el servicio server-side a
+     * partir de {@code admin.business.test_mode}; se setea tras construir el
+     * agregado (como el folio/id), por eso es mutable y NO viaja en las factories.
+     */
+    private boolean test;
 
     private Sale(long branchId, Long cashRegisterId, Long shiftId, String cashier,
             String salesperson, Long customerId, short priceListId,
@@ -273,5 +279,21 @@ public class Sale {
 
     public void markVoided() {
         this.status = SaleStatus.VOIDED;
+    }
+
+    /**
+     * @return {@code true} si la venta se registró en MODO PRUEBA (práctica); se
+     *         conserva como histórico pero se separa de los reportes reales.
+     */
+    public boolean isTest() {
+        return test;
+    }
+
+    /**
+     * Marca la venta como de prueba (o no). Lo decide el servicio server-side según
+     * el {@code test_mode} del negocio, tras ensamblar el agregado.
+     */
+    public void markTest(boolean test) {
+        this.test = test;
     }
 }

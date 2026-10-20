@@ -33,12 +33,23 @@ public class ShiftService {
         private final JdbcClient jdbc;
         private final BakeryUseCase bakeryUseCase;
         private final ModuleAccessEvaluator moduleAccess;
+        private final com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort testModeQueryPort;
 
         public ShiftService(JdbcClient jdbc, BakeryUseCase bakeryUseCase,
-                        ModuleAccessEvaluator moduleAccess) {
+                        ModuleAccessEvaluator moduleAccess,
+                        com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort testModeQueryPort) {
                 this.jdbc = jdbc;
                 this.bakeryUseCase = bakeryUseCase;
                 this.moduleAccess = moduleAccess;
+                this.testModeQueryPort = testModeQueryPort;
+        }
+
+        /**
+         * Resuelve el {@link ReportScope} efectivo de un reporte: usa el scope pedido
+         * si viene, o el default por modo (BOTH si test_mode ON, REAL si OFF).
+         */
+        private ReportScope resolveScope(String scope) {
+                return ReportScope.resolve(scope, testModeQueryPort.isTestModeActive());
         }
 
         /**
@@ -174,13 +185,22 @@ public class ShiftService {
          * {@code normalSalesTotal + specialSalesTotal == totalSales}.
          */
         public java.util.Optional<java.util.Map<String, Object>> myShiftSummary(String cashier) {
+                return myShiftSummary(cashier, null);
+        }
+
+        /**
+         * Igual que {@link #myShiftSummary(String)} pero filtrando las ventas del
+         * resumen por el {@link ReportScope} pedido (real/test/both). Default por modo
+         * si {@code scope} es {@code null}.
+         */
+        public java.util.Optional<java.util.Map<String, Object>> myShiftSummary(String cashier, String scope) {
                 java.util.Optional<java.util.Map<String, Object>> activeOpt = activeShiftOf(cashier);
                 if (activeOpt.isEmpty()) {
                         return java.util.Optional.empty();
                 }
                 java.util.Map<String, Object> active = activeOpt.get();
                 long shiftId = ((Number) active.get("shiftId")).longValue();
-                return java.util.Optional.of(summaryForShift(shiftId, active));
+                return java.util.Optional.of(summaryForShift(shiftId, active, resolveScope(scope)));
         }
 
         /**
@@ -195,6 +215,15 @@ public class ShiftService {
          * siga viendo cómo le fue en el día, sin poder vender ni reabrir caja.
          */
         public java.util.Optional<java.util.Map<String, Object>> myDaySummary(String cashier) {
+                return myDaySummary(cashier, null);
+        }
+
+        /**
+         * Igual que {@link #myDaySummary(String)} pero filtrando las ventas del resumen
+         * por el {@link ReportScope} pedido (real/test/both). Default por modo si
+         * {@code scope} es {@code null}.
+         */
+        public java.util.Optional<java.util.Map<String, Object>> myDaySummary(String cashier, String scope) {
                 java.util.Optional<java.util.Map<String, Object>> lastOpt = jdbc.sql("""
                                 SELECT s.id, s.cash_register_id, s.branch_id, s.opening_float, s.opened_at,
                                        s.business_date, s.status, s.counted_cash, s.closed_at,
@@ -226,7 +255,7 @@ public class ShiftService {
                 java.util.Map<String, Object> meta = lastOpt.get();
                 long shiftId = ((Number) meta.get("shiftId")).longValue();
                 boolean closed = "CLOSED".equals(meta.get("status"));
-                java.util.Map<String, Object> out = summaryForShift(shiftId, meta);
+                java.util.Map<String, Object> out = summaryForShift(shiftId, meta, resolveScope(scope));
                 out.put("closed", closed);
                 out.put("closedAt", meta.get("closedAt"));
                 if (closed) {
@@ -251,32 +280,37 @@ public class ShiftService {
          * unidades, top y últimas ventas.
          */
         private java.util.Map<String, Object> summaryForShift(long shiftId,
-                        java.util.Map<String, Object> meta) {
+                        java.util.Map<String, Object> meta, ReportScope scope) {
+                // Predicados de scope (modo prueba) sobre la venta, según el alias usado en
+                // cada consulta ("s" o la tabla sin alias). Vacío para BOTH.
+                String onSale = scope.sqlPredicate("s.is_test");
+                String onSaleBare = scope.sqlPredicate("is_test");
+
                 BigDecimal openingFloat = jdbc.sql("SELECT opening_float FROM shift WHERE id = :id")
                                 .param("id", shiftId).query(BigDecimal.class).single();
-                BigDecimal cashSales = sumSalesByMethod(shiftId, "CASH");
-                BigDecimal cardSales = sumSalesByMethod(shiftId, "CARD");
-                BigDecimal transferSales = sumSalesByMethod(shiftId, "TRANSFER");
-                BigDecimal voucherSales = sumSalesByMethod(shiftId, "VOUCHER");
+                BigDecimal cashSales = sumSalesByMethod(shiftId, "CASH", scope);
+                BigDecimal cardSales = sumSalesByMethod(shiftId, "CARD", scope);
+                BigDecimal transferSales = sumSalesByMethod(shiftId, "TRANSFER", scope);
+                BigDecimal voucherSales = sumSalesByMethod(shiftId, "VOUCHER", scope);
                 BigDecimal cashIn = sumCashMovements(shiftId, "IN");
                 BigDecimal cashOut = sumCashMovements(shiftId, "OUT");
                 BigDecimal expectedCash = openingFloat.add(cashSales).add(cashIn).subtract(cashOut);
                 BigDecimal totalSales = cashSales.add(cardSales).add(transferSales).add(voucherSales);
 
                 Integer salesCount = jdbc.sql(
-                                "SELECT COUNT(*) FROM sale WHERE shift_id = :s AND status = 'COMPLETED'")
+                                "SELECT COUNT(*) FROM sale WHERE shift_id = :s AND status = 'COMPLETED'" + onSaleBare)
                                 .param("s", shiftId).query(Integer.class).single();
                 BigDecimal units = jdbc.sql("""
                                 SELECT COALESCE(SUM(sl.quantity), 0) FROM sale_line sl
                                 JOIN sale s ON s.id = sl.sale_id
-                                WHERE s.shift_id = :s AND s.status = 'COMPLETED'
+                                WHERE s.shift_id = :s AND s.status = 'COMPLETED'""" + onSale + """
                                 """).param("s", shiftId).query(BigDecimal.class).single();
                 BigDecimal creditSales = jdbc.sql("""
                                 SELECT COALESCE(SUM(total), 0) FROM sale
-                                WHERE shift_id = :s AND status = 'COMPLETED' AND on_credit = TRUE
+                                WHERE shift_id = :s AND status = 'COMPLETED' AND on_credit = TRUE""" + onSaleBare + """
                                 """).param("s", shiftId).query(BigDecimal.class).optional().orElse(BigDecimal.ZERO);
 
-                TypeSplit split = salesTypeSplit(shiftId);
+                TypeSplit split = salesTypeSplit(shiftId, scope);
 
                 BigDecimal avgTicket = (salesCount == null || salesCount == 0)
                                 ? BigDecimal.ZERO
@@ -284,7 +318,7 @@ public class ShiftService {
 
                 java.util.List<java.util.Map<String, Object>> lastSales = jdbc.sql("""
                                 SELECT id, folio, total, created_at FROM sale
-                                WHERE shift_id = :s AND status = 'COMPLETED'
+                                WHERE shift_id = :s AND status = 'COMPLETED'""" + onSaleBare + """
                                 ORDER BY created_at DESC LIMIT 8
                                 """)
                                 .param("s", shiftId)
@@ -304,7 +338,7 @@ public class ShiftService {
                                 FROM sale_line sl
                                 JOIN sale s ON s.id = sl.sale_id
                                 LEFT JOIN product p ON p.id = sl.product_id
-                                WHERE s.shift_id = :s AND s.status = 'COMPLETED'
+                                WHERE s.shift_id = :s AND s.status = 'COMPLETED'""" + onSale + """
                                 GROUP BY COALESCE(p.name, sl.description)
                                 ORDER BY qty DESC LIMIT 5
                                 """)
@@ -668,15 +702,19 @@ public class ShiftService {
                                 """)
                                 .param("shift", shiftId).query(Integer.class).single();
 
+                // MODO PRUEBA: el corte (X o Z) hereda el modo vigente al momento de cortar,
+                // para que los cortes de prueba no se mezclen con los reales en reportes.
+                boolean testMode = testModeQueryPort.isTestModeActive();
+
                 long cutId = jdbc.sql("""
                                 INSERT INTO cash_cut
                                     (shift_id, cut_type, opening_float, cash_sales, card_sales, transfer_sales,
                                      voucher_sales, cash_in, cash_out, expected_cash, counted_cash, difference,
                                      sales_count, total_sales, normal_sales_count, normal_sales_total,
-                                     special_sales_count, special_sales_total, created_by)
+                                     special_sales_count, special_sales_total, created_by, is_test)
                                 VALUES (:shift, :type, :float, :cash, :card, :transfer, :voucher, :in, :out,
                                         :expected, :counted, :diff, :count, :total, :nCount, :nTotal,
-                                        :sCount, :sTotal, :actor)
+                                        :sCount, :sTotal, :actor, :isTest)
                                 RETURNING id
                                 """)
                                 .param("shift", shiftId).param("type", type).param("float", openingFloat)
@@ -686,23 +724,35 @@ public class ShiftService {
                                 .param("diff", difference).param("count", salesCount).param("total", totalSales)
                                 .param("nCount", split.normalCount()).param("nTotal", split.normalTotal())
                                 .param("sCount", split.specialCount()).param("sTotal", split.specialTotal())
-                                .param("actor", actor)
+                                .param("actor", actor).param("isTest", testMode)
                                 .query(Long.class).single();
 
                 jdbc.sql("UPDATE cash_cut SET folio = :folio WHERE id = :id")
                                 .param("folio", type + "-" + cutId).param("id", cutId).update();
         }
 
-        /** Lista los cortes recientes (documentos X/Z) para consulta/reimpresión. */
+        /** Compatibilidad: cortes recientes sin filtro de scope (default por modo). */
         public java.util.List<java.util.Map<String, Object>> listCuts(int limit) {
+                return listCuts(limit, null);
+        }
+
+        /**
+         * Lista los cortes recientes (documentos X/Z) para consulta/reimpresión,
+         * filtrando por el {@link ReportScope} pedido sobre {@code cash_cut.is_test}
+         * (real/test/both). Default por modo si {@code scope} es {@code null}.
+         */
+        public java.util.List<java.util.Map<String, Object>> listCuts(int limit, String scope) {
                 int max = limit <= 0 ? 50 : Math.min(limit, 200);
+                ReportScope resolved = resolveScope(scope);
                 return jdbc.sql("""
                                 SELECT id, folio, shift_id, cut_type, opening_float, cash_sales, card_sales,
                                        transfer_sales, voucher_sales, cash_in, cash_out, expected_cash,
                                        counted_cash, difference, sales_count, total_sales,
                                        normal_sales_count, normal_sales_total, special_sales_count,
                                        special_sales_total, created_by, created_at
-                                FROM cash_cut ORDER BY created_at DESC LIMIT :max
+                                FROM cash_cut
+                                WHERE 1 = 1""" + resolved.sqlPredicate("is_test") + """
+                                ORDER BY created_at DESC LIMIT :max
                                 """)
                                 .param("max", max)
                                 .query((rs, n) -> {
@@ -734,12 +784,22 @@ public class ShiftService {
                                 .list();
         }
 
+        /**
+         * Suma por método SIN filtro de scope (BOTH): el corte X/Z refleja TODO lo
+         * ocurrido en el turno, independientemente del modo prueba. Lo usan
+         * {@code closeShift}/{@code partialCut}.
+         */
         private BigDecimal sumSalesByMethod(long shiftId, String method) {
+                return sumSalesByMethod(shiftId, method, ReportScope.BOTH);
+        }
+
+        private BigDecimal sumSalesByMethod(long shiftId, String method, ReportScope scope) {
                 return jdbc.sql("""
                                 SELECT COALESCE(SUM(sp.amount), 0) FROM sale_payment sp
                                 JOIN sale s ON s.id = sp.sale_id
-                                WHERE s.shift_id = :shift AND s.status = 'COMPLETED' AND sp.method = :method
-                                """)
+                                WHERE s.shift_id = :shift AND s.status = 'COMPLETED' AND sp.method = :method"""
+                                + scope.sqlPredicate("s.is_test") + """
+                                                """)
                                 .param("shift", shiftId)
                                 .param("method", method)
                                 .query(BigDecimal.class)
@@ -769,6 +829,10 @@ public class ShiftService {
          * incluye ventas COMPLETED sin pagos (cuentan con total 0).
          */
         private TypeSplit salesTypeSplit(long shiftId) {
+                return salesTypeSplit(shiftId, ReportScope.BOTH);
+        }
+
+        private TypeSplit salesTypeSplit(long shiftId, ReportScope scope) {
                 return jdbc.sql("""
                                 SELECT
                                   COUNT(DISTINCT s.id) FILTER (WHERE s.sale_type = 'NORMAL')  AS n_count,
@@ -779,8 +843,9 @@ public class ShiftService {
                                 LEFT JOIN sale_payment sp
                                        ON sp.sale_id = s.id
                                       AND sp.method IN ('CASH','CARD','TRANSFER','VOUCHER')
-                                WHERE s.shift_id = :s AND s.status = 'COMPLETED'
-                                """)
+                                WHERE s.shift_id = :s AND s.status = 'COMPLETED'""" + scope.sqlPredicate("s.is_test")
+                                + """
+                                                """)
                                 .param("s", shiftId)
                                 .query((rs, n) -> new TypeSplit(
                                                 rs.getInt("n_count"), rs.getBigDecimal("n_total"),

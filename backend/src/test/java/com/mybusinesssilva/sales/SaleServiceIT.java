@@ -403,6 +403,47 @@ class SaleServiceIT extends AbstractIntegrationTest {
                 assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("8");
         }
 
+        @Test
+        void testModeMarksNewSalesAndTogglingOffMarksThemReal() {
+                long productId = setup("PanPrueba");
+                setPrice(productId, new BigDecimal("10.00"));
+                inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
+                                new BigDecimal("100"), "COMPRA", "tester");
+
+                String tenant = TenantContext.getTenantId();
+                JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+
+                // (1) Modo prueba ON: la venta nueva nace is_test = true.
+                setTestMode(tenant, true);
+                SaleService.SaleResult rTest = saleService.registerSale(toCommand(Sale.complete(
+                                branchId, null, null, "cajero", null,
+                                List.of(new SaleLine(productId, "PanPrueba", new BigDecimal("1"),
+                                                new BigDecimal("10.00"), BigDecimal.ZERO)),
+                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("10.00"))),
+                                "idem-test")));
+                Boolean isTestFlag = jdbc.queryForObject(
+                                "SELECT is_test FROM sale WHERE id = ?", Boolean.class, rTest.saleId());
+                assertThat(isTestFlag).isTrue();
+
+                // (2) Modo prueba OFF: la siguiente venta nace is_test = false (real).
+                setTestMode(tenant, false);
+                SaleService.SaleResult rReal = saleService.registerSale(toCommand(Sale.complete(
+                                branchId, null, null, "cajero", null,
+                                List.of(new SaleLine(productId, "PanPrueba", new BigDecimal("1"),
+                                                new BigDecimal("10.00"), BigDecimal.ZERO)),
+                                List.of(new Payment(PaymentMethod.CASH, new BigDecimal("10.00"))),
+                                "idem-real")));
+                Boolean isRealFlag = jdbc.queryForObject(
+                                "SELECT is_test FROM sale WHERE id = ?", Boolean.class, rReal.saleId());
+                assertThat(isRealFlag).isFalse();
+        }
+
+        /** Activa/desactiva el modo prueba del negocio del tenant en la tabla admin. */
+        private void setTestMode(String schema, boolean active) {
+                new JdbcTemplate(dataSource).update(
+                                "UPDATE admin.business SET test_mode = ? WHERE schema_name = ?", active, schema);
+        }
+
         // --- helpers ---
 
         private void markEnforceStock(long productId) {

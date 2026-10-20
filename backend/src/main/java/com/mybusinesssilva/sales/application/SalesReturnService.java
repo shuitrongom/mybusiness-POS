@@ -225,13 +225,28 @@ public class SalesReturnService {
      * devoluciones).
      */
     public List<java.util.Map<String, Object>> listRecent(int limit) {
+        return listRecent(limit, null);
+    }
+
+    /**
+     * Igual que {@link #listRecent(int)} pero filtrando las devoluciones por el
+     * {@link ReportScope} (modo prueba) de su VENTA ORIGEN ({@code s.is_test}):
+     * real/test/both. El scope ya viene resuelto por el controller;
+     * null/desconocido
+     * se trata como {@code both}.
+     */
+    public List<java.util.Map<String, Object>> listRecent(int limit, String scope) {
         int max = limit <= 0 ? 50 : Math.min(limit, 200);
+        String testPredicate = ReportScope.resolve(scope == null ? "both" : scope, true)
+                .sqlPredicate("s.is_test");
         return jdbc.sql("""
                 SELECT r.id, r.folio, r.sale_id, r.total, r.refund_method, r.reason,
                        r.processed_by, r.created_at,
                        (SELECT COUNT(*) FROM sales_return_line rl WHERE rl.return_id = r.id)
                            AS item_count
                 FROM sales_return r
+                JOIN sale s ON s.id = r.sale_id
+                WHERE 1 = 1""" + testPredicate + """
                 ORDER BY r.created_at DESC
                 LIMIT :max
                 """)

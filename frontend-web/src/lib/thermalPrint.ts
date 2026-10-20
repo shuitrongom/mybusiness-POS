@@ -43,6 +43,7 @@ function ticketCss(widthMm: number): string {
     }
     .t-center { text-align: center; }
     .t-store { font-size: ${fontSize + 4}px; font-weight: 800; }
+    .t-test { font-size: ${fontSize + 1}px; font-weight: 800; letter-spacing: 1px; margin: 2px 0; border: 1px dashed #000; padding: 2px 0; }
     .t-tag { font-size: ${fontSize - 1}px; }
     .t-info { font-size: ${fontSize - 1}px; }
     .t-meta { display: flex; justify-content: space-between; gap: 6px; font-size: ${fontSize - 1}px; }

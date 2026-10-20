@@ -8,6 +8,9 @@ import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp } from '@/lib/motion';
 import { InfoBanner } from '@/components/InfoBanner';
+import { ScopeSelector, type ReportScope } from '@/components/ScopeSelector';
+import { useTestMode } from '@/lib/testMode';
+import { FlaskConical } from 'lucide-react';
 import { PrintableVoucher } from '@/components/PrintableVoucher';
 import { type VoucherData } from '@/components/Voucher';
 import '@/pages/dashboard.css';
@@ -141,21 +144,25 @@ export function ReturnsPage() {
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
   const [voucher, setVoucher] = useState<VoucherData | null>(null);
+  // Selector de scope (modo prueba): default 'both' si el modo prueba está ON, 'real' si OFF.
+  const { active: testModeActive } = useTestMode();
+  const [scopePick, setScopePick] = useState<ReportScope | null>(null);
+  const scope: ReportScope = scopePick ?? (testModeActive ? 'both' : 'real');
 
   const loadHistory = () => {
-    api.get<ReturnRow[]>('/sales/returns', { params: { limit: 20 } })
+    api.get<ReturnRow[]>('/sales/returns', { params: { limit: 20, scope } })
       .then((r) => setHistory(r.data)).catch(() => setHistory([]));
   };
   // Al entrar, carga las últimas ventas COMPLETED devolvibles para mostrarlas sin que el
   // cajero teclee nada (igual que el buscador de productos muestra la lista completa).
   const loadRecent = () => {
     setRecentLoading(true);
-    api.get<RecentSale[]>('/sales/recent', { params: { limit: 20 } })
+    api.get<RecentSale[]>('/sales/recent', { params: { limit: 20, scope } })
       .then((r) => setRecent(r.data))
       .catch(() => setRecent([]))
       .finally(() => setRecentLoading(false));
   };
-  useEffect(() => { loadHistory(); loadRecent(); }, []);
+  useEffect(() => { loadHistory(); loadRecent(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [scope]);
 
   // Carga el detalle de una venta (por folio tecleado o por id de una fila seleccionada) y
   // prepara los steppers. Reusa el flujo actual GET /sales/{id}.
@@ -278,6 +285,19 @@ export function ReturnsPage() {
           reembolso. El precio lo manda el artículo (bloqueado); solo eliges cuánto devolver de cada
           renglón.
         </InfoBanner>
+      </div>
+
+      {testModeActive && (
+        <div style={{ marginTop: 'var(--space-3)' }}>
+          <InfoBanner icon={<FlaskConical size={18} />} tone="amber" title="MODO PRUEBA">
+            Hay ventas de práctica en el sistema. Usa el filtro para ver histórico real, prueba o ambos.
+          </InfoBanner>
+        </div>
+      )}
+
+      {/* Selector informativo de histórico: real / prueba / ambos (ventas y devoluciones). */}
+      <div style={{ marginTop: 'var(--space-3)' }}>
+        <ScopeSelector value={scope} onChange={setScopePick} />
       </div>
 
       <motion.div className="card" style={{ marginTop: 'var(--space-4)' }}

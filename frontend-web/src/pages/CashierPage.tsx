@@ -8,6 +8,8 @@ import { money } from '@/lib/format';
 import { fadeInUp, pressable, staggerContainer, staggerItem } from '@/lib/motion';
 import { PrintableVoucher } from '@/components/PrintableVoucher';
 import { type VoucherData } from '@/components/Voucher';
+import { ScopeSelector, type ReportScope } from '@/components/ScopeSelector';
+import { useTestMode } from '@/lib/testMode';
 import '@/pages/dashboard.css';
 import '@/pages/products.css';
 
@@ -121,9 +123,13 @@ export function CashierPage() {
     queryFn: async () => (await api.get<CashRegister[]>('/cash-registers')).data,
   });
   const queryClient = useQueryClient();
+  // Selector de scope (modo prueba): default 'both' si el modo prueba está ON, 'real' si OFF.
+  const { active: testModeActive } = useTestMode();
+  const [scopePick, setScopePick] = useState<ReportScope | null>(null);
+  const scope: ReportScope = scopePick ?? (testModeActive ? 'both' : 'real');
   const cuts = useQuery({
-    queryKey: ['cash-cuts'],
-    queryFn: async () => (await api.get<CashCut[]>('/shifts/cuts', { params: { limit: 15 } })).data,
+    queryKey: ['cash-cuts', scope],
+    queryFn: async () => (await api.get<CashCut[]>('/shifts/cuts', { params: { limit: 15, scope } })).data,
   });
 
   // Elige la primera sucursal activa por defecto.
@@ -343,7 +349,10 @@ export function CashierPage() {
       )}
 
       <motion.div className="card" style={{ marginTop: 'var(--space-5)' }} variants={fadeInUp} initial="hidden" animate="visible">
-        <h3 className="sec-title"><FileText size={18} /> Historial de cortes (X / Z)</h3>
+        <div className="sec-title-row">
+          <h3 className="sec-title"><FileText size={18} /> Historial de cortes (X / Z)</h3>
+          <ScopeSelector value={scope} onChange={setScopePick} />
+        </div>
         <table className="table" style={{ marginTop: 'var(--space-3)' }}>
           <thead>
             <tr>

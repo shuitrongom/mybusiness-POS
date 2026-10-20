@@ -3,12 +3,14 @@ import { motion } from 'motion/react';
 import {
   Wallet, Banknote, CreditCard, Landmark, Ticket as TicketIcon, Receipt,
   TrendingUp, Package, ArrowDownCircle, ArrowUpCircle, Clock, LockKeyhole,
-  CheckCircle2, Scale,
+  CheckCircle2, Scale, FlaskConical,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { InfoBanner } from '@/components/InfoBanner';
+import { ScopeSelector, type ReportScope } from '@/components/ScopeSelector';
+import { useTestMode } from '@/lib/testMode';
 import { staggerContainer, staggerItem } from '@/lib/motion';
 import './dashboard.css';
 
@@ -43,10 +45,15 @@ const timeOf = (s: string) => new Date(s).toLocaleTimeString('es-MX', { hour: '2
  */
 export function CashierDashboardPage() {
   const navigate = useNavigate();
+  const { active: testModeActive } = useTestMode();
+  // Selector de scope (modo prueba): si el usuario no ha elegido, el default es 'both' cuando el
+  // modo prueba está ON y 'real' cuando está OFF.
+  const [scopePick, setScopePick] = useState<ReportScope | null>(null);
+  const scope: ReportScope = scopePick ?? (testModeActive ? 'both' : 'real');
   const summary = useQuery({
-    queryKey: ['cashier', 'my-day'],
+    queryKey: ['cashier', 'my-day', scope],
     queryFn: async () => {
-      const res = await api.get<ShiftSummary>('/shifts/my-day');
+      const res = await api.get<ShiftSummary>('/shifts/my-day', { params: { scope } });
       return res.status === 204 || !res.data ? null : res.data;
     },
     // Solo refresca en vivo mientras el turno siga abierto; tras cerrar es un resumen estático.
@@ -88,6 +95,19 @@ export function CashierDashboardPage() {
         <span className="dash-date">
           {new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })}
         </span>
+      </div>
+
+      {testModeActive && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <InfoBanner icon={<FlaskConical size={18} />} title="MODO PRUEBA" tone="amber">
+            Estas ventas se registran como práctica, no afectan tu histórico real.
+          </InfoBanner>
+        </div>
+      )}
+
+      {/* Selector informativo de histórico: real / prueba / ambos. */}
+      <div className="dash-scope-row" style={{ marginBottom: 'var(--space-4)' }}>
+        <ScopeSelector value={scope} onChange={setScopePick} />
       </div>
 
       {closed ? (

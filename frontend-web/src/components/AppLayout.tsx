@@ -8,7 +8,7 @@ import {
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UserMenu } from '@/components/UserMenu';
 import { useSession } from '@/store/session';
-import { decodeToken, canUseModule, canSell, hasModule } from '@/lib/jwt';
+import { decodeToken, canUseModule, canSell, hasModule, isOwner } from '@/lib/jwt';
 import { api } from '@/lib/api';
 import { setPaperWidth } from '@/lib/thermalPrint';
 import './app-layout.css';
@@ -134,6 +134,8 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
   // Inventario se afina al pan (se ocultan opciones que no aplican a una panadería: tallas y
   // colores, números de serie/lote, calidad de inventario industrial y la app de conteo móvil).
   const isBakery = hasModule(claims, 'bakery');
+  // Solo el DUEÑO (OWNER) administra el MODO PRUEBA; ni ADMIN ni cajeras ven el acceso.
+  const owner = isOwner(claims);
   const INVENTORY_HIDE_FOR_BAKERY = new Set([
     '/inventory-variants',   // Tallas y colores
     '/inventory-serials',    // Números de serie
@@ -158,6 +160,10 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
           { to: '/inventory-waste', label: 'Reporte de merma' },
         ],
       }
+      : g)
+    .map((g) => g.id === 'admin' && owner
+      // Modo prueba: solo el DUEÑO lo ve, dentro de Administración (junto a la config de ticket).
+      ? { ...g, items: [...g.items, { to: '/test-mode-settings', label: 'Modo prueba' }] }
       : g);
 
   // El grupo cuya ruta está activa arranca expandido; los demás, contraídos.

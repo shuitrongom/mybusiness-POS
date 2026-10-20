@@ -87,8 +87,9 @@ public class ShiftController {
      * tiene caja abierta.
      */
     @GetMapping("/my-summary")
-    public ResponseEntity<Map<String, Object>> mySummary(@AuthenticationPrincipal AuthenticatedUser actor) {
-        return shiftService.myShiftSummary(actor == null ? "unknown" : actor.subject())
+    public ResponseEntity<Map<String, Object>> mySummary(@AuthenticationPrincipal AuthenticatedUser actor,
+            @RequestParam(value = "scope", required = false) String scope) {
+        return shiftService.myShiftSummary(actor == null ? "unknown" : actor.subject(), scope)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
@@ -103,8 +104,9 @@ public class ShiftController {
      * ninguna caja hoy.
      */
     @GetMapping("/my-day")
-    public ResponseEntity<Map<String, Object>> myDay(@AuthenticationPrincipal AuthenticatedUser actor) {
-        return shiftService.myDaySummary(actor == null ? "unknown" : actor.subject())
+    public ResponseEntity<Map<String, Object>> myDay(@AuthenticationPrincipal AuthenticatedUser actor,
+            @RequestParam(value = "scope", required = false) String scope) {
+        return shiftService.myDaySummary(actor == null ? "unknown" : actor.subject(), scope)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
@@ -159,8 +161,9 @@ public class ShiftController {
     /** Historial de cortes (X y Z) para consulta o reimpresión. */
     @GetMapping("/cuts")
     public java.util.List<Map<String, Object>> cuts(
-            @RequestParam(value = "limit", required = false, defaultValue = "50") int limit) {
-        return shiftService.listCuts(limit);
+            @RequestParam(value = "limit", required = false, defaultValue = "50") int limit,
+            @RequestParam(value = "scope", required = false) String scope) {
+        return shiftService.listCuts(limit, scope);
     }
 
     public record OpenShiftRequest(@NotNull Long cashRegisterId, BigDecimal openingFloat,

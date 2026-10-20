@@ -16,7 +16,9 @@ import { setPaperWidth } from '@/lib/thermalPrint';
 import { printSale } from '@/lib/printRouter';
 import { useSession } from '@/store/session';
 import { decodeToken, canSell, hasModule } from '@/lib/jwt';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, FlaskConical } from 'lucide-react';
+import { InfoBanner } from '@/components/InfoBanner';
+import { useTestMode } from '@/lib/testMode';
 import type { AxiosError } from 'axios';
 import './pos.css';
 
@@ -207,6 +209,10 @@ export function PosPage() {
   const claims = decodeToken(token);
   const sellAllowed = canSell(claims);
   const bakeryEnabled = hasModule(claims, 'bakery');
+  // MODO PRUEBA: si el negocio está en modo prueba, el POS muestra un banner ámbar y el
+  // ticket se marca como venta de práctica (el backend es quien decide is_test; aquí se
+  // refleja el estado vigente al cobrar).
+  const { active: testModeActive } = useTestMode();
 
   // Descuentos automáticos por promociones vigentes, recalculados con el carrito. Los artículos
   // libres (sin productId) no participan en promociones.
@@ -694,6 +700,7 @@ export function PosPage() {
         methodLabel,
         received: onCredit ? paid : received,
         change,
+        isTest: testModeActive,
       };
 
       let ticketData: TicketData;
@@ -791,6 +798,15 @@ export function PosPage() {
     <div className="pos">
       {/* Puerta de turno: exige caja abierta con fondo inicial antes de vender. */}
       <PosShift branchId={branchId || 1} onShiftChange={setShift} />
+
+      {/* MODO PRUEBA: banner ámbar visible y no ignorable mientras el dueño no finalice la prueba. */}
+      {testModeActive && (
+        <div className="pos-testmode-banner">
+          <InfoBanner tone="amber" title="MODO PRUEBA" icon={<FlaskConical size={18} />}>
+            Estas ventas se registran como práctica, no afectan tu histórico real.
+          </InfoBanner>
+        </div>
+      )}
 
       {/* Catálogo */}
       <div className="pos-catalog">

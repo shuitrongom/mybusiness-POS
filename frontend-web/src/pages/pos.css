@@ -19,6 +19,11 @@
   }
 }
 
+/* Banner de MODO PRUEBA: ocupa todo el ancho sobre el POS (no dentro de una columna). */
+.pos-testmode-banner {
+  grid-column: 1 / -1;
+}
+
 /* ---- Catálogo ---- */
 .pos-catalog {
   display: flex;

@@ -22,6 +22,7 @@ import { PaymentOperationsPage } from '@/pages/PaymentOperationsPage';
 import { PaymentBalancePage } from '@/pages/PaymentBalancePage';
 import { TicketSettingsPage } from '@/pages/TicketSettingsPage';
 import { TicketReprintPage } from '@/pages/TicketReprintPage';
+import { TestModeSettingsPage } from '@/pages/TestModeSettingsPage';
 import { InvoicingPage } from '@/pages/InvoicingPage';
 import { InvoicingModulePage } from '@/pages/InvoicingModulePage';
 import { InvoicingIssuerPage } from '@/pages/InvoicingIssuerPage';
@@ -173,6 +174,7 @@ export function App() {
             <Route path="invoicing-carta-porte" element={<InvoicingCartaPortePage />} />
             <Route path="ticket-settings" element={<TicketSettingsPage />} />
             <Route path="ticket-reprint" element={<TicketReprintPage />} />
+            <Route path="test-mode-settings" element={<TestModeSettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </>
         )}
