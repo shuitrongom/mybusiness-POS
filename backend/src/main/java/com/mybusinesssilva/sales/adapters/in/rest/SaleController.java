@@ -9,6 +9,7 @@ import com.mybusinesssilva.sales.domain.model.SaleLine;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.List;
@@ -213,9 +214,14 @@ public class SaleController {
 
         // --- DTOs ---
 
-        /** Devolucion de productos. Si trae saleId, se valida contra esa venta. */
+        /**
+         * Devolucion de productos. Exige saleId: toda devolución se valida y recomputa
+         * contra su venta origen (no hay devolución libre sin ticket). El servicio
+         * recomputa el precio desde el renglón vendido, así que {@code unitPrice} del
+         * request ya no se usa para el total.
+         */
         public record ReturnRequest(
-                        Long saleId,
+                        @NotNull Long saleId,
                         Long branchId,
                         Long customerId,
                         String reason,
@@ -223,11 +229,11 @@ public class SaleController {
                         @NotEmpty List<ReturnItemRequest> items) {
         }
 
-        /** Renglon de devolucion. */
+        /** Renglon de devolucion. La cantidad debe ser estrictamente positiva. */
         public record ReturnItemRequest(
                         @NotNull Long productId,
                         String description,
-                        @NotNull BigDecimal quantity,
+                        @NotNull @Positive BigDecimal quantity,
                         BigDecimal unitPrice) {
         }
 

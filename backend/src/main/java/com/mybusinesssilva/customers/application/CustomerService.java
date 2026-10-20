@@ -9,13 +9,20 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Casos de uso del módulo de clientes/CRM.
  *
- * <p>Cubre el alta de clientes, el manejo de cuentas por cobrar (crédito) y el programa de
- * lealtad (puntos). Todas las operaciones de escritura son transaccionales para mantener la
- * consistencia entre el saldo de crédito del cliente y sus cuentas por cobrar, así como entre
+ * <p>
+ * Cubre el alta de clientes, el manejo de cuentas por cobrar (crédito) y el
+ * programa de
+ * lealtad (puntos). Todas las operaciones de escritura son transaccionales para
+ * mantener la
+ * consistencia entre el saldo de crédito del cliente y sus cuentas por cobrar,
+ * así como entre
  * el balance de la cuenta de lealtad y su historial de movimientos.
  *
- * <p>Persiste con {@link JdbcClient} sobre el schema del tenant en curso (el {@code search_path}
- * ya está fijado por el DataSource), por lo que las tablas se referencian sin prefijo de schema.
+ * <p>
+ * Persiste con {@link JdbcClient} sobre el schema del tenant en curso (el
+ * {@code search_path}
+ * ya está fijado por el DataSource), por lo que las tablas se referencian sin
+ * prefijo de schema.
  */
 @Service
 public class CustomerService {
@@ -27,8 +34,10 @@ public class CustomerService {
     }
 
     /**
-     * Lista los clientes activos del negocio, opcionalmente filtrados por texto (nombre, RFC,
-     * teléfono o email). Incluye el crédito disponible para mostrarlo en el punto de venta.
+     * Lista los clientes activos del negocio, opcionalmente filtrados por texto
+     * (nombre, RFC,
+     * teléfono o email). Incluye el crédito disponible para mostrarlo en el punto
+     * de venta.
      *
      * @param query texto de búsqueda (puede ser null o vacío para traer todos)
      * @param limit máximo de resultados (si es null o &lt;= 0 se usan 50)
@@ -83,7 +92,7 @@ public class CustomerService {
      */
     @Transactional
     public long createCustomer(String name, String rfc, String phone, String email,
-                               BigDecimal creditLimit) {
+            BigDecimal creditLimit) {
         BigDecimal limit = creditLimit == null ? BigDecimal.ZERO : creditLimit;
         return jdbc.sql("""
                 INSERT INTO customer (name, rfc, phone, email, credit_limit)
@@ -96,7 +105,8 @@ public class CustomerService {
     }
 
     /**
-     * Da de alta un cliente con todos sus datos enterprise (fiscales CFDI 4.0, comerciales y
+     * Da de alta un cliente con todos sus datos enterprise (fiscales CFDI 4.0,
+     * comerciales y
      * direcciones). Persiste el cliente y sus direcciones en la misma transacción.
      *
      * @param c cliente a crear (sin id)
@@ -141,7 +151,8 @@ public class CustomerService {
     }
 
     /**
-     * Actualiza todos los datos de un cliente existente y reemplaza sus direcciones. No toca el
+     * Actualiza todos los datos de un cliente existente y reemplaza sus
+     * direcciones. No toca el
      * crédito utilizado (se maneja por cuentas por cobrar).
      */
     @Transactional
@@ -188,9 +199,12 @@ public class CustomerService {
         replaceAddresses(c.id(), c.addresses());
     }
 
-    /** Reemplaza todas las direcciones de un cliente por las dadas (borra y reinserta). */
+    /**
+     * Reemplaza todas las direcciones de un cliente por las dadas (borra y
+     * reinserta).
+     */
     private void replaceAddresses(long customerId,
-                                  java.util.List<com.mybusinesssilva.customers.domain.model.Customer.CustomerAddress> addresses) {
+            java.util.List<com.mybusinesssilva.customers.domain.model.Customer.CustomerAddress> addresses) {
         jdbc.sql("DELETE FROM customer_address WHERE customer_id = :id")
                 .param("id", customerId).update();
         if (addresses == null) {
@@ -223,7 +237,8 @@ public class CustomerService {
     }
 
     /**
-     * Obtiene el cliente completo por id, incluyendo sus direcciones. Devuelve vacío si no existe.
+     * Obtiene el cliente completo por id, incluyendo sus direcciones. Devuelve
+     * vacío si no existe.
      */
     public java.util.Optional<com.mybusinesssilva.customers.domain.model.Customer> getCustomer(long id) {
         var customer = jdbc.sql("""
@@ -284,7 +299,10 @@ public class CustomerService {
                 rs.getBoolean("active"), java.util.List.of());
     }
 
-    /** Desactiva un cliente (borrado lógico para preservar su histórico de ventas y crédito). */
+    /**
+     * Desactiva un cliente (borrado lógico para preservar su histórico de ventas y
+     * crédito).
+     */
     @Transactional
     public void deactivateCustomer(long id) {
         jdbc.sql("UPDATE customer SET active = FALSE WHERE id = :id").param("id", id).update();
@@ -295,7 +313,8 @@ public class CustomerService {
     // ---------------------------------------------------------------------
 
     /**
-     * Lista las cuentas por cobrar (cobranza), opcionalmente filtradas por estado (OPEN/PAID) y
+     * Lista las cuentas por cobrar (cobranza), opcionalmente filtradas por estado
+     * (OPEN/PAID) y
      * cliente. Incluye el nombre del cliente y el saldo pendiente (amount - paid).
      */
     public java.util.List<java.util.Map<String, Object>> listReceivables(String status, Long customerId) {
@@ -329,15 +348,18 @@ public class CustomerService {
                 .list();
     }
 
-    /** Resumen de cobranza: total pendiente, cuentas abiertas y cuentas vencidas. */
+    /**
+     * Resumen de cobranza: total pendiente, cuentas abiertas y cuentas vencidas.
+     */
     public java.util.Map<String, Object> receivablesSummary() {
-        return jdbc.sql("""
-                SELECT
-                    COALESCE(SUM(CASE WHEN status = 'OPEN' THEN amount - paid ELSE 0 END), 0) AS total_pending,
-                    COUNT(*) FILTER (WHERE status = 'OPEN') AS open_count,
-                    COUNT(*) FILTER (WHERE status = 'OPEN' AND due_date IS NOT NULL AND due_date < CURRENT_DATE) AS overdue_count
-                FROM account_receivable
-                """)
+        return jdbc
+                .sql("""
+                        SELECT
+                            COALESCE(SUM(CASE WHEN status = 'OPEN' THEN amount - paid ELSE 0 END), 0) AS total_pending,
+                            COUNT(*) FILTER (WHERE status = 'OPEN') AS open_count,
+                            COUNT(*) FILTER (WHERE status = 'OPEN' AND due_date IS NOT NULL AND due_date < CURRENT_DATE) AS overdue_count
+                        FROM account_receivable
+                        """)
                 .query((rs, n) -> {
                     java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
                     m.put("totalPending", rs.getBigDecimal("total_pending"));
@@ -361,7 +383,10 @@ public class CustomerService {
                 .orElse(BigDecimal.ZERO);
     }
 
-    /** Crea la cuenta de anticipo del cliente con saldo cero si aún no existe (idempotente). */
+    /**
+     * Crea la cuenta de anticipo del cliente con saldo cero si aún no existe
+     * (idempotente).
+     */
     private void ensureAdvanceAccount(long customerId) {
         jdbc.sql("""
                 INSERT INTO customer_advance (customer_id, balance)
@@ -373,14 +398,15 @@ public class CustomerService {
     }
 
     /**
-     * Registra un depósito de anticipo (el cliente entrega dinero por adelantado). Aumenta el
+     * Registra un depósito de anticipo (el cliente entrega dinero por adelantado).
+     * Aumenta el
      * saldo y registra el movimiento DEPOSIT.
      *
      * @return nuevo saldo de anticipo
      */
     @Transactional
     public BigDecimal depositAdvance(long customerId, BigDecimal amount, String method,
-                                     String reference, String actor) {
+            String reference, String actor) {
         if (amount == null || amount.signum() <= 0) {
             throw new IllegalArgumentException("El monto del anticipo debe ser positivo");
         }
@@ -396,14 +422,15 @@ public class CustomerService {
     }
 
     /**
-     * Aplica parte del anticipo a una venta. Valida que haya saldo suficiente, disminuye el saldo
+     * Aplica parte del anticipo a una venta. Valida que haya saldo suficiente,
+     * disminuye el saldo
      * y registra el movimiento APPLY.
      *
      * @return nuevo saldo de anticipo
      */
     @Transactional
     public BigDecimal applyAdvance(long customerId, BigDecimal amount, Long saleId,
-                                   String reference, String actor) {
+            String reference, String actor) {
         if (amount == null || amount.signum() <= 0) {
             throw new IllegalArgumentException("El monto a aplicar debe ser positivo");
         }
@@ -411,7 +438,7 @@ public class CustomerService {
         if (balance.compareTo(amount) < 0) {
             throw new IllegalArgumentException(
                     "Saldo de anticipo insuficiente: se intentan aplicar " + amount
-                    + " pero el saldo disponible es " + balance);
+                            + " pero el saldo disponible es " + balance);
         }
         BigDecimal newBalance = jdbc.sql("""
                 UPDATE customer_advance SET balance = balance - :amt, updated_at = now()
@@ -423,7 +450,10 @@ public class CustomerService {
         return newBalance;
     }
 
-    /** Devuelve (reembolsa) saldo de anticipo al cliente. Registra el movimiento REFUND. */
+    /**
+     * Devuelve (reembolsa) saldo de anticipo al cliente. Registra el movimiento
+     * REFUND.
+     */
     @Transactional
     public BigDecimal refundAdvance(long customerId, BigDecimal amount, String reference, String actor) {
         if (amount == null || amount.signum() <= 0) {
@@ -445,8 +475,8 @@ public class CustomerService {
     }
 
     private void recordAdvanceMovement(long customerId, String direction, BigDecimal amount,
-                                       BigDecimal balanceAfter, String method, Long saleId,
-                                       String reference, String actor) {
+            BigDecimal balanceAfter, String method, Long saleId,
+            String reference, String actor) {
         jdbc.sql("""
                 INSERT INTO customer_advance_movement
                     (customer_id, direction, amount, balance_after, method, sale_id, reference, actor)
@@ -488,7 +518,9 @@ public class CustomerService {
     /**
      * Genera una cuenta por cobrar para el cliente y aumenta su crédito utilizado.
      *
-     * <p>Valida que el crédito utilizado más el nuevo monto no rebase el límite de crédito del
+     * <p>
+     * Valida que el crédito utilizado más el nuevo monto no rebase el límite de
+     * crédito del
      * cliente; de lo contrario lanza {@link IllegalArgumentException}.
      *
      * @param customerId cliente al que se le otorga el crédito
@@ -503,13 +535,14 @@ public class CustomerService {
     }
 
     /**
-     * Genera una cuenta por cobrar para el cliente, registrando la sucursal de origen.
+     * Genera una cuenta por cobrar para el cliente, registrando la sucursal de
+     * origen.
      *
      * @param branchId sucursal donde se generó el crédito (puede ser null)
      */
     @Transactional
     public long addReceivable(long customerId, long saleId, BigDecimal amount, Long branchId,
-                              LocalDate dueDate) {
+            LocalDate dueDate) {
         if (amount == null || amount.signum() <= 0) {
             throw new IllegalArgumentException("El monto de la cuenta por cobrar debe ser positivo");
         }
@@ -529,7 +562,7 @@ public class CustomerService {
         if (creditUsed.add(amount).compareTo(creditLimit) > 0) {
             throw new IllegalArgumentException(
                     "Límite de crédito excedido: el crédito utilizado ("
-                    + creditUsed.add(amount) + ") supera el límite autorizado (" + creditLimit + ")");
+                            + creditUsed.add(amount) + ") supera el límite autorizado (" + creditLimit + ")");
         }
 
         long receivableId = jdbc.sql("""
@@ -549,10 +582,14 @@ public class CustomerService {
     }
 
     /**
-     * Abona a una cuenta por cobrar y reduce el crédito utilizado del cliente correspondiente.
+     * Abona a una cuenta por cobrar y reduce el crédito utilizado del cliente
+     * correspondiente.
      *
-     * <p>Suma el monto a lo pagado y, si lo pagado alcanza o supera el monto de la cuenta, la
-     * marca como {@code PAID}. El crédito utilizado del cliente se reduce en el monto abonado
+     * <p>
+     * Suma el monto a lo pagado y, si lo pagado alcanza o supera el monto de la
+     * cuenta, la
+     * marca como {@code PAID}. El crédito utilizado del cliente se reduce en el
+     * monto abonado
      * sin quedar por debajo de cero.
      *
      * @param receivableId cuenta por cobrar a la que se abona
@@ -591,12 +628,93 @@ public class CustomerService {
     }
 
     /**
-     * Acumula puntos de lealtad para el cliente. Crea la cuenta de lealtad con balance cero si
-     * aún no existe, suma el monto al balance y registra el movimiento {@code EARN}.
+     * Abona (nota de crédito) a la(s) cuenta(s) por cobrar OPEN de una venta a
+     * crédito cuando se
+     * devuelve parte o toda la venta, sin entregar efectivo. Sigue el patrón de
+     * {@link #payReceivable(long, BigDecimal)}: por cada cuenta OPEN de la venta
+     * abona el mínimo
+     * entre su saldo vigente ({@code amount - paid}) y el remanente por abonar,
+     * marca PAID cuando
+     * se salda, y reduce el crédito utilizado del cliente con
+     * {@code GREATEST(..., 0)}.
+     *
+     * @param saleId venta a crédito que origina la devolución
+     * @param amount importe de la devolución a abonar (debe ser positivo)
+     * @return importe efectivamente abonado (acotado al saldo total pendiente de la
+     *         venta;
+     *         {@code 0} si ya no había saldo por abonar)
+     */
+    @Transactional
+    public BigDecimal reduceReceivableForSale(long saleId, BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("El monto de la nota de crédito debe ser positivo");
+        }
+
+        // Cuentas por cobrar OPEN de la venta (puede haber más de una en teoría; se
+        // abonan en orden).
+        java.util.List<java.util.Map<String, Object>> accounts = jdbc.sql("""
+                SELECT id, customer_id, (amount - paid) AS balance
+                FROM account_receivable
+                WHERE sale_id = :sale AND status = 'OPEN'
+                ORDER BY id
+                """)
+                .param("sale", saleId)
+                .query((rs, n) -> {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id", rs.getLong("id"));
+                    m.put("customerId", rs.getLong("customer_id"));
+                    m.put("balance", rs.getBigDecimal("balance"));
+                    return m;
+                })
+                .list();
+
+        BigDecimal remaining = amount;
+        BigDecimal applied = BigDecimal.ZERO;
+        for (var acc : accounts) {
+            if (remaining.signum() <= 0) {
+                break;
+            }
+            long receivableId = (Long) acc.get("id");
+            long customerId = (Long) acc.get("customerId");
+            BigDecimal balance = (BigDecimal) acc.get("balance");
+            if (balance == null || balance.signum() <= 0) {
+                continue;
+            }
+            BigDecimal credit = balance.min(remaining);
+
+            jdbc.sql("""
+                    UPDATE account_receivable
+                    SET paid = paid + :amt,
+                        status = CASE WHEN paid + :amt >= amount THEN 'PAID' ELSE 'OPEN' END
+                    WHERE id = :id
+                    """)
+                    .param("amt", credit).param("id", receivableId)
+                    .update();
+
+            jdbc.sql("""
+                    UPDATE customer
+                    SET credit_used = GREATEST(credit_used - :amt, 0)
+                    WHERE id = :id
+                    """)
+                    .param("amt", credit).param("id", customerId)
+                    .update();
+
+            remaining = remaining.subtract(credit);
+            applied = applied.add(credit);
+        }
+        return applied;
+    }
+
+    /**
+     * Acumula puntos de lealtad para el cliente. Crea la cuenta de lealtad con
+     * balance cero si
+     * aún no existe, suma el monto al balance y registra el movimiento
+     * {@code EARN}.
      *
      * @param customerId cliente
      * @param amount     puntos a acumular (debe ser positivo)
-     * @param reference  referencia del movimiento (por ejemplo la venta que lo origina)
+     * @param reference  referencia del movimiento (por ejemplo la venta que lo
+     *                   origina)
      * @return nuevo balance de puntos
      */
     @Transactional
@@ -621,7 +739,8 @@ public class CustomerService {
     }
 
     /**
-     * Canjea puntos de lealtad del cliente. Valida que exista saldo suficiente, resta el monto
+     * Canjea puntos de lealtad del cliente. Valida que exista saldo suficiente,
+     * resta el monto
      * del balance y registra el movimiento {@code REDEEM}.
      *
      * @param customerId cliente
@@ -639,7 +758,7 @@ public class CustomerService {
         if (balance.compareTo(amount) < 0) {
             throw new IllegalArgumentException(
                     "Saldo de lealtad insuficiente: se intentan canjear " + amount
-                    + " puntos pero el saldo disponible es " + balance);
+                            + " puntos pero el saldo disponible es " + balance);
         }
 
         BigDecimal newBalance = jdbc.sql("""
@@ -656,7 +775,8 @@ public class CustomerService {
     }
 
     /**
-     * Devuelve el balance de puntos de lealtad del cliente, o cero si no tiene cuenta.
+     * Devuelve el balance de puntos de lealtad del cliente, o cero si no tiene
+     * cuenta.
      *
      * @param customerId cliente
      * @return balance de puntos (nunca null)
@@ -710,7 +830,8 @@ public class CustomerService {
     }
 
     /**
-     * Crea la cuenta de lealtad del cliente con balance cero si aún no existe. Es idempotente
+     * Crea la cuenta de lealtad del cliente con balance cero si aún no existe. Es
+     * idempotente
      * gracias al UNIQUE sobre {@code customer_id}.
      */
     private void ensureLoyaltyAccount(long customerId) {
@@ -733,7 +854,7 @@ public class CustomerService {
      * @param reference    referencia del movimiento
      */
     private void recordLoyaltyMovement(long customerId, String direction, BigDecimal amount,
-                                       BigDecimal balanceAfter, String reference) {
+            BigDecimal balanceAfter, String reference) {
         jdbc.sql("""
                 INSERT INTO loyalty_movement
                     (customer_id, direction, amount, balance_after, reference)
@@ -749,7 +870,8 @@ public class CustomerService {
     // ---------------------------------------------------------------------
 
     /**
-     * Lista los precios especiales de un cliente junto al precio normal del producto, para
+     * Lista los precios especiales de un cliente junto al precio normal del
+     * producto, para
      * mostrarlos en la administración del cliente.
      *
      * @param customerId cliente
@@ -779,19 +901,23 @@ public class CustomerService {
     }
 
     /**
-     * Crea o actualiza el precio especial de un producto para un cliente (idempotente por
-     * {@code (customer_id, product_id)}). Valida que el precio sea no negativo y que existan
+     * Crea o actualiza el precio especial de un producto para un cliente
+     * (idempotente por
+     * {@code (customer_id, product_id)}). Valida que el precio sea no negativo y
+     * que existan
      * tanto el cliente como el producto.
      *
      * @param customerId cliente
      * @param productId  producto
      * @param price      precio especial (no negativo)
-     * @return el registro resultante con la misma forma que {@link #listSpecialPrices(long)}
-     * @throws IllegalArgumentException si el precio es inválido o no existe el cliente/producto
+     * @return el registro resultante con la misma forma que
+     *         {@link #listSpecialPrices(long)}
+     * @throws IllegalArgumentException si el precio es inválido o no existe el
+     *                                  cliente/producto
      */
     @Transactional
     public java.util.Map<String, Object> upsertSpecialPrice(long customerId, long productId,
-                                                            BigDecimal price) {
+            BigDecimal price) {
         if (price == null || price.signum() < 0) {
             throw new IllegalArgumentException("El precio especial debe ser mayor o igual a cero");
         }
@@ -838,7 +964,8 @@ public class CustomerService {
     }
 
     /**
-     * Elimina el precio especial de un producto para un cliente. No falla si no existe.
+     * Elimina el precio especial de un producto para un cliente. No falla si no
+     * existe.
      *
      * @param customerId cliente
      * @param productId  producto
@@ -851,11 +978,13 @@ public class CustomerService {
     }
 
     /**
-     * Devuelve el mapa producto -> precio especial del cliente, para que el POS resuelva el
+     * Devuelve el mapa producto -> precio especial del cliente, para que el POS
+     * resuelva el
      * precio al seleccionar al cliente.
      *
      * @param customerId cliente
-     * @return mapa {@code {productId: price}} (vacío si no tiene precios especiales)
+     * @return mapa {@code {productId: price}} (vacío si no tiene precios
+     *         especiales)
      */
     public java.util.Map<Long, BigDecimal> specialPriceMap(long customerId) {
         java.util.Map<Long, BigDecimal> map = new java.util.LinkedHashMap<>();

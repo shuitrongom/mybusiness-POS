@@ -43,7 +43,7 @@ function fmtDate(iso: string | null): { date: string; time: string } {
 }
 
 interface SaleDetailLine {
-  productId: number;
+  productId: number | null;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -51,6 +51,11 @@ interface SaleDetailLine {
   productName: string | null;
   active: boolean;
   alreadyReturned: number;
+  // Campos reales de la venta (FEAT-001 backend): el reembolso se calcula desde lineTotal
+  // (neto cobrado), NO del unitPrice tecleado. waste = el renglón se vendió como merma.
+  waste: boolean;
+  discount: number;
+  lineTotal: number;
 }
 interface SaleDetail {
   saleId: number;
@@ -62,6 +67,9 @@ interface SaleDetail {
   lines: SaleDetailLine[];
   createdAt: string | null;
   customerName: string | null;
+  // true si la venta fue a crédito: la devolución se reembolsa como NOTA DE CRÉDITO
+  // (reduce la cuenta por cobrar), nunca en efectivo.
+  onCredit: boolean;
 }
 interface ReturnRow {
   id: number;
@@ -158,7 +166,10 @@ export function ReturnsPage() {
     try {
       const { data } = await api.get<SaleDetail>(`/sales/${id}`);
       setSale(data);
-      setQtys(Object.fromEntries(data.lines.map((l) => [l.productId, 0])));
+      // Solo renglones de catálogo (productId) son devolvibles; los libres se excluyen.
+      setQtys(Object.fromEntries(data.lines.filter((l) => l.productId != null).map((l) => [l.productId as number, 0])));
+      // Venta a crédito: el reembolso es nota de crédito (reduce la cuenta por cobrar), no efectivo.
+      setRefundMethod(data.onCredit ? 'CREDIT_NOTE' : 'CASH');
       if (data.status === 'VOIDED') toast.info('Venta cancelada', 'Esta venta ya fue cancelada.');
     } catch {
       setSale(null);
@@ -194,22 +205,31 @@ export function ReturnsPage() {
   // barrera en backend). El tope del stepper usa ese remanente, no la cantidad vendida.
   const remainingOf = (l: SaleDetailLine) => Math.max(0, l.quantity - (l.alreadyReturned || 0));
 
+  // Reembolso por renglón al precio REAL cobrado: lineTotal/quantity (neto, ya con descuento),
+  // no el unitPrice de lista. Coincide con lo que recomputa el backend (ALTA-4).
+  const unitRefundOf = (l: SaleDetailLine) =>
+    l.quantity > 0 ? l.lineTotal / l.quantity : l.unitPrice;
+
   const setQty = (productId: number, q: number, max: number) => {
     setQtys((prev) => ({ ...prev, [productId]: Math.max(0, Math.min(q, max)) }));
   };
 
   const refundTotal = sale
-    ? sale.lines.reduce((s, l) => s + (qtys[l.productId] || 0) * l.unitPrice, 0)
+    ? sale.lines.reduce((s, l) => (l.productId == null ? s : s + (qtys[l.productId] || 0) * unitRefundOf(l)), 0)
     : 0;
   const hasItems = Object.values(qtys).some((q) => q > 0);
+  // Venta a crédito → el reembolso es nota de crédito (reduce la deuda), no efectivo.
+  const isCreditSale = sale?.onCredit === true;
 
   const doReturn = async () => {
     if (!sale || !hasItems) return;
     const items = sale.lines
-      .filter((l) => (qtys[l.productId] || 0) > 0)
+      .filter((l) => l.productId != null && (qtys[l.productId] || 0) > 0)
       .map((l) => ({
-        productId: l.productId, description: l.description,
-        quantity: qtys[l.productId], unitPrice: l.unitPrice,
+        productId: l.productId as number, description: l.description,
+        // El backend recomputa el reembolso desde el precio real; enviamos unitRefund por
+        // claridad, pero el total lo manda el servidor (ALTA-4). quantity viene topada al remanente.
+        quantity: qtys[l.productId as number], unitPrice: unitRefundOf(l),
       }));
     try {
       await api.post('/sales/returns', {
@@ -391,14 +411,18 @@ export function ReturnsPage() {
                 <span className="rret-h-center">Devolver</span>
                 <span className="rret-h-center">Reembolso</span>
               </div>
-              {sale.lines.map((l) => {
+              {sale.lines.map((l, idx) => {
                 const name = l.productName || l.description;
-                const q = qtys[l.productId] || 0;
-                const max = remainingOf(l);
                 const isFree = l.productId == null;
+                // Artículo libre (producto rápido / venta especial): no devolvible por aquí.
+                const pid = l.productId as number;
+                const q = isFree ? 0 : (qtys[pid] || 0);
+                const max = remainingOf(l);
                 const isDisabled = !isFree && !l.active;
+                const unitRefund = unitRefundOf(l);
                 return (
-                  <div className="rret-line" key={l.productId} style={{ gridTemplateColumns: LINE_COLS }}>
+                  <div className={`rret-line ${isFree ? 'is-free' : ''}`} key={isFree ? `free-${idx}` : pid}
+                    style={{ gridTemplateColumns: LINE_COLS }}>
                     <div className="rret-article">
                       <span className="rret-article-avatar" style={{ background: avatarColor(name) }}>
                         {avatarInitials(name)}
@@ -406,7 +430,9 @@ export function ReturnsPage() {
                       <div className="rret-article-text">
                         <div className="rret-article-name">
                           <span>{name}</span>
+                          {l.waste && <span className="rret-chip-waste">Merma</span>}
                           {isDisabled && <span className="rret-chip-off">Desactivado</span>}
+                          {isFree && <span className="rret-chip-off">Artículo libre</span>}
                         </div>
                         <div className="rret-article-unit">{l.unit || 'pieza'}</div>
                       </div>
@@ -417,14 +443,22 @@ export function ReturnsPage() {
                         <span className="rret-returned">ya devuelto: {num(l.alreadyReturned)}</span>
                       )}
                     </div>
-                    <span className="rret-fixed-price">{money(l.unitPrice)}</span>
-                    <div className={`rret-qty ${q === 0 ? 'is-empty' : ''}`}>
-                      <button onClick={() => setQty(l.productId, q - 1, max)} disabled={q <= 0}>−</button>
-                      <input value={q === 0 ? '' : q} inputMode="numeric" placeholder="0"
-                        onChange={(e) => setQty(l.productId, Number(e.target.value) || 0, max)} />
-                      <button onClick={() => setQty(l.productId, q + 1, max)} disabled={q >= max}>+</button>
-                    </div>
-                    <span className={`rret-refund ${q === 0 ? 'is-zero' : ''}`}>{money(q * l.unitPrice)}</span>
+                    <span className="rret-fixed-price">{money(unitRefund)}</span>
+                    {isFree ? (
+                      <span className="rret-free-note" style={{ gridColumn: 'span 2', textAlign: 'center' }}>
+                        No se devuelve por aquí
+                      </span>
+                    ) : (
+                      <>
+                        <div className={`rret-qty ${q === 0 ? 'is-empty' : ''}`}>
+                          <button onClick={() => setQty(pid, q - 1, max)} disabled={q <= 0}>−</button>
+                          <input value={q === 0 ? '' : q} inputMode="numeric" placeholder="0"
+                            onChange={(e) => setQty(pid, Number(e.target.value) || 0, max)} />
+                          <button onClick={() => setQty(pid, q + 1, max)} disabled={q >= max}>+</button>
+                        </div>
+                        <span className={`rret-refund ${q === 0 ? 'is-zero' : ''}`}>{money(q * unitRefund)}</span>
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -439,11 +473,19 @@ export function ReturnsPage() {
                 </label>
                 <label className="field">
                   <span>Reembolso</span>
-                  <select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}>
-                    <option value="CASH">Efectivo</option>
+                  {/* Venta a crédito: el reembolso es nota de crédito (reduce la deuda del cliente),
+                      nunca efectivo. Se bloquea el selector y se fija en CREDIT_NOTE. */}
+                  <select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}
+                    disabled={isCreditSale}>
+                    {!isCreditSale && <option value="CASH">Efectivo</option>}
                     <option value="CREDIT_NOTE">Nota de crédito</option>
-                    <option value="STORE_CREDIT">Saldo a favor</option>
+                    {!isCreditSale && <option value="STORE_CREDIT">Saldo a favor</option>}
                   </select>
+                  {isCreditSale && (
+                    <small className="rret-credit-hint">
+                      Venta a crédito: se abona como nota de crédito a la deuda del cliente (no efectivo).
+                    </small>
+                  )}
                 </label>
               </div>
               <div className="rret-total">

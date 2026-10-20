@@ -47,11 +47,29 @@ public interface SaleRepository {
         Optional<SaleDetail> findDetail(long saleId);
 
         /**
+         * Bloquea la fila de la venta (SELECT ... FOR UPDATE) dentro de la transacción
+         * en curso, para serializar devoluciones concurrentes de la misma venta y
+         * evitar que dos cajeros rebasen juntos la cantidad vendida. No devuelve nada;
+         * su único efecto es tomar el lock hasta que la transacción termine.
+         *
+         * @param saleId venta a bloquear
+         */
+        void lockSale(long saleId);
+
+        /**
          * @param productId producto
          * @return cantidad ya devuelta de ese producto para la venta indicada (para no
          *         exceder lo vendido)
          */
         BigDecimal returnedQuantity(long saleId, long productId);
+
+        /**
+         * @param actor usuario de caja
+         * @return el id del turno ABIERTO del cajero indicado (para ligar movimientos
+         *         de caja de una devolución al corte), o vacío si no tiene turno
+         *         abierto
+         */
+        Optional<Long> activeShiftId(String actor);
 
         /**
          * Últimas ventas COMPLETED devolvibles, para el selector de devoluciones (que
@@ -126,10 +144,13 @@ public interface SaleRepository {
          *                     ser {@code null} en datos antiguos)
          * @param customerName nombre del cliente de la venta (puede ser {@code null} si
          *                     fue venta de mostrador)
+         * @param onCredit     {@code true} si la venta fue a crédito (cuenta por
+         *                     cobrar); su devolución se reembolsa como nota de crédito
+         *                     (reduce la cuenta por cobrar), no en efectivo
          */
         record SaleDetail(long saleId, String folio, long branchId, Long customerId, String status,
                         BigDecimal total, List<SaleDetailLine> lines,
-                        java.time.OffsetDateTime createdAt, String customerName) {
+                        java.time.OffsetDateTime createdAt, String customerName, boolean onCredit) {
         }
 
         /**
@@ -145,9 +166,17 @@ public interface SaleRepository {
          *                        artículo libre
          * @param alreadyReturned cantidad ya devuelta de este producto para la venta
          *                        (para mostrar cuánto queda por devolver)
+         * @param waste           {@code true} si el renglón se vendió como MERMA; su
+         *                        devolución reingresa a la existencia de merma, no al
+         *                        stock normal
+         * @param discount        descuento aplicado al renglón en la venta original
+         * @param lineTotal       importe real del renglón (cantidad × precio −
+         *                        descuento) tal como se cobró; base para recomputar el
+         *                        reembolso prorrateado, en vez del precio del request
          */
         record SaleDetailLine(Long productId, String description, BigDecimal quantity,
                         BigDecimal unitPrice, String unit, String productName, boolean active,
-                        BigDecimal alreadyReturned) {
+                        BigDecimal alreadyReturned, boolean waste, BigDecimal discount,
+                        BigDecimal lineTotal) {
         }
 }

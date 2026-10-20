@@ -7,8 +7,10 @@ import java.time.LocalDate;
 import org.springframework.stereotype.Component;
 
 /**
- * Adaptador que implementa el puerto de crédito requerido por el módulo de ventas, delegando en
- * el servicio de clientes. Así ventas registra el crédito de una venta sin conocer las tablas de
+ * Adaptador que implementa el puerto de crédito requerido por el módulo de
+ * ventas, delegando en
+ * el servicio de clientes. Así ventas registra el crédito de una venta sin
+ * conocer las tablas de
  * clientes ni su servicio directamente (dependencia por interfaz).
  */
 @Component
@@ -22,7 +24,12 @@ public class CustomerCreditAdapter implements CustomerCreditPort {
 
     @Override
     public long registerReceivable(long customerId, long saleId, BigDecimal amount,
-                                   long branchId, LocalDate dueDate) {
+            long branchId, LocalDate dueDate) {
         return customerService.addReceivable(customerId, saleId, amount, branchId, dueDate);
+    }
+
+    @Override
+    public BigDecimal reduceReceivableForSale(long saleId, BigDecimal amount) {
+        return customerService.reduceReceivableForSale(saleId, amount);
     }
 }

@@ -1042,3 +1042,40 @@
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
+
+/* ===== Devoluciones: integridad (FEAT-002) ===== */
+
+/* Chip ámbar "Merma": el renglón se vendió como merma; al devolver regresa a existencia de merma. */
+.rret-chip-waste {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #f59e0b;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Renglón de artículo libre (venta especial): no devolvible por aquí. Se atenúa. */
+.rret-line.is-free {
+  opacity: 0.6;
+}
+
+.rret-free-note {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* Aviso bajo el selector de reembolso cuando la venta fue a crédito (nota de crédito forzada). */
+.rret-credit-hint {
+  display: block;
+  margin-top: 4px;
+  color: #7c5cff;
+  font-size: 11px;
+  font-weight: 500;
+}

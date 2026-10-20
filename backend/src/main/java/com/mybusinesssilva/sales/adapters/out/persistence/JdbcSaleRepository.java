@@ -151,7 +151,7 @@ public class JdbcSaleRepository implements SaleRepository {
         public java.util.Optional<SaleDetail> findDetail(long saleId) {
                 var header = jdbc.sql("""
                                 SELECT s.id, s.folio, s.branch_id, s.customer_id, s.status, s.total,
-                                       s.created_at, c.name AS customer_name
+                                       s.created_at, s.on_credit, c.name AS customer_name
                                 FROM sale s
                                 LEFT JOIN customer c ON c.id = s.customer_id
                                 WHERE s.id = :id
@@ -162,7 +162,7 @@ public class JdbcSaleRepository implements SaleRepository {
                                                 (Long) rs.getObject("customer_id"), rs.getString("status"),
                                                 rs.getBigDecimal("total"),
                                                 rs.getObject("created_at", java.time.OffsetDateTime.class),
-                                                rs.getString("customer_name") })
+                                                rs.getString("customer_name"), rs.getBoolean("on_credit") })
                                 .optional();
                 if (header.isEmpty()) {
                         return java.util.Optional.empty();
@@ -170,6 +170,7 @@ public class JdbcSaleRepository implements SaleRepository {
                 Object[] h = header.get();
                 var lines = jdbc.sql("""
                                 SELECT sl.product_id, sl.description, sl.quantity, sl.unit_price, sl.unit,
+                                       sl.waste, sl.discount, sl.line_total,
                                        p.name AS product_name, COALESCE(p.active, TRUE) AS active,
                                        COALESCE((SELECT SUM(rl.quantity)
                                                  FROM sales_return_line rl
@@ -185,12 +186,37 @@ public class JdbcSaleRepository implements SaleRepository {
                                                 (Long) rs.getObject("product_id"), rs.getString("description"),
                                                 rs.getBigDecimal("quantity"), rs.getBigDecimal("unit_price"),
                                                 rs.getString("unit"), rs.getString("product_name"),
-                                                rs.getBoolean("active"), rs.getBigDecimal("already_returned")))
+                                                rs.getBoolean("active"), rs.getBigDecimal("already_returned"),
+                                                rs.getBoolean("waste"), rs.getBigDecimal("discount"),
+                                                rs.getBigDecimal("line_total")))
                                 .list();
                 return java.util.Optional.of(new SaleDetail(
                                 (Long) h[0], (String) h[1], (Long) h[2], (Long) h[3], (String) h[4],
                                 (java.math.BigDecimal) h[5], lines,
-                                (java.time.OffsetDateTime) h[6], (String) h[7]));
+                                (java.time.OffsetDateTime) h[6], (String) h[7], (Boolean) h[8]));
+        }
+
+        @Override
+        public void lockSale(long saleId) {
+                // Fuerza el lock de la fila de la venta hasta el fin de la transacción.
+                // El resultado se descarta: solo interesa el FOR UPDATE.
+                jdbc.sql("SELECT id FROM sale WHERE id = :id FOR UPDATE")
+                                .param("id", saleId)
+                                .query(Long.class)
+                                .optional();
+        }
+
+        @Override
+        public java.util.Optional<Long> activeShiftId(String actor) {
+                if (actor == null) {
+                        return java.util.Optional.empty();
+                }
+                return jdbc.sql(
+                                "SELECT id FROM shift WHERE opened_by = :actor AND status = 'OPEN' "
+                                                + "ORDER BY opened_at DESC LIMIT 1")
+                                .param("actor", actor)
+                                .query(Long.class)
+                                .optional();
         }
 
         @Override
