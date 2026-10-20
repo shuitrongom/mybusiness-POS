@@ -118,8 +118,10 @@ public class SaleController {
 
                 String cashier = actor == null ? "unknown" : actor.subject();
 
+                // Los roles de gestión no registran ventas: las hace el personal de caja.
+                // (NO es una guarda de autorización; asegura que la venta la haga una caja.)
                 boolean adminLike = actor != null
-                                && (actor.hasRole("OWNER") || actor.hasRole("ADMIN") || actor.hasRole("SUPERVISOR"));
+                                && (actor.hasRole("OWNER") || actor.hasRole("ADMIN"));
                 if (adminLike) {
                         throw new IllegalStateException(
                                         "Tu rol no registra ventas. Las ventas las realiza el personal de caja.");
@@ -129,12 +131,6 @@ public class SaleController {
                         throw new IllegalStateException(
                                         "Debes tener tu caja abierta para registrar ventas.");
                 }
-
-                List<SaleLine> lines = request.lines().stream()
-                                .map(l -> new SaleLine(l.productId(), l.description(), l.quantity(),
-                                                l.unitPrice(), l.discount(), l.unit(),
-                                                Boolean.TRUE.equals(l.waste())))
-                                .toList();
 
                 List<Payment> payments = request.payments() == null ? List.of()
                                 : request.payments().stream()
@@ -147,19 +143,25 @@ public class SaleController {
                 short priceListId = request.priceListId() == null ? 1 : request.priceListId().shortValue();
                 boolean onCredit = request.onCredit() != null && request.onCredit();
 
-                Sale sale = Sale.complete(request.branchId(), request.cashRegisterId(), request.shiftId(),
-                                cashier, salesperson, request.customerId(), priceListId,
-                                request.globalDiscount(), request.note(), onCredit,
-                                lines, payments, request.idempotencyKey());
+                // El controlador solo mapea DTO -> comando CRUDO; el servicio recomputa el
+                // precio autoritativo (ALTA-1). El precio/descuento del front viaja como dato
+                // crudo (el backend lo ignora en renglones de catálogo).
+                SaleService.SaleCommand cmd = new SaleService.SaleCommand(
+                                request.branchId(), request.cashRegisterId(), request.shiftId(), cashier,
+                                salesperson, request.customerId(), priceListId, request.globalDiscount(),
+                                request.note(), onCredit,
+                                request.lines().stream().map(l -> new SaleService.RawLine(
+                                                l.productId(), l.description(), l.quantity(), l.unitPrice(),
+                                                l.discount(), l.unit(), Boolean.TRUE.equals(l.waste()))).toList(),
+                                payments, request.idempotencyKey());
 
-                // La venta de merma se detecta por los propios renglones (SaleLine.waste). El
-                // precio de merma lo aplica el backend desde product.waste_price; el POS no lo
-                // teclea. registerSaleWithWaste descuenta esos renglones de la existencia de
-                // merma.
-                boolean hasWaste = lines.stream().anyMatch(SaleLine::waste);
+                // Ruteo merma vs normal sobre RawLine (los SaleLine aún no existen; se arman en
+                // el servicio tras recomputar precio). El precio de merma lo aplica el backend
+                // desde product.waste_price; el POS no lo teclea.
+                boolean hasWaste = cmd.lines().stream().anyMatch(SaleService.RawLine::waste);
                 SaleService.SaleResult result = hasWaste
-                                ? saleService.registerSaleWithWaste(sale)
-                                : saleService.registerSale(sale);
+                                ? saleService.registerSaleWithWaste(cmd)
+                                : saleService.registerSale(cmd);
                 HttpStatus status = result.duplicated() ? HttpStatus.OK : HttpStatus.CREATED;
                 return ResponseEntity.status(status).body(result);
         }

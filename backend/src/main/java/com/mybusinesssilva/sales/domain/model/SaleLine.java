@@ -47,6 +47,16 @@ public record SaleLine(
         unitPrice = unitPrice == null ? BigDecimal.ZERO : unitPrice;
         discount = discount == null ? BigDecimal.ZERO : discount;
         unit = (unit == null || unit.isBlank()) ? null : unit;
+        // Invariante de no-negatividad del renglón (red de seguridad; el servicio ya
+        // acota el descuento). El descuento no puede volver negativo el importe del
+        // renglón. Aplica a TODOS los call sites (constructores de 5/6/7 args),
+        // incluido
+        // registerQuote y el flujo de void: una cotización con descuento > importe se
+        // rechaza con 422 (GlobalExceptionHandler mapea IllegalArgumentException).
+        if (unitPrice.multiply(quantity).subtract(discount).signum() < 0) {
+            throw new IllegalArgumentException(
+                    "El descuento del renglón no puede superar su importe");
+        }
     }
 
     /**

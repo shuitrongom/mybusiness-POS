@@ -549,3 +549,101 @@
 .cash-move strong {
   color: var(--heading);
 }
+
+/* =====================================================================
+   Premium del dashboard del cajero: números tabulares, últimas ventas
+   como filas-tarjeta (grid compartido cabecera/filas) y vacíos premium.
+   ===================================================================== */
+
+/* Números tabulares: alinean decimales en TODOS los montos (igual que el DaySummaryModal). */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Últimas ventas: filas-tarjeta, NO tabla HTML. Cabecera y filas comparten el MISMO grid. */
+.dash-sales {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--space-3);
+}
+
+.dash-sales-head,
+.dash-sale-row {
+  display: grid;
+  grid-template-columns: 1fr auto 120px;
+  gap: 12px;
+  align-items: center;
+}
+
+.dash-sales-head {
+  padding: 4px 14px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.dash-sales-head .ta-right {
+  text-align: right;
+}
+
+.dash-sale-row {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dash-sale-row:hover {
+  border-color: var(--brand-600);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.dash-sale-folio {
+  font-weight: 650;
+  color: var(--heading);
+}
+
+.dash-sale-time {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.dash-sale-amt {
+  justify-self: end;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #12b886 16%, transparent);
+  color: #12b886;
+  white-space: nowrap;
+}
+
+/* Estado vacío premium (ranking y últimas ventas): icono + guía + borde punteado. */
+.dash-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  padding: 26px 16px;
+  border: 1.5px dashed var(--border);
+  border-radius: 14px;
+  color: var(--text-muted);
+}
+
+.dash-empty-icon {
+  color: var(--brand-600);
+  opacity: 0.9;
+}
+
+.dash-empty strong {
+  color: var(--heading);
+  font-weight: 650;
+}
+
+.dash-empty p {
+  margin: 0;
+  max-width: 360px;
+}

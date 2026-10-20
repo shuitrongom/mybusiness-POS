@@ -22,8 +22,6 @@ import com.mybusinesssilva.licensing.domain.port.out.PlanRepository;
 import com.mybusinesssilva.sales.application.SaleService;
 import com.mybusinesssilva.sales.domain.model.Payment;
 import com.mybusinesssilva.sales.domain.model.PaymentMethod;
-import com.mybusinesssilva.sales.domain.model.Sale;
-import com.mybusinesssilva.sales.domain.model.SaleLine;
 import com.mybusinesssilva.platform.tenancy.TenantContext;
 import com.mybusinesssilva.support.AbstractIntegrationTest;
 import java.math.BigDecimal;
@@ -36,20 +34,31 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Pruebas de integración del BI end-to-end: se generan ventas reales y se verifican el resumen
- * del día, el ranking de productos, el análisis ABC y las sugerencias de compra.
+ * Pruebas de integración del BI end-to-end: se generan ventas reales y se
+ * verifican el resumen
+ * del día, el ranking de productos, el análisis ABC y las sugerencias de
+ * compra.
  */
 class BiServiceIT extends AbstractIntegrationTest {
 
-    @Autowired private LicensingService licensingService;
-    @Autowired private CatalogService catalogService;
-    @Autowired private InventoryService inventoryService;
-    @Autowired private SaleService saleService;
-    @Autowired private BiService biService;
-    @Autowired private AnalyticsService analyticsService;
-    @Autowired private InsightEngine insightEngine;
-    @Autowired private PlanRepository planRepository;
-    @Autowired private DataSource dataSource;
+    @Autowired
+    private LicensingService licensingService;
+    @Autowired
+    private CatalogService catalogService;
+    @Autowired
+    private InventoryService inventoryService;
+    @Autowired
+    private SaleService saleService;
+    @Autowired
+    private BiService biService;
+    @Autowired
+    private AnalyticsService analyticsService;
+    @Autowired
+    private InsightEngine insightEngine;
+    @Autowired
+    private PlanRepository planRepository;
+    @Autowired
+    private DataSource dataSource;
 
     private long branchId;
 
@@ -68,7 +77,7 @@ class BiServiceIT extends AbstractIntegrationTest {
 
         // Dos ventas: p1 vende más ingreso que p2.
         sell(p1, new BigDecimal("10"), new BigDecimal("18.00")); // 180
-        sell(p2, new BigDecimal("5"), new BigDecimal("5.00"));   // 25
+        sell(p2, new BigDecimal("5"), new BigDecimal("5.00")); // 25
 
         DashboardSummary summary = biService.todaySummary();
         assertThat(summary.salesCount()).isEqualTo(2);
@@ -91,7 +100,7 @@ class BiServiceIT extends AbstractIntegrationTest {
         stock(p2, 100);
 
         sell(p1, new BigDecimal("10"), new BigDecimal("100.00")); // 1000 (dominante)
-        sell(p2, new BigDecimal("1"), new BigDecimal("5.00"));    // 5
+        sell(p2, new BigDecimal("1"), new BigDecimal("5.00")); // 5
 
         List<ProductRanking> abc = biService.abcAnalysis(90);
         assertThat(abc).isNotEmpty();
@@ -125,7 +134,7 @@ class BiServiceIT extends AbstractIntegrationTest {
 
         // Ventas de hoy con métodos de pago distintos.
         sell(p1, new BigDecimal("10"), new BigDecimal("18.00"), PaymentMethod.CASH); // 180 efectivo
-        sell(p2, new BigDecimal("5"), new BigDecimal("5.00"), PaymentMethod.CARD);    // 25 tarjeta
+        sell(p2, new BigDecimal("5"), new BigDecimal("5.00"), PaymentMethod.CARD); // 25 tarjeta
 
         // La serie diaria debe tener al menos el punto de hoy.
         List<TimeSeriesPoint> series = biService.salesByDay(30);
@@ -149,7 +158,8 @@ class BiServiceIT extends AbstractIntegrationTest {
         assertThat(comparison.today().current()).isEqualByComparingTo("205.00");
         assertThat(comparison.today().previous()).isEqualByComparingTo("0");
 
-        // El InsightEngine inyectado debe devolver al menos un insight con severidad válida.
+        // El InsightEngine inyectado debe devolver al menos un insight con severidad
+        // válida.
         List<Insight> insights = insightEngine.generate("negocio", Map.of(
                 "today", biService.todaySummary(),
                 "series", series,
@@ -204,9 +214,14 @@ class BiServiceIT extends AbstractIntegrationTest {
 
     private void sell(long productId, BigDecimal qty, BigDecimal price, PaymentMethod method) {
         BigDecimal total = qty.multiply(price);
-        Sale sale = Sale.complete(branchId, null, null, "cajero", null,
-                List.of(new SaleLine(productId, "item", qty, price, BigDecimal.ZERO)),
+        // El backend recomputa el precio desde el catálogo (ALTA-1); el producto se
+        // creó
+        // con este mismo precio, así que el total recomputado coincide con el pagado.
+        SaleService.SaleCommand cmd = new SaleService.SaleCommand(
+                branchId, null, null, "cajero", "cajero", null, (short) 1, BigDecimal.ZERO,
+                null, false,
+                List.of(new SaleService.RawLine(productId, "item", qty, price, BigDecimal.ZERO, null, false)),
                 List.of(new Payment(method, total)), null);
-        saleService.registerSale(sale);
+        saleService.registerSale(cmd);
     }
 }

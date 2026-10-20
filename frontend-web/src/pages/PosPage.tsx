@@ -182,6 +182,13 @@ export function PosPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(pendingCount());
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // ALTA-2 (anti doble-cobro): venta EN VUELO. Mientras esté en true, el botón de confirmar y el
+  // Enter del checkout quedan deshabilitados y finishSale es reentrante-seguro (no dispara dos POST).
+  const [submitting, setSubmitting] = useState(false);
+  // Clave de idempotencia POR INTENTO (no por llamada): se genera al abrir el checkout y se REUSA
+  // en cada reintento del mismo intento (misma clave => el backend deduplica). Se regenera al abrir
+  // un nuevo checkout o tras una venta exitosa (al limpiar el carrito).
+  const attemptKeyRef = useRef<string>('');
   const [ticket, setTicket] = useState<TicketData | null>(null);
   // Estado de la impresión directa del ticket recién vendido (controla el modal post-venta):
   //  'printing'  = enviando al agente ; 'printed' = impreso ; 'no-printer' = sin impresora
@@ -528,7 +535,11 @@ export function PosPage() {
       toast.error('Ajusta la cantidad', 'Hay un artículo por encima de su existencia. Corrige la cantidad para cobrar.');
       return;
     }
-    if (cart.length > 0) setCheckoutOpen(true);
+    if (cart.length > 0) {
+      // Nueva clave de idempotencia para ESTE intento de cobro (se reusa en reintentos).
+      attemptKeyRef.current = `pos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setCheckoutOpen(true);
+    }
   }, [cart.length, shift, hasOverStockLine]);
 
   // Cierra el modal post-venta y deja la caja lista para la siguiente venta.
@@ -631,97 +642,110 @@ export function PosPage() {
   }, []);
 
   const finishSale = async (payments: PaymentSplit[], onCredit: boolean, cashReceived?: number) => {
-    if (cart.length === 0) return;
-    const idempotencyKey = `pos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const paid = payments.reduce((s, p) => s + p.amount, 0);
-    const payload = {
-      branchId: branchId || 1,
-      cashRegisterId: shift?.cashRegisterId ?? null,
-      shiftId: shift?.shiftId ?? null,
-      customerId: customer?.id ?? null,
-      priceListId,
-      globalDiscount,
-      onCredit,
-      lines: cart.map((l) => ({
-        productId: l.productId,
-        description: l.description,
-        quantity: l.quantity,
-        unitPrice: l.unitPrice,
-        discount: promoDiscountOf(l),
-        unit: l.unit ?? null,
-        // Merma de panadería: el renglón viaja con waste=true. El precio de merma es FIJO en el
-        // artículo; el backend lo aplica y descuenta de la existencia de merma (no del stock normal).
-        waste: l.waste ? true : null,
-      })),
-      payments: payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: p.amount })),
-      idempotencyKey,
-    };
-
-    const cashPaid = payments.filter((p) => p.method === 'CASH').reduce((s, p) => s + p.amount, 0);
-    // El efectivo recibido (con el que se calcula el cambio) puede ser mayor que el aplicado.
-    const received = cashReceived != null && cashReceived > 0 ? cashReceived : (cashPaid > 0 ? cashPaid : paid);
-    const change = onCredit ? 0 : round2(Math.max(received - Math.max(total - (paid - cashPaid), 0), 0));
-    const methodLabel = payments.length === 1
-      ? labelOf(payments[0].method)
-      : onCredit ? 'Crédito' : 'Pago mixto';
-    const ticketBase: Omit<TicketData, 'folio' | 'offline'> = {
-      branchName: activeBranch?.name ?? 'Matriz',
-      dateTime: new Date(),
-      lines: cart.map((l) => ({
-        description: l.description, quantity: l.quantity,
-        unitPrice: l.unitPrice,
-        lineTotal: l.quantity * l.unitPrice - promoDiscountOf(l),
-      })),
-      total,
-      methodLabel,
-      received: onCredit ? paid : received,
-      change,
-    };
-
-    let ticketData: TicketData;
+    // Candado de reentrada (ALTA-2): si ya hay una venta en vuelo o el carrito está vacío, no hace
+    // nada. Evita que un doble clic/doble Enter dispare dos POST.
+    if (cart.length === 0 || submitting) return;
+    // Clave de idempotencia del INTENTO: se reusa en reintentos; si por algún camino no se generó
+    // en openCheckout, se genera aquí como respaldo.
+    const idempotencyKey = attemptKeyRef.current
+      || (attemptKeyRef.current = `pos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    setSubmitting(true);
     try {
-      const { data } = await api.post<{ saleId: number }>('/sales', payload);
-      ticketData = { ...ticketBase, folio: data?.saleId ? `V-${data.saleId}` : idempotencyKey.slice(-6), offline: false };
-    } catch (err) {
-      const ax = err as AxiosError<InsufficientStock>;
-      const problem = ax.response?.data;
-      // 409 INSUFFICIENT_STOCK: el backend NO guardó la venta (rollback). No se encola offline:
-      // es un rechazo de negocio. Se avisa al cajero y se topa la cantidad vendible a 'available'.
-      if (ax.response?.status === 409 && problem?.title === 'INSUFFICIENT_STOCK') {
-        const available = problem.available ?? 0;
-        const name = problem.productName
-          ?? (problem.productId != null
-            ? cart.find((l) => l.productId === problem.productId)?.description
-            : undefined)
-          ?? 'el producto';
-        setCart((prev) => prev.map((l) =>
-          (problem.productId != null && l.productId === problem.productId)
-            ? { ...l, quantity: Math.max(1, Math.floor(available)) }
-            : l));
-        toast.error(
-          'Sin existencia suficiente',
-          `Solo hay ${available} de ${name}. Ajustamos la cantidad a lo disponible.`,
-        );
-        return; // la venta no se registró; el cajero reintenta con la cantidad topada
+      const paid = payments.reduce((s, p) => s + p.amount, 0);
+      const payload = {
+        branchId: branchId || 1,
+        cashRegisterId: shift?.cashRegisterId ?? null,
+        shiftId: shift?.shiftId ?? null,
+        customerId: customer?.id ?? null,
+        priceListId,
+        globalDiscount,
+        onCredit,
+        lines: cart.map((l) => ({
+          productId: l.productId,
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          discount: promoDiscountOf(l),
+          unit: l.unit ?? null,
+          // Merma de panadería: el renglón viaja con waste=true. El precio de merma es FIJO en el
+          // artículo; el backend lo aplica y descuenta de la existencia de merma (no del stock normal).
+          waste: l.waste ? true : null,
+        })),
+        payments: payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: p.amount })),
+        idempotencyKey,
+      };
+
+      const cashPaid = payments.filter((p) => p.method === 'CASH').reduce((s, p) => s + p.amount, 0);
+      // El efectivo recibido (con el que se calcula el cambio) puede ser mayor que el aplicado.
+      const received = cashReceived != null && cashReceived > 0 ? cashReceived : (cashPaid > 0 ? cashPaid : paid);
+      const change = onCredit ? 0 : round2(Math.max(received - Math.max(total - (paid - cashPaid), 0), 0));
+      const methodLabel = payments.length === 1
+        ? labelOf(payments[0].method)
+        : onCredit ? 'Crédito' : 'Pago mixto';
+      const ticketBase: Omit<TicketData, 'folio' | 'offline'> = {
+        branchName: activeBranch?.name ?? 'Matriz',
+        dateTime: new Date(),
+        lines: cart.map((l) => ({
+          description: l.description, quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          lineTotal: l.quantity * l.unitPrice - promoDiscountOf(l),
+        })),
+        total,
+        methodLabel,
+        received: onCredit ? paid : received,
+        change,
+      };
+
+      let ticketData: TicketData;
+      try {
+        const { data } = await api.post<{ saleId: number }>('/sales', payload);
+        ticketData = { ...ticketBase, folio: data?.saleId ? `V-${data.saleId}` : idempotencyKey.slice(-6), offline: false };
+      } catch (err) {
+        const ax = err as AxiosError<InsufficientStock>;
+        const problem = ax.response?.data;
+        // 409 INSUFFICIENT_STOCK: el backend NO guardó la venta (rollback). No se encola offline:
+        // es un rechazo de negocio. Se avisa al cajero y se topa la cantidad vendible a 'available'.
+        if (ax.response?.status === 409 && problem?.title === 'INSUFFICIENT_STOCK') {
+          const available = problem.available ?? 0;
+          const name = problem.productName
+            ?? (problem.productId != null
+              ? cart.find((l) => l.productId === problem.productId)?.description
+              : undefined)
+            ?? 'el producto';
+          setCart((prev) => prev.map((l) =>
+            (problem.productId != null && l.productId === problem.productId)
+              ? { ...l, quantity: Math.max(1, Math.floor(available)) }
+              : l));
+          toast.error(
+            'Sin existencia suficiente',
+            `Solo hay ${available} de ${name}. Ajustamos la cantidad a lo disponible.`,
+          );
+          return; // la venta no se registró; el cajero reintenta con la cantidad topada
+        }
+        // Cualquier otro error (sin conexión): se encola para sincronizar más tarde.
+        queueSale(payload);
+        setPending(pendingCount());
+        ticketData = { ...ticketBase, folio: idempotencyKey.slice(-6), offline: true };
+        toast.info('Venta guardada sin conexión', 'Se sincronizará automáticamente al reconectar.');
       }
-      // Cualquier otro error (sin conexión): se encola para sincronizar más tarde.
-      queueSale(payload);
-      setPending(pendingCount());
-      ticketData = { ...ticketBase, folio: idempotencyKey.slice(-6), offline: true };
-      toast.info('Venta guardada sin conexión', 'Se sincronizará automáticamente al reconectar.');
+
+      // Muestra el modal post-venta y lanza la impresión DIRECTA por el agente (sin diálogo). El
+      // modal reacciona al resultado: 'printed' (impreso) o 'no-printer' (sin impresora -> queda
+      // para reimprimir). La venta ya está guardada pase lo que pase con la impresión.
+      setTicket(ticketData);
+      setPrintState('printing');
+      clearCart();
+      setCustomer(null);
+      setCheckoutOpen(false);
+      // Venta resuelta (registrada o encolada): invalida la clave del intento para que la próxima
+      // venta use una nueva (se regenera al abrir el siguiente checkout).
+      attemptKeyRef.current = '';
+      barcodeRef.current?.focus();
+
+      void printSale(ticketSettings, ticketData).then((result) => setPrintState(result));
+    } finally {
+      setSubmitting(false);
     }
-
-    // Muestra el modal post-venta y lanza la impresión DIRECTA por el agente (sin diálogo). El
-    // modal reacciona al resultado: 'printed' (impreso) o 'no-printer' (sin impresora -> queda
-    // para reimprimir). La venta ya está guardada pase lo que pase con la impresión.
-    setTicket(ticketData);
-    setPrintState('printing');
-    clearCart();
-    setCustomer(null);
-    setCheckoutOpen(false);
-    barcodeRef.current?.focus();
-
-    void printSale(ticketSettings, ticketData).then((result) => setPrintState(result));
   };
 
   const sync = async () => {
@@ -1134,6 +1158,7 @@ export function PosPage() {
           <CheckoutModal
             total={total}
             customer={customer}
+            submitting={submitting}
             onCancel={() => setCheckoutOpen(false)}
             onConfirm={finishSale}
           />
@@ -1570,10 +1595,11 @@ const MXN_DENOMS = [1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
  * Modal de cobro premium: pagos MIXTOS y VENTA A CRÉDITO. Para efectivo ofrece billetes rápidos
  * (denominaciones MXN), "pago exacto" y captura libre, y calcula el cambio con redondeo correcto.
  */
-function CheckoutModal({ total, customer, onCancel, onConfirm }:
+function CheckoutModal({ total, customer, submitting, onCancel, onConfirm }:
   {
     total: number;
     customer: Customer | null;
+    submitting: boolean;
     onConfirm: (payments: PaymentSplit[], onCredit: boolean, cashReceived?: number) => void;
     onCancel: () => void;
   }) {
@@ -1627,13 +1653,13 @@ function CheckoutModal({ total, customer, onCancel, onConfirm }:
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'F12') { e.preventDefault(); if (!onCredit) setCashReceived(cashDue); }
-      else if (e.key === 'Enter') { e.preventDefault(); if (canConfirm) onConfirm(buildPayments(), onCredit, cashReceived); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (canConfirm && !submitting) onConfirm(buildPayments(), onCredit, cashReceived); }
       else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canConfirm, cashDue, cashReceived, onCredit, otherSplits]);
+  }, [canConfirm, cashDue, cashReceived, onCredit, otherSplits, submitting]);
 
   return (
     <motion.div className="pos-modal-overlay" onClick={onCancel}
@@ -1729,8 +1755,14 @@ function CheckoutModal({ total, customer, onCancel, onConfirm }:
 
           <div className="pos-modal-actions">
             <button className="btn-ghost" onClick={onCancel}>Cancelar</button>
-            <button className="pos-confirm" disabled={!canConfirm} onClick={() => onConfirm(buildPayments(), onCredit, cashReceived)}>
-              {onCredit ? 'Registrar a crédito' : 'Confirmar cobro'} <span className="pos-key-hint">Enter</span>
+            <button
+              className="pos-confirm"
+              disabled={!canConfirm || submitting}
+              onClick={() => { if (!submitting) onConfirm(buildPayments(), onCredit, cashReceived); }}
+            >
+              {submitting
+                ? <><span className="pos-spinner" aria-hidden /> Cobrando…</>
+                : <>{onCredit ? 'Registrar a crédito' : 'Confirmar cobro'} <span className="pos-key-hint">Enter</span></>}
             </button>
           </div>
         </div>

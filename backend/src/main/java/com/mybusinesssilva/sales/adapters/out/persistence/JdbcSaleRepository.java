@@ -107,6 +107,15 @@ public class JdbcSaleRepository implements SaleRepository {
         }
 
         @Override
+        public Optional<SaleTotals> totalsOf(long saleId) {
+                return jdbc.sql("SELECT total, amount_paid FROM sale WHERE id = :id")
+                                .param("id", saleId)
+                                .query((rs, n) -> new SaleTotals(
+                                                rs.getBigDecimal("total"), rs.getBigDecimal("amount_paid")))
+                                .optional();
+        }
+
+        @Override
         public void markVoided(long saleId) {
                 jdbc.sql("UPDATE sale SET status = 'VOIDED' WHERE id = :id")
                                 .param("id", saleId)

@@ -756,6 +756,25 @@
   box-shadow: none;
 }
 
+/* Estado "Cobrando…" (ALTA-2): botón en vuelo con spinner; deshabilitado contra el doble cobro. */
+.pos-confirm .pos-spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: pos-spin 0.7s linear infinite;
+}
+
+@keyframes pos-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Acciones de cierre con dos modos: envuelven para no apretar en pantallas chicas. */
 .pos-close-actions {
   flex-wrap: wrap;

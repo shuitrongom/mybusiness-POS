@@ -413,12 +413,34 @@ public class ShiftService {
         @Transactional
         public void recordCashMovement(long shiftId, String direction, BigDecimal amount,
                         String reason, String actor) {
+                // 1) El turno debe EXISTIR y estar ABIERTO. NO se valida propiedad (opened_by):
+                // operar un turno abierto ajeno es el relevo legítimo; el actor queda trazado
+                // en
+                // la propia fila de cash_movement (simétrico con closeShift y registerSale).
+                java.util.Optional<String> status = jdbc.sql("SELECT status FROM shift WHERE id = :id")
+                                .param("id", shiftId).query(String.class).optional();
+                if (status.isEmpty()) {
+                        throw new IllegalStateException("El turno indicado no existe.");
+                }
+                if (!"OPEN".equals(status.get())) {
+                        throw new IllegalStateException(
+                                        "La caja ya está cerrada; no admite movimientos de efectivo.");
+                }
+                // 2) Dirección y monto (red de seguridad además del Bean Validation del DTO).
+                String dir = direction == null ? "" : direction.trim().toUpperCase(java.util.Locale.ROOT);
+                if (!"IN".equals(dir) && !"OUT".equals(dir)) {
+                        throw new IllegalArgumentException("La dirección debe ser IN u OUT.");
+                }
+                if (amount == null || amount.signum() <= 0) {
+                        throw new IllegalArgumentException("El monto debe ser mayor a 0.");
+                }
+                // 3) Insert trazable (actor, turno, razón, monto, fecha por DEFAULT now()).
                 jdbc.sql("""
                                 INSERT INTO cash_movement (shift_id, direction, amount, reason, actor)
                                 VALUES (:shift, :dir, :amount, :reason, :actor)
                                 """)
                                 .param("shift", shiftId)
-                                .param("dir", direction)
+                                .param("dir", dir)
                                 .param("amount", amount)
                                 .param("reason", reason)
                                 .param("actor", actor)
@@ -461,6 +483,36 @@ public class ShiftService {
         public ShiftClosure closeShift(long shiftId, String closedBy, BigDecimal countedCash, CloseMode mode) {
                 CloseMode effectiveMode = (mode == null) ? CloseMode.TURNO : mode;
 
+                // (0) Leer el estado real del turno: distingue inexistente / cerrado / abierto,
+                // lo que el UPDATE ... WHERE status='OPEN' por sí solo NO distingue (claimed==0
+                // se produce tanto por "ya cerrado" como por "no existe").
+                java.util.Optional<String> st = jdbc.sql("SELECT status FROM shift WHERE id = :id")
+                                .param("id", shiftId).query(String.class).optional();
+                if (st.isEmpty()) {
+                        throw new IllegalStateException("El turno indicado no existe.");
+                }
+                if ("CLOSED".equals(st.get())) {
+                        // Idempotente: devuelve el corte Z ya persistido, sin recalcular.
+                        return existingClosureOf(shiftId);
+                }
+
+                // (1) Candado atómico: solo un llamador concurrente gana el claim OPEN ->
+                // CLOSED.
+                int claimed = jdbc.sql("""
+                                UPDATE shift SET status = 'CLOSED', closed_by = :by, counted_cash = :counted,
+                                    closed_at = now()
+                                WHERE id = :id AND status = 'OPEN'
+                                """)
+                                .param("id", shiftId)
+                                .param("by", closedBy)
+                                .param("counted", countedCash)
+                                .update();
+                if (claimed == 0) {
+                        // Perdió la carrera contra otro cierre concurrente que acaba de cerrar este
+                        // turno: idempotente, devuelve el Z que ganó el claim.
+                        return existingClosureOf(shiftId);
+                }
+
                 BigDecimal openingFloat = jdbc.sql("SELECT opening_float FROM shift WHERE id = :id")
                                 .param("id", shiftId).query(BigDecimal.class).single();
 
@@ -479,16 +531,6 @@ public class ShiftService {
 
                 TypeSplit split = salesTypeSplit(shiftId);
 
-                jdbc.sql("""
-                                UPDATE shift SET status = 'CLOSED', closed_by = :by, counted_cash = :counted,
-                                    closed_at = now()
-                                WHERE id = :id
-                                """)
-                                .param("id", shiftId)
-                                .param("by", closedBy)
-                                .param("counted", countedCash)
-                                .update();
-
                 // Persiste el corte Z (documento de cierre).
                 persistCut(shiftId, "Z", openingFloat, cashSales, cardSales, transferSales, voucherSales,
                                 cashIn, cashOut, expectedCash, countedCash, difference, split, closedBy);
@@ -504,6 +546,40 @@ public class ShiftService {
                 return new ShiftClosure(shiftId, openingFloat, cashSales, cardSales, transferSales,
                                 voucherSales, cashIn, cashOut, expectedCash, countedCash, difference,
                                 split.normalCount(), split.normalTotal(), split.specialCount(), split.specialTotal());
+        }
+
+        /**
+         * Reconstruye el {@link ShiftClosure} de un turno YA CERRADO a partir de su
+         * corte Z persistido (idempotencia del cierre: un segundo POST sobre un turno
+         * cerrado devuelve el mismo corte Z sin recalcular ni re-persistir). Usa
+         * {@code ORDER BY created_at ASC LIMIT 1} para ser determinista ante datos
+         * legados con dos Z (el bug de doble cierre previo). Si el turno está CLOSED
+         * pero NO tiene corte Z (dato corrupto), lanza error explícito en vez de
+         * recalcular un corte que podría diferir del firmado.
+         */
+        private ShiftClosure existingClosureOf(long shiftId) {
+                return jdbc.sql("""
+                                SELECT opening_float, cash_sales, card_sales, transfer_sales, voucher_sales,
+                                       cash_in, cash_out, expected_cash, counted_cash, difference,
+                                       normal_sales_count, normal_sales_total,
+                                       special_sales_count, special_sales_total
+                                FROM cash_cut
+                                WHERE shift_id = :id AND cut_type = 'Z'
+                                ORDER BY created_at ASC LIMIT 1
+                                """)
+                                .param("id", shiftId)
+                                .query((rs, n) -> new ShiftClosure(shiftId,
+                                                rs.getBigDecimal("opening_float"), rs.getBigDecimal("cash_sales"),
+                                                rs.getBigDecimal("card_sales"), rs.getBigDecimal("transfer_sales"),
+                                                rs.getBigDecimal("voucher_sales"), rs.getBigDecimal("cash_in"),
+                                                rs.getBigDecimal("cash_out"), rs.getBigDecimal("expected_cash"),
+                                                rs.getBigDecimal("counted_cash"), rs.getBigDecimal("difference"),
+                                                rs.getInt("normal_sales_count"), rs.getBigDecimal("normal_sales_total"),
+                                                rs.getInt("special_sales_count"),
+                                                rs.getBigDecimal("special_sales_total")))
+                                .optional()
+                                .orElseThrow(() -> new IllegalStateException(
+                                                "El turno está cerrado pero no tiene corte Z; revísalo manualmente."));
         }
 
         /**

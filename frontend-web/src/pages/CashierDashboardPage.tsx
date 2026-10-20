@@ -90,11 +90,18 @@ export function CashierDashboardPage() {
         </span>
       </div>
 
-      {closed && (
+      {closed ? (
         <div style={{ marginBottom: 'var(--space-4)' }}>
           <InfoBanner icon={<CheckCircle2 size={18} />} title="Tu turno de hoy ya cerró" tone="sky">
             Este es tu resumen del día. Es solo informativo: puedes verlo completo, pero ya no podrás
             vender ni abrir caja de nuevo hasta el día siguiente.
+          </InfoBanner>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <InfoBanner icon={<TrendingUp size={18} />} title="Tu corte en vivo" tone="brand">
+            Así va tu turno ahora mismo. Se actualiza solo mientras tu caja esté abierta; al cerrar
+            verás tu corte final con el efectivo esperado contra lo contado.
           </InfoBanner>
         </div>
       )}
@@ -106,8 +113,8 @@ export function CashierDashboardPage() {
             <span className="hero-metric-label">{closed ? 'Vendido en tu día' : 'Vendido en tu turno'}</span>
             {!closed && <span className="hero-metric-badge"><TrendingUp size={14} /> En vivo</span>}
           </div>
-          <div className="hero-metric-value">{money(s.totalSales)}</div>
-          <div className="hero-metric-foot">
+          <div className="hero-metric-value num">{money(s.totalSales)}</div>
+          <div className="hero-metric-foot num">
             {int(s.salesCount)} ventas · ticket promedio {money(s.averageTicket)} · {int(s.units)} unidades
           </div>
           <div className="hero-glow" />
@@ -150,8 +157,8 @@ export function CashierDashboardPage() {
             {s.creditSales > 0 && <MethodRow icon={<Clock size={16} />} label="A crédito" value={s.creditSales} tint="amber" />}
           </div>
           <div className="cash-moves">
-            <div className="cash-move"><span><ArrowDownCircle size={15} /> Entradas de efectivo</span><strong>{money(s.cashIn)}</strong></div>
-            <div className="cash-move"><span><ArrowUpCircle size={15} /> Salidas / retiros</span><strong>-{money(s.cashOut)}</strong></div>
+            <div className="cash-move"><span><ArrowDownCircle size={15} /> Entradas de efectivo</span><strong className="num">{money(s.cashIn)}</strong></div>
+            <div className="cash-move"><span><ArrowUpCircle size={15} /> Salidas / retiros</span><strong className="num">-{money(s.cashOut)}</strong></div>
           </div>
         </motion.div>
 
@@ -164,13 +171,19 @@ export function CashierDashboardPage() {
                 <div className="rank-main">
                   <div className="rank-line">
                     <span className="rank-name">{p.name}</span>
-                    <span className="rank-rev">{money(p.revenue)}</span>
+                    <span className="rank-rev num">{money(p.revenue)}</span>
                   </div>
-                  <span className="rank-qty">{int(p.quantity)} unidades</span>
+                  <span className="rank-qty num">{int(p.quantity)} unidades</span>
                 </div>
               </div>
             ))}
-            {s.topProducts.length === 0 && <p className="empty">Aún no has vendido nada en este turno.</p>}
+            {s.topProducts.length === 0 && (
+              <EmptyState
+                icon={<Package size={28} />}
+                title="Aún no hay ventas"
+                hint="Tus productos más vendidos del turno aparecerán aquí conforme cobres."
+              />
+            )}
           </div>
         </motion.div>
       </div>
@@ -178,19 +191,27 @@ export function CashierDashboardPage() {
       {/* Últimas ventas del turno */}
       <motion.div className="card" style={{ marginTop: 'var(--space-4)' }} variants={staggerItem} initial="hidden" animate="visible">
         <div className="sec-title"><Receipt size={18} /><h3>Últimas ventas</h3></div>
-        <table className="table">
-          <thead><tr><th>Folio</th><th>Hora</th><th className="ta-right">Importe</th></tr></thead>
-          <tbody>
-            {s.lastSales.map((v) => (
-              <tr key={v.id}>
-                <td><strong>{v.folio ?? `V-${v.id}`}</strong></td>
-                <td>{timeOf(v.createdAt)}</td>
-                <td className="ta-right">{money(v.total)}</td>
-              </tr>
-            ))}
-            {s.lastSales.length === 0 && <tr><td colSpan={3} className="empty">Sin ventas todavía.</td></tr>}
-          </tbody>
-        </table>
+        <div className="dash-sales">
+          {s.lastSales.length > 0 && (
+            <div className="dash-sales-head">
+              <span>Folio</span><span>Hora</span><span className="ta-right">Importe</span>
+            </div>
+          )}
+          {s.lastSales.map((v) => (
+            <div className="dash-sale-row" key={v.id}>
+              <span className="dash-sale-folio">{v.folio ?? `V-${v.id}`}</span>
+              <span className="dash-sale-time num">{timeOf(v.createdAt)}</span>
+              <span className="dash-sale-amt num">{money(v.total)}</span>
+            </div>
+          ))}
+          {s.lastSales.length === 0 && (
+            <EmptyState
+              icon={<Receipt size={28} />}
+              title="Sin ventas todavía"
+              hint="Cuando cobres tu primer ticket del turno aparecerá aquí."
+            />
+          )}
+        </div>
       </motion.div>
     </div>
   );
@@ -202,7 +223,7 @@ function Kpi({ icon, label, value, tint, hint }: { icon: ReactNode; label: strin
       <span className={`kpi-icon kpi-${tint}`}>{icon}</span>
       <div className="kpi-body">
         <span className="kpi-label">{label}</span>
-        <span className="kpi-value">{value}</span>
+        <span className="kpi-value num">{value}</span>
         {hint && <span className="kpi-hint">{hint}</span>}
       </div>
     </motion.div>
@@ -214,7 +235,21 @@ function MethodRow({ icon, label, value, tint }: { icon: ReactNode; label: strin
     <div className="cash-method">
       <span className={`kpi-icon kpi-${tint}`}>{icon}</span>
       <span className="cash-method-label">{label}</span>
-      <strong className="cash-method-value">{money(value)}</strong>
+      <strong className="cash-method-value num">{money(value)}</strong>
+    </div>
+  );
+}
+
+/**
+ * Estado vacío premium reutilizable del dashboard: icono con acento + mensaje que GUÍA la acción
+ * siguiente, dentro de un recuadro con borde punteado (coherente con el steering diseno-premium).
+ */
+function EmptyState({ icon, title, hint }: { icon: ReactNode; title: string; hint: string }) {
+  return (
+    <div className="dash-empty">
+      <span className="dash-empty-icon">{icon}</span>
+      <strong>{title}</strong>
+      <p>{hint}</p>
     </div>
   );
 }

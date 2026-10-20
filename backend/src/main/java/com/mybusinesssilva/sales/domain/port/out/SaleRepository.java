@@ -20,6 +20,17 @@ public interface SaleRepository {
          */
         Optional<Long> findIdByIdempotencyKey(String idempotencyKey);
 
+        /**
+         * Lee los totales persistidos de una venta (solo lectura), para construir el
+         * {@link com.mybusinesssilva.sales.application.SaleService.SaleResult}
+         * idempotente de un reenvío sin reconstruir el agregado {@code Sale}.
+         *
+         * @param saleId venta
+         * @return {@link SaleTotals} con {@code total} y {@code amountPaid}, o vacío si
+         *         la venta no existe
+         */
+        Optional<SaleTotals> totalsOf(long saleId);
+
         void markVoided(long saleId);
 
         /**
@@ -128,6 +139,17 @@ public interface SaleRepository {
          *                  a la existencia de merma, no al stock normal)
          */
         record SaleLineRow(Long productId, BigDecimal quantity, boolean waste) {
+        }
+
+        /**
+         * Totales persistidos de una venta (para el resultado idempotente de un
+         * reenvío).
+         *
+         * @param total      total de la venta ({@code sale.total})
+         * @param amountPaid importe pagado ({@code sale.amount_paid}); el cambio se
+         *                   deriva como {@code max(0, amountPaid - total)}
+         */
+        record SaleTotals(BigDecimal total, BigDecimal amountPaid) {
         }
 
         /**

@@ -3,6 +3,8 @@ package com.mybusinesssilva.sales.adapters.in.rest;
 import com.mybusinesssilva.sales.application.ShiftService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
@@ -37,11 +39,9 @@ public class ShiftController {
             @AuthenticationPrincipal AuthenticatedUser actor,
             @Valid @RequestBody OpenShiftRequest request) {
         // Abrir caja es operar caja: lo hace el personal operativo (cajeros), NO
-        // administración ni
-        // supervisión. Dueño/Admin administran, Supervisor supervisa; ninguno abre caja
-        // ni vende.
+        // administración. Dueño/Admin administran; ninguno abre caja ni vende.
         boolean adminLike = actor != null
-                && (actor.hasRole("OWNER") || actor.hasRole("ADMIN") || actor.hasRole("SUPERVISOR"));
+                && (actor.hasRole("OWNER") || actor.hasRole("ADMIN"));
         if (adminLike) {
             throw new IllegalStateException(
                     "Tu rol no opera caja. La apertura de caja y las ventas son del personal de caja (cajeros).");
@@ -61,12 +61,12 @@ public class ShiftController {
     /**
      * Estado del día del cajero: si ya cerró su caja hoy, el POS lo bloquea con un
      * mensaje claro
-     * ("tu corte ya se cerró, vuelve mañana"). No aplica a Dueño/Admin/Supervisor.
+     * ("tu corte ya se cerró, vuelve mañana"). No aplica a Dueño/Admin.
      */
     @GetMapping("/day-status")
     public Map<String, Object> dayStatus(@AuthenticationPrincipal AuthenticatedUser actor) {
         boolean isCashier = actor != null && actor.hasRole("CASHIER")
-                && !actor.hasRole("OWNER") && !actor.hasRole("ADMIN") && !actor.hasRole("SUPERVISOR");
+                && !actor.hasRole("OWNER") && !actor.hasRole("ADMIN");
         boolean closedToday = isCashier && shiftService.cashierClosedToday(actor.subject());
         return Map.of("closedToday", closedToday);
     }
@@ -168,7 +168,9 @@ public class ShiftController {
     }
 
     public record CashMovementRequest(
-            @NotNull String direction, @NotNull BigDecimal amount, String reason) {
+            @NotNull @Pattern(regexp = "IN|OUT", message = "La dirección debe ser IN u OUT") String direction,
+            @NotNull @Positive(message = "El monto debe ser mayor a 0") BigDecimal amount,
+            String reason) {
     }
 
     public record CloseShiftRequest(@NotNull BigDecimal countedCash, String mode) {

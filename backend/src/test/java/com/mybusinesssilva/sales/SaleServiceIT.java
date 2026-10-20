@@ -66,6 +66,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
         @Test
         void saleDiscountsInventory() {
                 long productId = setup("Refresco");
+                setPrice(productId, new BigDecimal("18.00"));
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("100"), "COMPRA", "tester");
 
@@ -75,7 +76,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("100.00"))),
                                 null);
 
-                SaleService.SaleResult result = saleService.registerSale(sale);
+                SaleService.SaleResult result = saleService.registerSale(toCommand(sale));
 
                 assertThat(result.saleId()).isNotNull();
                 assertThat(result.duplicated()).isFalse();
@@ -91,12 +92,12 @@ class SaleServiceIT extends AbstractIntegrationTest {
 
                 String idem = "offline-key-001";
                 Sale first = buildSale(productId, idem);
-                SaleService.SaleResult r1 = saleService.registerSale(first);
+                SaleService.SaleResult r1 = saleService.registerSale(toCommand(first));
                 assertThat(r1.duplicated()).isFalse();
 
                 // Se reenvia la misma venta (como al sincronizar tras estar offline).
                 Sale again = buildSale(productId, idem);
-                SaleService.SaleResult r2 = saleService.registerSale(again);
+                SaleService.SaleResult r2 = saleService.registerSale(toCommand(again));
                 assertThat(r2.duplicated()).isTrue();
                 assertThat(r2.saleId()).isEqualTo(r1.saleId());
 
@@ -112,6 +113,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
 
                 // Venta en efectivo por 200, asociada al turno.
                 long productId = createProduct("Aceite");
+                setPrice(productId, new BigDecimal("200.00"));
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("10"), "COMPRA", "tester");
                 Sale sale = Sale.complete(branchId, registerId, shiftId, "cajero", null,
@@ -119,7 +121,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                                 new BigDecimal("200.00"), BigDecimal.ZERO)),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("200.00"))),
                                 null);
-                saleService.registerSale(sale);
+                saleService.registerSale(toCommand(sale));
 
                 // Se retira 100 de efectivo.
                 shiftService.recordCashMovement(shiftId, "OUT", new BigDecimal("100.00"), "Retiro", "cajero");
@@ -136,6 +138,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
         @Test
         void classifiesCatalogSaleAsNormal() {
                 long productId = setup("Galletas");
+                setPrice(productId, new BigDecimal("15.00"));
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("20"), "COMPRA", "tester");
 
@@ -144,7 +147,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                                 new BigDecimal("15.00"), BigDecimal.ZERO)),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("30.00"))),
                                 null);
-                SaleService.SaleResult r = saleService.registerSale(sale);
+                SaleService.SaleResult r = saleService.registerSale(toCommand(sale));
 
                 String saleType = new JdbcTemplate(dataSource).queryForObject(
                                 "SELECT sale_type FROM sale WHERE id = ?", String.class, r.saleId());
@@ -160,7 +163,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                                 new BigDecimal("20.00"), BigDecimal.ZERO, "kg")),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("30.00"))),
                                 null);
-                SaleService.SaleResult r = saleService.registerSale(sale);
+                SaleService.SaleResult r = saleService.registerSale(toCommand(sale));
 
                 JdbcTemplate jdbc = new JdbcTemplate(dataSource);
                 String saleType = jdbc.queryForObject(
@@ -179,33 +182,34 @@ class SaleServiceIT extends AbstractIntegrationTest {
                 long shiftId = shiftService.openShift(registerId, "cajero", new BigDecimal("0.00"));
 
                 long productId = createProduct("Refresco");
+                setPrice(productId, new BigDecimal("20.00"));
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("50"), "COMPRA", "tester");
 
                 // (a) Venta NORMAL en efectivo por 100.
-                saleService.registerSale(Sale.complete(branchId, registerId, shiftId, "cajero", null,
+                saleService.registerSale(toCommand(Sale.complete(branchId, registerId, shiftId, "cajero", null,
                                 List.of(new SaleLine(productId, "Refresco", new BigDecimal("5"),
                                                 new BigDecimal("20.00"), BigDecimal.ZERO)),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("100.00"))),
-                                null));
+                                null)));
 
                 // (b) Venta SPECIAL (articulo libre) con pago mixto efectivo + tarjeta = 80.
-                saleService.registerSale(Sale.complete(branchId, registerId, shiftId, "cajero", null,
+                saleService.registerSale(toCommand(Sale.complete(branchId, registerId, shiftId, "cajero", null,
                                 List.of(new SaleLine(null, "Pan por peso", new BigDecimal("2"),
                                                 new BigDecimal("40.00"), BigDecimal.ZERO, "kg")),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("50.00")),
                                                 new Payment(PaymentMethod.CARD, new BigDecimal("30.00"))),
-                                null));
+                                null)));
 
                 // (c) Venta a credito con pago parcial: total 60, paga 20 en efectivo (NORMAL,
                 // con cliente).
                 long customerId = createCustomer();
-                saleService.registerSale(Sale.complete(branchId, registerId, shiftId, "cajero", "cajero",
+                saleService.registerSale(toCommand(Sale.complete(branchId, registerId, shiftId, "cajero", "cajero",
                                 customerId, (short) 1, BigDecimal.ZERO, null, true,
                                 List.of(new SaleLine(productId, "Refresco", new BigDecimal("3"),
                                                 new BigDecimal("20.00"), BigDecimal.ZERO)),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("20.00"))),
-                                null));
+                                null)));
 
                 ShiftService.ShiftClosure closure = shiftService.closeShift(shiftId, "cajero", null);
 
@@ -237,6 +241,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
         @Test
         void enforceStockSaleSubtractsWhenEnough() {
                 long productId = setup("Concha");
+                setPrice(productId, new BigDecimal("8.00"));
                 markEnforceStock(productId);
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("10"), "PROD:1", "panadero");
@@ -246,7 +251,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                                 new BigDecimal("8.00"), BigDecimal.ZERO)),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("32.00"))),
                                 null);
-                saleService.registerSale(sale);
+                saleService.registerSale(toCommand(sale));
 
                 assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("6");
         }
@@ -254,6 +259,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
         @Test
         void enforceStockSaleThatExceedsThrowsAndDoesNotPersistSale() {
                 long productId = setup("Bolillo");
+                setPrice(productId, new BigDecimal("4.00"));
                 markEnforceStock(productId);
                 inventoryService.applyMovement(productId, branchId, MovementType.PURCHASE,
                                 new BigDecimal("3"), "PROD:1", "panadero");
@@ -264,7 +270,8 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("20.00"))),
                                 null);
 
-                org.assertj.core.api.Assertions.assertThatThrownBy(() -> saleService.registerSale(sale))
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                                () -> saleService.registerSale(toCommand(sale)))
                                 .isInstanceOf(com.mybusinesssilva.inventory.domain.model.InsufficientStockException.class);
 
                 JdbcTemplate jdbc = new JdbcTemplate(dataSource);
@@ -286,7 +293,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                                 new BigDecimal("10.00"), BigDecimal.ZERO)),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("50.00"))),
                                 null);
-                SaleService.SaleResult r = saleService.registerSale(sale);
+                SaleService.SaleResult r = saleService.registerSale(toCommand(sale));
 
                 assertThat(r.saleId()).isNotNull();
                 assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("-3");
@@ -348,7 +355,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("9.00"))),
                                 null);
 
-                SaleService.SaleResult r = saleService.registerSaleWithWaste(sale);
+                SaleService.SaleResult r = saleService.registerSaleWithWaste(toCommand(sale));
 
                 JdbcTemplate jdbc = new JdbcTemplate(dataSource);
                 Map<String, Object> row = jdbc.queryForMap(
@@ -382,7 +389,7 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                 null);
 
                 org.assertj.core.api.Assertions.assertThatThrownBy(
-                                () -> saleService.registerSaleWithWaste(sale))
+                                () -> saleService.registerSaleWithWaste(toCommand(sale)))
                                 .isInstanceOf(com.mybusinesssilva.inventory.domain.model.InsufficientStockException.class);
 
                 JdbcTemplate jdbc = new JdbcTemplate(dataSource);
@@ -465,6 +472,29 @@ class SaleServiceIT extends AbstractIntegrationTest {
                                                 new BigDecimal("10.00"), BigDecimal.ZERO)),
                                 List.of(new Payment(PaymentMethod.CASH, new BigDecimal("20.00"))),
                                 idem);
+        }
+
+        /**
+         * Convierte un agregado {@link Sale} (como lo construían estas pruebas) en el
+         * {@link SaleService.SaleCommand} crudo que ahora recibe el servicio, para que
+         * el servicio recompute el precio autoritativo (ALTA-1). El precio del renglón
+         * viaja como {@code unitPriceFront} crudo.
+         */
+        private SaleService.SaleCommand toCommand(Sale sale) {
+                return new SaleService.SaleCommand(
+                                sale.getBranchId(), sale.getCashRegisterId(), sale.getShiftId(),
+                                sale.getCashier(), sale.getSalesperson(), sale.getCustomerId(),
+                                sale.getPriceListId(), sale.getGlobalDiscount(), sale.getNote(),
+                                sale.isOnCredit(),
+                                sale.getLines().stream().map(l -> new SaleService.RawLine(
+                                                l.productId(), l.description(), l.quantity(), l.unitPrice(),
+                                                l.discount(), l.unit(), l.waste())).toList(),
+                                sale.getPayments(), sale.getIdempotencyKey());
+        }
+
+        private void setPrice(long productId, BigDecimal price) {
+                new JdbcTemplate(dataSource).update(
+                                "UPDATE product SET price = ? WHERE id = ?", price, productId);
         }
 
         private long createBranch(String name) {
