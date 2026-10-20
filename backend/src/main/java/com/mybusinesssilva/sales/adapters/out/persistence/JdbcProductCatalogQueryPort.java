@@ -41,12 +41,12 @@ public class JdbcProductCatalogQueryPort implements ProductCatalogQueryPort {
             return Set.of();
         }
         Set<Long> ids = new HashSet<>(productIds);
-        // Giro panadería: todos los productos (que existan y estén activos en el
-        // catálogo) quedan
-        // bajo no-sobreventa. En otros giros, solo los marcados con enforce_stock =
-        // TRUE.
+        // Giro panadería: todos los productos que existan en el catálogo (activos o
+        // inactivos) quedan bajo no-sobreventa, para que un producto desactivado con
+        // existencia no se pueda sobrevender. En otros giros, solo los marcados con
+        // enforce_stock = TRUE.
         String sql = moduleAccess.canUse("bakery")
-                ? "SELECT id FROM product WHERE id IN (:ids) AND active = TRUE"
+                ? "SELECT id FROM product WHERE id IN (:ids)"
                 : "SELECT id FROM product WHERE id IN (:ids) AND enforce_stock = TRUE";
         return new HashSet<>(jdbc.sql(sql)
                 .param("ids", ids)

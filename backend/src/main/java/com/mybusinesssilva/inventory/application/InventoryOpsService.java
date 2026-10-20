@@ -1,5 +1,6 @@
 package com.mybusinesssilva.inventory.application;
 
+import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
 import com.mybusinesssilva.inventory.domain.model.MovementType;
 import com.mybusinesssilva.inventory.domain.port.in.InventoryPort;
 import java.math.BigDecimal;
@@ -13,12 +14,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Casos de uso de la suite de INVENTARIO enterprise: documentos de entrada/salida con conceptos,
- * números de serie, lotes con caducidad, variantes por talla/color, conteo físico, calidad de
+ * Casos de uso de la suite de INVENTARIO enterprise: documentos de
+ * entrada/salida con conceptos,
+ * números de serie, lotes con caducidad, variantes por talla/color, conteo
+ * físico, calidad de
  * inventario (clasificación ABC) y etiquetas de código de barras.
  *
- * <p>Afecta las existencias a través de {@link InventoryPort} para no duplicar el motor de
- * inventario, y persiste los documentos/catálogos con {@link JdbcClient} sobre el schema del
+ * <p>
+ * Afecta las existencias a través de {@link InventoryPort} para no duplicar el
+ * motor de
+ * inventario, y persiste los documentos/catálogos con {@link JdbcClient} sobre
+ * el schema del
  * tenant en curso (RLS lo aísla).
  */
 @Service
@@ -88,7 +94,8 @@ public class InventoryOpsService {
     }
 
     public List<Map<String, Object>> listLabelFormats() {
-        return jdbc.sql("SELECT id, name, width_mm, height_mm, show_price, show_name, columns FROM label_format WHERE active = TRUE ORDER BY id")
+        return jdbc.sql(
+                "SELECT id, name, width_mm, height_mm, show_price, show_name, columns FROM label_format WHERE active = TRUE ORDER BY id")
                 .query((rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", rs.getLong("id"));
@@ -108,12 +115,13 @@ public class InventoryOpsService {
     // =====================================================================
 
     /**
-     * Alta rápida de un artículo: crea un producto mínimo con clave/unidad SAT, costo y precio, y
+     * Alta rápida de un artículo: crea un producto mínimo con clave/unidad SAT,
+     * costo y precio, y
      * su código de barras si se indica. Devuelve el id del producto.
      */
     @Transactional
     public long quickCreateProduct(String code, String description, BigDecimal cost, BigDecimal price,
-                                   String satKey, String satUnit, String unit, boolean withoutVat) {
+            String satKey, String satUnit, String unit, boolean withoutVat) {
         BigDecimal taxRate = withoutVat ? BigDecimal.ZERO : new BigDecimal("0.16");
         long id = jdbc.sql("""
                 INSERT INTO product (sku, name, unit, sat_prod_serv, sat_unit, price, cost, tax_rate, active)
@@ -141,12 +149,14 @@ public class InventoryOpsService {
     // =====================================================================
 
     /**
-     * Registra un documento de entrada o salida de inventario con sus renglones, afectando las
-     * existencias. Entrada suma (ADJUSTMENT +), salida resta (ADJUSTMENT -). Devuelve el id.
+     * Registra un documento de entrada o salida de inventario con sus renglones,
+     * afectando las
+     * existencias. Entrada suma (ADJUSTMENT +), salida resta (ADJUSTMENT -).
+     * Devuelve el id.
      */
     @Transactional
     public long registerDocument(String docType, Long conceptId, long branchId, String notes,
-                                 List<DocLineInput> lines, String actor) {
+            List<DocLineInput> lines, String actor) {
         if (lines == null || lines.isEmpty()) {
             throw new IllegalArgumentException("El documento debe tener al menos un renglón");
         }
@@ -183,13 +193,23 @@ public class InventoryOpsService {
                     .param("qty", l.quantity()).param("cost", l.unitCost())
                     .param("total", l.unitCost().multiply(l.quantity()))
                     .update();
-            BigDecimal delta = "IN".equals(docType) ? l.quantity().abs() : l.quantity().abs().negate();
-            String ref = ("IN".equals(docType) ? "IN-DOC:" : "OUT-DOC:") + docId;
-            // Usa el puerto con ADJUSTMENT (delta con signo) para reflejar entrada/salida.
-            inventoryPort.applyMovement(l.productId(), branchId,
-                    "IN".equals(docType) ? MovementType.RETURN : MovementType.SALE,
-                    l.quantity().abs(), ref, actor);
-            // El movimiento anterior ya aplicó el signo por tipo (RETURN suma, SALE resta).
+            if ("IN".equals(docType)) {
+                // Entrada: suma a la existencia (RETURN), sin tope.
+                inventoryPort.applyMovement(l.productId(), branchId, MovementType.RETURN,
+                        l.quantity().abs(), "IN-DOC:" + docId, actor);
+            } else {
+                // Salida: descuento estricto (segunda barrera: no se saca lo que no hay).
+                // Si falta existencia, resuelve el nombre del producto para un error claro
+                // y re-lanza; al estar en @Transactional, revierte el documento completo.
+                try {
+                    inventoryPort.applyOutboundStrict(l.productId(), branchId, MovementType.SALE,
+                            l.quantity().abs(), "OUT-DOC:" + docId, actor);
+                } catch (InsufficientStockException ex) {
+                    String name = jdbc.sql("SELECT name FROM product WHERE id = :id")
+                            .param("id", l.productId()).query(String.class).optional().orElse(null);
+                    throw new InsufficientStockException(l.productId(), name, ex.available(), ex.requested());
+                }
+            }
         }
         return docId;
     }
@@ -228,7 +248,7 @@ public class InventoryOpsService {
     /** Da de alta números de serie para un producto (lista explícita). */
     @Transactional
     public int addSerials(long productId, Long branchId, List<String> serials, String entryPort,
-                          String pedimento, String documentRef) {
+            String pedimento, String documentRef) {
         int added = 0;
         for (String s : serials) {
             if (s == null || s.isBlank()) {
@@ -248,11 +268,12 @@ public class InventoryOpsService {
     }
 
     /**
-     * Genera series por rango numérico (prefijo + número desde..hasta). Útil para captura masiva.
+     * Genera series por rango numérico (prefijo + número desde..hasta). Útil para
+     * captura masiva.
      */
     @Transactional
     public int addSerialRange(long productId, Long branchId, String prefix, long from, long to,
-                              String entryPort, String pedimento, String documentRef) {
+            String entryPort, String pedimento, String documentRef) {
         if (to < from) {
             throw new IllegalArgumentException("El rango de series es inválido");
         }
@@ -289,11 +310,13 @@ public class InventoryOpsService {
     // Lotes con caducidad
     // =====================================================================
 
-    /** Captura un lote con caducidad. Suma la cantidad al lote y a la existencia. */
+    /**
+     * Captura un lote con caducidad. Suma la cantidad al lote y a la existencia.
+     */
     @Transactional
     public long addLot(long productId, long branchId, String lotCode, LocalDate expiration,
-                       BigDecimal quantity, String entryPort, String pedimento, String documentRef,
-                       String actor) {
+            BigDecimal quantity, String entryPort, String pedimento, String documentRef,
+            String actor) {
         long lotId = jdbc.sql("""
                 INSERT INTO product_lot (product_id, branch_id, lot_code, expiration_date, quantity,
                                          entry_port, pedimento, document_ref)
@@ -340,15 +363,17 @@ public class InventoryOpsService {
     // =====================================================================
 
     /**
-     * Crea un modelo y genera un producto (variante) por cada combinación talla × color elegida.
-     * Cada variante lleva su SKU (código del modelo + talla + color), su precio y su bandera de
+     * Crea un modelo y genera un producto (variante) por cada combinación talla ×
+     * color elegida.
+     * Cada variante lleva su SKU (código del modelo + talla + color), su precio y
+     * su bandera de
      * variante. Devuelve cuántas variantes se generaron.
      */
     @Transactional
     public Map<String, Object> generateVariants(String modelCode, String modelName, String brand,
-                                                BigDecimal cost, BigDecimal price1, BigDecimal price2,
-                                                BigDecimal price3, Long categoryId,
-                                                List<String> sizeCodes, List<String> colorCodes) {
+            BigDecimal cost, BigDecimal price1, BigDecimal price2,
+            BigDecimal price3, Long categoryId,
+            List<String> sizeCodes, List<String> colorCodes) {
         if (sizeCodes == null || sizeCodes.isEmpty() || colorCodes == null || colorCodes.isEmpty()) {
             throw new IllegalArgumentException("Elige al menos una talla y un color");
         }
@@ -398,8 +423,10 @@ public class InventoryOpsService {
     // =====================================================================
 
     /**
-     * Inicia un conteo físico: crea el documento y precarga los productos del alcance (sucursal y,
-     * opcionalmente, familia) con su existencia teórica actual. Devuelve el id del conteo.
+     * Inicia un conteo físico: crea el documento y precarga los productos del
+     * alcance (sucursal y,
+     * opcionalmente, familia) con su existencia teórica actual. Devuelve el id del
+     * conteo.
      */
     @Transactional
     public long startPhysicalCount(long branchId, Long categoryId, String actor) {
@@ -412,7 +439,8 @@ public class InventoryOpsService {
         jdbc.sql("UPDATE physical_count SET folio = :f WHERE id = :id")
                 .param("f", "IF-" + countId).param("id", countId).update();
 
-        // Precarga los productos con existencia teórica de la sucursal (y familia si se indicó).
+        // Precarga los productos con existencia teórica de la sucursal (y familia si se
+        // indicó).
         jdbc.sql("""
                 INSERT INTO physical_count_line (count_id, product_id, theoretical)
                 SELECT :count, p.id, COALESCE(s.quantity, 0)
@@ -427,7 +455,10 @@ public class InventoryOpsService {
         return countId;
     }
 
-    /** Captura la cantidad contada de un producto en el conteo (por id de producto o SKU). */
+    /**
+     * Captura la cantidad contada de un producto en el conteo (por id de producto o
+     * SKU).
+     */
     @Transactional
     public void captureCount(long countId, long productId, String marbete, BigDecimal counted) {
         jdbc.sql("""
@@ -441,11 +472,23 @@ public class InventoryOpsService {
     }
 
     /**
-     * Aplica el conteo: por cada renglón con diferencia, ajusta la existencia a lo contado
+     * Aplica el conteo: por cada renglón con diferencia, ajusta la existencia a lo
+     * contado
      * (movimiento ADJUSTMENT con la diferencia) y marca el conteo como aplicado.
      */
     @Transactional
     public Map<String, Object> applyPhysicalCount(long countId, String actor) {
+        // Candado optimista: solo un proceso puede ganar el paso OPEN -> APPLIED.
+        // Si no afecta filas, el conteo ya fue aplicado (o no está abierto): evita
+        // doble aplicación de los ajustes. Va ANTES de leer líneas y aplicar
+        // movimientos.
+        int locked = jdbc.sql(
+                "UPDATE physical_count SET status = 'APPLIED', applied_at = now() WHERE id = :id AND status = 'OPEN'")
+                .param("id", countId).update();
+        if (locked == 0) {
+            throw new IllegalStateException(
+                    "Este inventario físico ya fue aplicado o no está abierto; no se puede aplicar de nuevo.");
+        }
         var lines = jdbc.sql("""
                 SELECT product_id, difference
                 FROM physical_count_line
@@ -470,8 +513,6 @@ public class InventoryOpsService {
                     diff.abs(), "PHYSICAL_COUNT:" + countId, actor);
             adjusted++;
         }
-        jdbc.sql("UPDATE physical_count SET status = 'APPLIED', applied_at = now() WHERE id = :id")
-                .param("id", countId).update();
         return Map.of("adjusted", adjusted);
     }
 
@@ -527,9 +568,12 @@ public class InventoryOpsService {
     // =====================================================================
 
     /**
-     * Calcula la calidad del inventario clasificando cada producto por su valor y su venta en el
-     * rango dado: Alto, Medio, Bajo, Lento, Nuevo (alta reciente) y Sin movimiento. Devuelve las
-     * filas por clasificación con #items, valor de inventario, costo de ventas, venta y utilidad.
+     * Calcula la calidad del inventario clasificando cada producto por su valor y
+     * su venta en el
+     * rango dado: Alto, Medio, Bajo, Lento, Nuevo (alta reciente) y Sin movimiento.
+     * Devuelve las
+     * filas por clasificación con #items, valor de inventario, costo de ventas,
+     * venta y utilidad.
      */
     public List<Map<String, Object>> inventoryQuality(LocalDate from, LocalDate to) {
         // Ventas por producto en el rango (unidades y monto).
@@ -625,7 +669,10 @@ public class InventoryOpsService {
     // Etiquetas de código de barras
     // =====================================================================
 
-    /** Devuelve los datos para imprimir etiquetas de una lista de productos con su cantidad. */
+    /**
+     * Devuelve los datos para imprimir etiquetas de una lista de productos con su
+     * cantidad.
+     */
     public List<Map<String, Object>> labelData(List<LabelRequestItem> items) {
         List<Map<String, Object>> out = new ArrayList<>();
         for (LabelRequestItem it : items) {
@@ -655,7 +702,9 @@ public class InventoryOpsService {
     // Kardex enriquecido
     // =====================================================================
 
-    /** Kardex de un producto con nombre legible del tipo de movimiento y sucursal. */
+    /**
+     * Kardex de un producto con nombre legible del tipo de movimiento y sucursal.
+     */
     public List<Map<String, Object>> kardex(long productId, int limit) {
         int max = limit <= 0 ? 100 : Math.min(limit, 500);
         return jdbc.sql("""
@@ -688,11 +737,14 @@ public class InventoryOpsService {
     // =====================================================================
 
     /**
-     * Importa un conjunto de líneas capturadas con la StockApp (o pegadas de Excel / leídas por
+     * Importa un conjunto de líneas capturadas con la StockApp (o pegadas de Excel
+     * / leídas por
      * QR) y las convierte en:
      * <ul>
-     *   <li>{@code ENTRY}: una entrada de inventario (documento IN) que suma existencias.</li>
-     *   <li>{@code PHYSICAL}: un inventario físico que ajusta las existencias a lo contado.</li>
+     * <li>{@code ENTRY}: una entrada de inventario (documento IN) que suma
+     * existencias.</li>
+     * <li>{@code PHYSICAL}: un inventario físico que ajusta las existencias a lo
+     * contado.</li>
      * </ul>
      * Cada línea se resuelve por id de producto o por SKU/código de barras.
      *
@@ -700,16 +752,17 @@ public class InventoryOpsService {
      * @param branchId almacén destino
      * @param items    líneas (código o id, cantidad, costo)
      * @param actor    quién importa
-     * @return resumen con creados/no encontrados y el id del documento/conteo generado
+     * @return resumen con creados/no encontrados y el id del documento/conteo
+     *         generado
      */
     @Transactional
     public Map<String, Object> importStockApp(String mode, long branchId, List<StockAppItem> items,
-                                              String actor) {
+            String actor) {
         if (items == null || items.isEmpty()) {
             throw new IllegalArgumentException("No hay líneas para importar");
         }
         List<DocLineInput> resolved = new ArrayList<>();
-        List<Object[]> countPairs = new ArrayList<>();  // [productId, quantity]
+        List<Object[]> countPairs = new ArrayList<>(); // [productId, quantity]
         List<String> notFound = new ArrayList<>();
 
         for (StockAppItem it : items) {

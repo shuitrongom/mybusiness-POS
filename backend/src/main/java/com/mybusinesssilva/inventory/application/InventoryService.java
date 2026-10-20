@@ -91,7 +91,7 @@ public class InventoryService implements InventoryPort {
             throw new IllegalArgumentException("La cantidad a traspasar debe ser positiva");
         }
         String reference = "TRANSFER:" + fromBranchId + "->" + toBranchId;
-        applyMovement(productId, fromBranchId, MovementType.TRANSFER_OUT, quantity, reference, actor);
+        applyOutboundStrict(productId, fromBranchId, MovementType.TRANSFER_OUT, quantity, reference, actor);
         applyMovement(productId, toBranchId, MovementType.TRANSFER_IN, quantity, reference, actor);
     }
 
