@@ -7,6 +7,7 @@ import com.mybusinesssilva.inventory.domain.model.StockLevel;
 import com.mybusinesssilva.inventory.domain.port.in.InventoryPort;
 import com.mybusinesssilva.inventory.domain.port.out.InventoryRepository;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -104,8 +105,8 @@ public class InventoryService implements InventoryPort {
                 new StockLevel(productId, branchId, BigDecimal.ZERO, BigDecimal.ZERO));
     }
 
-    public List<InventoryMovement> kardex(long productId) {
-        return repository.kardex(productId);
+    public List<InventoryMovement> kardex(long productId, Long branchId, LocalDate from, LocalDate to) {
+        return repository.kardex(productId, branchId, from, to);
     }
 
     public List<StockLevel> lowStockAlerts() {

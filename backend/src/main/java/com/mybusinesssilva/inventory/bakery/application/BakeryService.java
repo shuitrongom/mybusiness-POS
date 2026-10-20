@@ -43,6 +43,19 @@ public class BakeryService implements BakeryUseCase {
         if (production.lines().isEmpty()) {
             throw new IllegalArgumentException("La producción debe tener al menos un renglón");
         }
+        // Segunda barrera de dominio: no se registra producción con precio 0. Si el
+        // renglón no trae precio, se toma el de la ficha; si la ficha también es 0, se
+        // bloquea.
+        for (BakeryProductionLine line : production.lines()) {
+            BigDecimal entry = line.entryPrice() == null ? BigDecimal.ZERO : line.entryPrice();
+            if (entry.signum() <= 0) {
+                BigDecimal fichaPrice = repository.productPrice(line.productId()).orElse(BigDecimal.ZERO);
+                if (fichaPrice.signum() <= 0) {
+                    throw new IllegalArgumentException(
+                            "Captura primero el precio del artículo antes de registrar su producción.");
+                }
+            }
+        }
         long id = repository.insertProduction(production);
         // Cada renglón suma existencia por compra/producción (PURCHASE), creando el
         // kardex.

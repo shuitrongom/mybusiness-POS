@@ -5,6 +5,7 @@ import com.mybusinesssilva.inventory.domain.model.MovementType;
 import com.mybusinesssilva.inventory.domain.model.StockLevel;
 import com.mybusinesssilva.inventory.domain.port.out.InventoryRepository;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -104,11 +105,19 @@ public class JdbcInventoryRepository implements InventoryRepository {
     }
 
     @Override
-    public List<InventoryMovement> kardex(long productId) {
+    public List<InventoryMovement> kardex(long productId, Long branchId, LocalDate from, LocalDate to) {
         return jdbc.sql("""
-                SELECT * FROM inventory_movement WHERE product_id = :p ORDER BY created_at DESC, id DESC
+                SELECT * FROM inventory_movement
+                WHERE product_id = :p
+                  AND (CAST(:branch AS bigint) IS NULL OR branch_id = CAST(:branch AS bigint))
+                  AND (CAST(:from AS date) IS NULL OR created_at::date >= CAST(:from AS date))
+                  AND (CAST(:to AS date) IS NULL OR created_at::date <= CAST(:to AS date))
+                ORDER BY created_at DESC, id DESC
                 """)
                 .param("p", productId)
+                .param("branch", branchId)
+                .param("from", from)
+                .param("to", to)
                 .query((rs, n) -> new InventoryMovement(
                         rs.getLong("id"),
                         rs.getLong("product_id"),

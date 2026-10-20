@@ -67,7 +67,7 @@ class BakeryServiceIT extends AbstractIntegrationTest {
                 // Suma de existencia por el movimiento PURCHASE.
                 assertThat(inventoryService.stock(productId, branchId).quantity()).isEqualByComparingTo("100");
                 // El kardex tiene el movimiento de producción con referencia PROD:<id>.
-                assertThat(inventoryService.kardex(productId))
+                assertThat(inventoryService.kardex(productId, null, null, null))
                                 .anyMatch(m -> m.type() == MovementType.PURCHASE
                                                 && ("PROD:" + id).equals(m.reference()));
 

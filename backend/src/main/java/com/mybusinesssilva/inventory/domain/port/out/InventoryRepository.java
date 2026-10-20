@@ -3,6 +3,7 @@ package com.mybusinesssilva.inventory.domain.port.out;
 import com.mybusinesssilva.inventory.domain.model.InventoryMovement;
 import com.mybusinesssilva.inventory.domain.model.StockLevel;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,7 +39,7 @@ public interface InventoryRepository {
 
     void recordMovement(InventoryMovement movement);
 
-    List<InventoryMovement> kardex(long productId);
+    List<InventoryMovement> kardex(long productId, Long branchId, LocalDate from, LocalDate to);
 
     /** Existencias que están en o por debajo de su stock mínimo (alertas). */
     List<StockLevel> findBelowMinimum();

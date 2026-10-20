@@ -122,6 +122,10 @@ public class InventoryOpsService {
     @Transactional
     public long quickCreateProduct(String code, String description, BigDecimal cost, BigDecimal price,
             String satKey, String satUnit, String unit, boolean withoutVat) {
+        if (price == null || price.signum() <= 0) {
+            throw new IllegalArgumentException(
+                    "Captura el precio del artículo (mayor a 0) para darlo de alta.");
+        }
         BigDecimal taxRate = withoutVat ? BigDecimal.ZERO : new BigDecimal("0.16");
         long id = jdbc.sql("""
                 INSERT INTO product (sku, name, unit, sat_prod_serv, sat_unit, price, cost, tax_rate, active)
@@ -184,6 +188,19 @@ public class InventoryOpsService {
                 .param("f", ("IN".equals(docType) ? "E-" : "S-") + docId).param("id", docId).update();
 
         for (DocLineInput l : lines) {
+            if ("IN".equals(docType)) {
+                // Segunda barrera de dominio: no se da entrada con costo 0. Si el renglón no
+                // trae costo, se toma el de la ficha; si la ficha también es 0, se bloquea.
+                BigDecimal cost = l.unitCost() == null ? BigDecimal.ZERO : l.unitCost();
+                if (cost.signum() <= 0) {
+                    BigDecimal fichaCost = jdbc.sql("SELECT cost FROM product WHERE id = :id")
+                            .param("id", l.productId()).query(BigDecimal.class).optional().orElse(BigDecimal.ZERO);
+                    if (fichaCost.signum() <= 0) {
+                        throw new IllegalArgumentException(
+                                "Captura primero el precio/costo del artículo antes de darle entrada.");
+                    }
+                }
+            }
             jdbc.sql("""
                     INSERT INTO inventory_document_line
                         (document_id, product_id, description, quantity, unit_cost, line_total)
@@ -214,16 +231,17 @@ public class InventoryOpsService {
         return docId;
     }
 
-    public List<Map<String, Object>> listDocuments(String docType, int limit) {
+    public List<Map<String, Object>> listDocuments(String docType, Long branchId, int limit) {
         int max = limit <= 0 ? 50 : Math.min(limit, 200);
         return jdbc.sql("""
                 SELECT d.id, d.folio, d.doc_type, d.concept_name, d.branch_id, b.name AS branch_name,
                        d.total_qty, d.total_value, d.notes, d.created_by, d.created_at
                 FROM inventory_document d LEFT JOIN branch b ON b.id = d.branch_id
                 WHERE (CAST(:type AS varchar) IS NULL OR d.doc_type = :type)
+                  AND (CAST(:branch AS bigint) IS NULL OR d.branch_id = CAST(:branch AS bigint))
                 ORDER BY d.created_at DESC LIMIT :max
                 """)
-                .param("type", docType).param("max", max)
+                .param("type", docType).param("branch", branchId).param("max", max)
                 .query((rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", rs.getLong("id"));
@@ -705,17 +723,21 @@ public class InventoryOpsService {
     /**
      * Kardex de un producto con nombre legible del tipo de movimiento y sucursal.
      */
-    public List<Map<String, Object>> kardex(long productId, int limit) {
+    public List<Map<String, Object>> kardex(long productId, Long branchId, LocalDate from, LocalDate to, int limit) {
         int max = limit <= 0 ? 100 : Math.min(limit, 500);
         return jdbc.sql("""
                 SELECT m.id, m.movement_type, m.quantity, m.balance_after, m.reason, m.reference,
                        m.actor, m.created_at, b.name AS branch_name
                 FROM inventory_movement m LEFT JOIN branch b ON b.id = m.branch_id
                 WHERE m.product_id = :p
+                  AND (CAST(:branch AS bigint) IS NULL OR m.branch_id = CAST(:branch AS bigint))
+                  AND (CAST(:from AS date) IS NULL OR m.created_at::date >= CAST(:from AS date))
+                  AND (CAST(:to AS date) IS NULL OR m.created_at::date <= CAST(:to AS date))
                 ORDER BY m.created_at DESC, m.id DESC
                 LIMIT :max
                 """)
-                .param("p", productId).param("max", max)
+                .param("p", productId).param("branch", branchId)
+                .param("from", from).param("to", to).param("max", max)
                 .query((rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", rs.getLong("id"));

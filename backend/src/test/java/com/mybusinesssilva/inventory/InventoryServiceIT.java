@@ -22,7 +22,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Pruebas de integración del inventario: entradas/salidas, kardex, alertas de stock mínimo
+ * Pruebas de integración del inventario: entradas/salidas, kardex, alertas de
+ * stock mínimo
  * y traspasos entre sucursales, sobre un negocio aprovisionado real.
  */
 class InventoryServiceIT extends AbstractIntegrationTest {
@@ -60,7 +61,7 @@ class InventoryServiceIT extends AbstractIntegrationTest {
         assertThat(afterSale).isEqualByComparingTo("70");
 
         // El kardex tiene dos movimientos.
-        assertThat(inventoryService.kardex(productId)).hasSize(2);
+        assertThat(inventoryService.kardex(productId, null, null, null)).hasSize(2);
 
         StockLevel stock = inventoryService.stock(productId, branchId);
         assertThat(stock.quantity()).isEqualByComparingTo("70");

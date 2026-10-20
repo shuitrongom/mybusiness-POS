@@ -24,8 +24,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Endpoints de la suite de inventario enterprise (documentos, series, lotes, variantes, conteo
- * físico, calidad y etiquetas). Requieren el módulo {@code inventory} habilitado.
+ * Endpoints de la suite de inventario enterprise (documentos, series, lotes,
+ * variantes, conteo
+ * físico, calidad y etiquetas). Requieren el módulo {@code inventory}
+ * habilitado.
  */
 @RestController
 @RequestMapping("/api/v1/inventory")
@@ -55,7 +57,9 @@ public class InventoryOpsController {
     }
 
     @GetMapping("/sizes")
-    public List<Map<String, Object>> sizes() { return service.listSizes(); }
+    public List<Map<String, Object>> sizes() {
+        return service.listSizes();
+    }
 
     @PostMapping("/sizes")
     public ResponseEntity<Long> createSize(@Valid @RequestBody SizeRequest r) {
@@ -63,7 +67,9 @@ public class InventoryOpsController {
     }
 
     @GetMapping("/colors")
-    public List<Map<String, Object>> colors() { return service.listColors(); }
+    public List<Map<String, Object>> colors() {
+        return service.listColors();
+    }
 
     @PostMapping("/colors")
     public ResponseEntity<Long> createColor(@Valid @RequestBody ColorRequest r) {
@@ -71,7 +77,9 @@ public class InventoryOpsController {
     }
 
     @GetMapping("/label-formats")
-    public List<Map<String, Object>> labelFormats() { return service.listLabelFormats(); }
+    public List<Map<String, Object>> labelFormats() {
+        return service.listLabelFormats();
+    }
 
     // ---- Alta rápida ----
 
@@ -87,8 +95,9 @@ public class InventoryOpsController {
     @GetMapping("/documents")
     public List<Map<String, Object>> documents(
             @RequestParam(value = "docType", required = false) String docType,
+            @RequestParam(value = "branchId", required = false) Long branchId,
             @RequestParam(value = "limit", required = false, defaultValue = "50") int limit) {
-        return service.listDocuments(docType, limit);
+        return service.listDocuments(docType, branchId, limit);
     }
 
     @PostMapping("/documents")
@@ -206,8 +215,11 @@ public class InventoryOpsController {
     @GetMapping("/kardex-detail/{productId}")
     public List<Map<String, Object>> kardexDetail(
             @PathVariable long productId,
+            @RequestParam(value = "branchId", required = false) Long branchId,
+            @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(value = "limit", required = false, defaultValue = "100") int limit) {
-        return service.kardex(productId, limit);
+        return service.kardex(productId, branchId, from, to, limit);
     }
 
     // ---- StockApp ----

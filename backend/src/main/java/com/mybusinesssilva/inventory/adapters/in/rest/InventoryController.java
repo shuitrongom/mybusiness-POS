@@ -6,8 +6,10 @@ import com.mybusinesssilva.inventory.domain.model.StockLevel;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -38,8 +40,10 @@ public class InventoryController {
     }
 
     /**
-     * Existencias de todos los productos con su nombre, categoría, unidad, costo y valor de
-     * inventario, opcionalmente filtrado por sucursal. Es la fuente de la tabla de inventario.
+     * Existencias de todos los productos con su nombre, categoría, unidad, costo y
+     * valor de
+     * inventario, opcionalmente filtrado por sucursal. Es la fuente de la tabla de
+     * inventario.
      */
     @GetMapping("/stock")
     public List<Map<String, Object>> stockOverview(
@@ -76,7 +80,10 @@ public class InventoryController {
                 .list();
     }
 
-    /** Resumen (KPIs) del inventario: SKUs, unidades totales, valor y número de alertas. */
+    /**
+     * Resumen (KPIs) del inventario: SKUs, unidades totales, valor y número de
+     * alertas.
+     */
     @GetMapping("/summary")
     public Map<String, Object> summary(
             @RequestParam(value = "branchId", required = false) Long branchId) {
@@ -108,8 +115,12 @@ public class InventoryController {
     }
 
     @GetMapping("/kardex/{productId}")
-    public List<InventoryMovement> kardex(@PathVariable long productId) {
-        return inventoryService.kardex(productId);
+    public List<InventoryMovement> kardex(
+            @PathVariable long productId,
+            @RequestParam(value = "branchId", required = false) Long branchId,
+            @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return inventoryService.kardex(productId, branchId, from, to);
     }
 
     @GetMapping("/alerts/low-stock")
