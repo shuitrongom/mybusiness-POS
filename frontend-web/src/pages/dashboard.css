@@ -550,6 +550,87 @@
   color: var(--heading);
 }
 
+/* Detalle TRAZABLE de movimientos de efectivo del turno: filas-tarjeta (no tabla plana), chip de
+   tipo (retiro = ámbar, ingreso = verde), monto tabular, motivo legible y cajero/hora tenues. */
+.cash-move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: var(--space-3);
+}
+
+.cash-move-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.cash-move-row:hover {
+  border-color: var(--brand-600, #2563eb);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.08);
+}
+
+.cash-move-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-radius: 999px;
+}
+
+.cash-move-chip.is-out {
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
+}
+
+.cash-move-chip.is-in {
+  color: #0f7a5a;
+  background: color-mix(in srgb, #12b886 16%, transparent);
+}
+
+.cash-move-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cash-move-reason {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--heading);
+  overflow-wrap: anywhere;
+}
+
+.cash-move-meta {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.cash-move-amount {
+  flex: 0 0 auto;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-move-amount.is-out {
+  color: #d97706;
+}
+
+.cash-move-amount.is-in {
+  color: #12b886;
+}
+
 /* =====================================================================
    Premium del dashboard del cajero: números tabulares, últimas ventas
    como filas-tarjeta (grid compartido cabecera/filas) y vacíos premium.

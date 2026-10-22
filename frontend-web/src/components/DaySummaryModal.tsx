@@ -26,10 +26,28 @@ export interface DaySummary {
   normalSalesTotal?: number | null;
   specialSalesCount?: number | null;
   specialSalesTotal?: number | null;
+  /**
+   * Lista DETALLADA de movimientos de efectivo del turno (retiros e ingresos), para la
+   * trazabilidad del corte: monto, tipo, motivo, cajero y hora. Opcional (giros/turnos sin
+   * movimientos no la traen). Proviene de GET /shifts/my-day.
+   */
+  movements?: {
+    id: number;
+    direction: 'IN' | 'OUT';
+    amount: number;
+    reason: string | null;
+    actor: string | null;
+    createdAt: string;
+  }[] | null;
 }
 
 const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
 const int = (n: number) => new Intl.NumberFormat('es-MX').format(Math.round(n || 0));
+/** Hora corta (HH:mm) de un movimiento; tolerante a fechas inválidas. */
+const timeOf = (iso: string) => {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+};
 
 /** Modo con el que se cerró: ajusta el texto del banner de contexto (relevo vs fin del día). */
 type CloseMode = 'TURNO' | 'FIN_DIA';
@@ -122,6 +140,34 @@ export function DaySummaryModal({ summary, mode, onDone }:
                 <div className="cash-move"><span><ArrowDownCircle size={15} /> Entradas de efectivo</span><strong className="num">{money(summary.cashIn)}</strong></div>
                 <div className="cash-move"><span><ArrowUpCircle size={15} /> Salidas / retiros</span><strong className="num">-{money(summary.cashOut)}</strong></div>
               </div>
+
+              {/* Detalle TRAZABLE de cada movimiento: tipo, monto, motivo, cajero y hora. Filas-tarjeta
+                  (no tabla plana): retiro = ámbar, ingreso = verde. Así el dueño ve en el corte por
+                  qué entró o salió el dinero, sin huecos en la auditoría. */}
+              {summary.movements && summary.movements.length > 0 && (
+                <div className="cash-move-list">
+                  {summary.movements.map((m) => {
+                    const isOut = m.direction === 'OUT';
+                    return (
+                      <div key={m.id} className="cash-move-row">
+                        <span className={`cash-move-chip ${isOut ? 'is-out' : 'is-in'}`}>
+                          {isOut ? <ArrowUpCircle size={15} /> : <ArrowDownCircle size={15} />}
+                          {isOut ? 'Retiro' : 'Ingreso'}
+                        </span>
+                        <div className="cash-move-body">
+                          <span className="cash-move-reason">{m.reason || 'Sin motivo registrado'}</span>
+                          <span className="cash-move-meta">
+                            {m.actor || 'Cajero'}{timeOf(m.createdAt) ? ` · ${timeOf(m.createdAt)}` : ''}
+                          </span>
+                        </div>
+                        <strong className={`cash-move-amount num ${isOut ? 'is-out' : 'is-in'}`}>
+                          {isOut ? '-' : '+'}{money(m.amount)}
+                        </strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Split NORMAL / ESPECIAL (solo si el giro lo usa) */}

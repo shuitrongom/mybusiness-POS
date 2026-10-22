@@ -296,6 +296,68 @@
   padding: var(--space-6);
 }
 
+/* Estados de la cuadrícula del POS: vacío premium (guía) vs. error (reintento). Comparten
+   la tarjeta centrada; se diferencian por el color de acento y el borde. */
+.pos-grid-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: var(--space-6);
+  background: var(--surface-2);
+  border-radius: 14px;
+}
+
+.pos-grid-state-empty {
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+}
+
+.pos-grid-state-empty svg {
+  color: var(--text-muted);
+}
+
+.pos-grid-state-error {
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--text);
+}
+
+.pos-grid-state-error svg {
+  color: var(--danger);
+}
+
+.pos-grid-state-title {
+  font-weight: 600;
+  font-size: var(--fs-md, 15px);
+}
+
+.pos-grid-state-text {
+  color: var(--text-muted);
+  max-width: 440px;
+  line-height: 1.4;
+}
+
+.pos-grid-state-retry {
+  margin-top: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--brand-600);
+  background: color-mix(in srgb, var(--brand-600) 12%, transparent);
+  color: var(--brand-600);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pos-grid-state-retry:hover {
+  background: color-mix(in srgb, var(--brand-600) 20%, transparent);
+}
+
 /* ---- Ticket / carrito ---- */
 .pos-ticket {
   display: flex;
@@ -2350,6 +2412,104 @@
 .pos-quick-actions .pos-confirm {
   flex: 1;
   justify-content: center;
+}
+
+/* =====================================================================
+   Movimiento de caja (retiro / ingreso de efectivo)
+   ===================================================================== */
+
+/* Botón de la toolbar (coherente con pos-quick-btn, acento brand) */
+.pos-cashmove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--heading);
+  background: var(--surface-2, rgba(255, 255, 255, 0.05));
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, color 0.15s;
+}
+
+.pos-cashmove-btn:hover {
+  color: var(--brand-600, #2563eb);
+  border-color: var(--brand-600, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-600, #2563eb) 12%, transparent);
+}
+
+.pos-cashmove-btn .pos-quick-kbd {
+  margin-left: 2px;
+}
+
+/* Chips de tipo de movimiento: Retiro (ámbar) / Ingreso (verde) */
+.pos-move-types {
+  display: flex;
+  gap: 8px;
+}
+
+.pos-move-type {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-2, rgba(255, 255, 255, 0.05));
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pos-move-type:hover {
+  color: var(--heading);
+}
+
+.pos-move-type.is-out.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.3);
+}
+
+.pos-move-type.is-in.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, #12b886, #16a34a);
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(18, 184, 134, 0.3);
+}
+
+/* Monto del movimiento: alinea decimales */
+.pos-move-amount .pos-quick-input {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Motivo (textarea) reutiliza pos-quick-input con alto propio */
+textarea.pos-move-reason {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.4;
+  font-family: inherit;
+}
+
+/* Monto del resumen según tipo (retiro ámbar / ingreso verde) */
+.pos-quick-summary-amount.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-quick-summary-amount.is-out {
+  color: #d97706;
+}
+
+.pos-quick-summary-amount.is-in {
+  color: #12b886;
 }
 
 /* =====================================================================

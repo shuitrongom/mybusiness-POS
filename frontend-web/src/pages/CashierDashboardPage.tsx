@@ -8,8 +8,10 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
+import { toast } from '@/store/toast';
 import { InfoBanner } from '@/components/InfoBanner';
 import { ScopeSelector, type ReportScope } from '@/components/ScopeSelector';
+import { OpenShiftModal, cacheShift, type ActiveShift } from '@/components/OpenShiftModal';
 import { useTestMode } from '@/lib/testMode';
 import { staggerContainer, staggerItem } from '@/lib/motion';
 import './dashboard.css';
@@ -50,6 +52,27 @@ export function CashierDashboardPage() {
   // modo prueba está ON y 'real' cuando está OFF.
   const [scopePick, setScopePick] = useState<ReportScope | null>(null);
   const scope: ReportScope = scopePick ?? (testModeActive ? 'both' : 'real');
+  // Modal premium de apertura (el MISMO del POS) para el estado vacío "No tienes una caja abierta".
+  const [openModal, setOpenModal] = useState(false);
+  // Sucursal del cajero: mismo criterio que el POS (localStorage 'mbs.branchId', respaldo 1).
+  const branchId = Number(localStorage.getItem('mbs.branchId')) || 1;
+  // Estado del día: si ya cerró su corte hoy NO puede reabrir (regla de negocio, validada en back).
+  const dayStatus = useQuery({
+    queryKey: ['shift', 'day-status'],
+    queryFn: async () => (await api.get<{ closedToday: boolean }>('/shifts/day-status')).data,
+  });
+  const closedToday = dayStatus.data?.closedToday ?? false;
+
+  // CTA del estado vacío: abre el modal premium salvo que el cajero ya haya cerrado hoy (avisa).
+  const onAbrirCaja = () => {
+    if (closedToday) {
+      toast.info('Tu corte de hoy ya fue cerrado', 'Podrás abrir caja de nuevo hasta el día siguiente.');
+      return;
+    }
+    setOpenModal(true);
+  };
+  // Al confirmar: cachea el turno y entra al POS, idéntico a la apertura desde el punto de venta.
+  const onOpened = (s: ActiveShift) => { cacheShift(s); navigate('/pos'); };
   const summary = useQuery({
     queryKey: ['cashier', 'my-day', scope],
     queryFn: async () => {
@@ -74,9 +97,19 @@ export function CashierDashboardPage() {
         <motion.div className="card cash-dash-empty" variants={staggerItem} initial="hidden" animate="visible">
           <LockKeyhole size={40} strokeWidth={1.5} />
           <h3>No tienes una caja abierta</h3>
-          <p>Abre tu caja con tu fondo inicial para empezar a vender y ver tu corte del día en vivo.</p>
-          <button className="btn-accent" onClick={() => navigate('/pos')}><Wallet size={16} /> Ir al punto de venta</button>
+          {closedToday ? (
+            <>
+              <p>Tu corte de hoy ya fue cerrado; podrás abrir caja de nuevo hasta el día siguiente.</p>
+            </>
+          ) : (
+            <>
+              <p>Abre tu caja con tu fondo inicial para empezar a vender y ver tu corte del día en vivo.</p>
+              <button className="btn-accent" onClick={onAbrirCaja}><Wallet size={16} /> Abrir mi caja</button>
+            </>
+          )}
         </motion.div>
+        {/* Modal premium de apertura (el MISMO del POS). Al confirmar, entra al punto de venta. */}
+        <OpenShiftModal open={openModal} branchId={branchId} onOpened={onOpened} />
       </div>
     );
   }

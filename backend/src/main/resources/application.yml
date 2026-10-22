@@ -13,6 +13,18 @@ spring:
       maximum-pool-size: ${DB_POOL_MAX:10}
       minimum-idle: ${DB_POOL_MIN:2}
       connection-timeout: 30000
+      # Neon (Postgres serverless) CIERRA las conexiones ociosas tras un rato. Si el pool
+      # conserva esas conexiones muertas, una petición puede recibir una "closed connection"
+      # y fallar (HikariCP avisa "Failed to validate connection ... Possibly consider a shorter
+      # maxLifetime"). Estos ajustes reciclan/validan antes de que Neon las corte:
+      #  - max-lifetime: retira cada conexión antes del corte de Neon (5 min < típico de Neon).
+      #  - keepalive-time: hace ping periódico para mantenerlas vivas y detectar las caídas.
+      #  - validation-timeout: valida la conexión antes de entregarla a la petición.
+      #  - idle-timeout: cierra las ociosas de más del mínimo de forma ordenada.
+      max-lifetime: ${DB_POOL_MAX_LIFETIME:300000}
+      keepalive-time: ${DB_POOL_KEEPALIVE:120000}
+      validation-timeout: ${DB_POOL_VALIDATION_TIMEOUT:5000}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT:120000}
 
   jpa:
     open-in-view: false

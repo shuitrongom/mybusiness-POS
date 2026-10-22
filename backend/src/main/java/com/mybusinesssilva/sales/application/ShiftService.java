@@ -365,6 +365,7 @@ public class ShiftService {
                 out.put("creditSales", creditSales);
                 out.put("cashIn", cashIn);
                 out.put("cashOut", cashOut);
+                out.put("movements", cashMovementsOf(shiftId));
                 out.put("expectedCash", expectedCash);
                 out.put("totalSales", totalSales);
                 out.put("salesCount", salesCount);
@@ -468,7 +469,14 @@ public class ShiftService {
                 if (amount == null || amount.signum() <= 0) {
                         throw new IllegalArgumentException("El monto debe ser mayor a 0.");
                 }
-                // 3) Insert trazable (actor, turno, razón, monto, fecha por DEFAULT now()).
+                // 3) Motivo obligatorio (red de seguridad además del @NotBlank del DTO): un
+                // movimiento sin motivo rompe la trazabilidad/auditoría del dueño. Se persiste
+                // el motivo recortado (trim) para no guardar espacios sueltos.
+                if (reason == null || reason.trim().isEmpty()) {
+                        throw new IllegalArgumentException("El motivo del movimiento es obligatorio.");
+                }
+                String trimmedReason = reason.trim();
+                // 4) Insert trazable (actor, turno, razón, monto, fecha por DEFAULT now()).
                 jdbc.sql("""
                                 INSERT INTO cash_movement (shift_id, direction, amount, reason, actor)
                                 VALUES (:shift, :dir, :amount, :reason, :actor)
@@ -476,9 +484,43 @@ public class ShiftService {
                                 .param("shift", shiftId)
                                 .param("dir", dir)
                                 .param("amount", amount)
-                                .param("reason", reason)
+                                .param("reason", trimmedReason)
                                 .param("actor", actor)
                                 .update();
+        }
+
+        /**
+         * Lista DETALLADA de los movimientos de efectivo del turno (entradas y
+         * salidas),
+         * para la trazabilidad del corte: quién, cuándo, cuánto, por qué y de qué tipo.
+         * Scope BOTH (sin filtro de modo prueba), coherente con cómo el corte ya suma
+         * el
+         * efectivo del turno ({@code sumCashMovements}): los movimientos pertenecen al
+         * turno y el documento de corte hereda el modo al persistirse.
+         *
+         * @return filas con claves
+         *         {@code id, direction, amount, reason, actor, createdAt},
+         *         ordenadas por {@code created_at} ascendente (orden cronológico).
+         */
+        public java.util.List<java.util.Map<String, Object>> cashMovementsOf(long shiftId) {
+                return jdbc.sql("""
+                                SELECT id, direction, amount, reason, actor, created_at
+                                FROM cash_movement
+                                WHERE shift_id = :s
+                                ORDER BY created_at ASC
+                                """)
+                                .param("s", shiftId)
+                                .query((rs, n) -> {
+                                        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                                        m.put("id", rs.getLong("id"));
+                                        m.put("direction", rs.getString("direction"));
+                                        m.put("amount", rs.getBigDecimal("amount"));
+                                        m.put("reason", rs.getString("reason"));
+                                        m.put("actor", rs.getString("actor"));
+                                        m.put("createdAt", rs.getObject("created_at", java.time.OffsetDateTime.class));
+                                        return m;
+                                })
+                                .list();
         }
 
         /**

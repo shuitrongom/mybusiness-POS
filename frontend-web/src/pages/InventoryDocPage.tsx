@@ -8,6 +8,7 @@ import { useSession } from '@/store/session';
 import { decodeToken, hasModule } from '@/lib/jwt';
 import { ProductPicker } from '@/components/ProductPicker';
 import { InfoBanner } from '@/components/InfoBanner';
+import { resolveCashierBranchId } from '@/lib/cashierBranch';
 import '@/pages/dashboard.css';
 import '@/pages/inventory-doc.css';
 import '@/pages/customers.css';
@@ -140,6 +141,12 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
   // Existencia disponible por artículo (según el modo: stock normal o merma), para mostrarla y
   // bloquear que se saque más de lo que hay. Clave productId → cantidad disponible.
   const [availableQty, setAvailableQty] = useState<Record<number, number>>({});
+  // Estado de la carga del selector de Salidas: distingue "no hay existencia" (vacío legítimo)
+  // de "la carga falló" (error con reintento). Antes el .catch dejaba la lista vacía y ambos
+  // casos se veían igual.
+  const [availableError, setAvailableError] = useState(false);
+  // Fuerza recargar los artículos con existencia al pulsar "Reintentar".
+  const [availableReload, setAvailableReload] = useState(0);
   // Nombres de artículos sin precio que bloquean la producción (dispara el modal de aviso).
   const [missingPrice, setMissingPrice] = useState<string[]>([]);
 
@@ -174,7 +181,12 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
         setConcepts(con.data);
         setProducts(prod.data);
         const active = br.data.filter((b) => b.active);
-        setBranches(active); if (active[0]) setBranchId(active[0].id);
+        setBranches(active);
+        // Fuente ÚNICA del branch del cajero (turno abierto > última usada en POS > primera
+        // activa), para que Producción/Salidas operen en el MISMO almacén que el POS y no se
+        // produzca en una sucursal y se venda en otra.
+        const resolved = resolveCashierBranchId(active);
+        if (resolved) setBranchId(resolved);
       } catch { toast.error('No se pudo cargar el catálogo'); }
     })();
     loadHistory();
@@ -205,7 +217,7 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
   // SALIDAS en giro panadería: el selector solo muestra panes CON EXISTENCIA (reparto = merma;
   // merma manual / salida normal = stock normal). Así el cajero no elige panes sin inventario.
   useEffect(() => {
-    if (isIn || !isBakery || !branchId) { setAvailableProducts([]); return; }
+    if (isIn || !isBakery || !branchId) { setAvailableProducts([]); setAvailableError(false); return; }
     const kind = exitMode === 'REPARTO' ? 'waste' : 'normal';
     let cancelled = false;
     api.get<{ productId: number; productName: string; unit: string | null; quantity: number }[]>(
@@ -218,10 +230,13 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
         const qty: Record<number, number> = {};
         for (const x of r.data) qty[x.productId] = Number(x.quantity) || 0;
         setAvailableQty(qty);
+        setAvailableError(false);
       })
-      .catch(() => { if (!cancelled) { setAvailableProducts([]); setAvailableQty({}); } });
+      // La carga falló: se marca el error para mostrar un aviso con reintento, en vez de dejar
+      // el selector vacío como si no hubiera existencia.
+      .catch(() => { if (!cancelled) { setAvailableProducts([]); setAvailableQty({}); setAvailableError(true); } });
     return () => { cancelled = true; };
-  }, [isIn, isBakery, branchId, exitMode]);
+  }, [isIn, isBakery, branchId, exitMode, availableReload]);
 
   const selectedIds = useMemo(() => new Set(lines.map((l) => l.productId)), [lines]);
 
@@ -369,6 +384,21 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
           <InfoBanner icon={<ArrowUpFromLine size={18} />} tone="neutral" title="Salida del inventario">
             Registra la salida de mercancía con su concepto. Descuenta la existencia del almacén.
           </InfoBanner>
+        )}
+
+        {/* ESTADO DE ERROR (distinto del vacío): la carga de artículos con existencia falló.
+            Se avisa con reintento en vez de mostrar el selector vacío como si no hubiera pan. */}
+        {!isIn && isBakery && availableError && (
+          <div className="idoc-load-error" style={{ marginTop: 'var(--space-4)' }}>
+            <TriangleAlert size={18} />
+            <div className="idoc-load-error-text">
+              <strong>No se pudieron cargar los artículos con existencia.</strong>
+              <span> Es un error de carga, no significa que no haya inventario. Revisa tu conexión.</span>
+            </div>
+            <button type="button" className="idoc-load-error-retry" onClick={() => setAvailableReload((n) => n + 1)}>
+              Reintentar
+            </button>
+          </div>
         )}
 
         <div className="pur-add" style={{ marginTop: 'var(--space-4)' }}>

@@ -151,6 +151,13 @@
 .cajero-open-cta strong { font-size: 17px; font-weight: 800; }
 .cajero-open-cta span { font-size: 13px; opacity: 0.9; }
 
+/* Estado informativo: el cajero ya cerró su corte hoy y no puede reabrir caja. */
+.cajero-open-cta-done {
+  cursor: default;
+  background: linear-gradient(135deg, #64748b, #94a3b8);
+  box-shadow: 0 12px 28px rgba(100, 116, 139, 0.25);
+}
+
 /* Accesos del cajero */
 .cajero-section-title {
   font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;

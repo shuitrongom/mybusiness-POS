@@ -4,6 +4,7 @@ import {
   Store, ScanBarcode, Search, ShoppingCart, Minus, Plus, X,
   Banknote, CreditCard, Landmark, RefreshCw, Ticket as TicketIcon,
   User, Users, UserPlus, Tag, Percent, Trash2, ChevronDown, Sparkles,
+  ArrowLeftRight, ArrowUpCircle, ArrowDownCircle, PackageOpen, TriangleAlert,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
@@ -19,6 +20,7 @@ import { decodeToken, canSell, hasModule } from '@/lib/jwt';
 import { ShieldAlert, FlaskConical } from 'lucide-react';
 import { InfoBanner } from '@/components/InfoBanner';
 import { useTestMode } from '@/lib/testMode';
+import { useCashierBranch } from '@/lib/cashierBranch';
 import type { AxiosError } from 'axios';
 import './pos.css';
 
@@ -146,7 +148,6 @@ function priceForList(p: Product, listId: number): number {
   return candidate && candidate > 0 ? candidate : p.price;
 }
 
-const BRANCH_KEY = 'mbs.branchId';
 const PRICELIST_KEY = 'mbs.priceListId';
 
 /**
@@ -159,7 +160,9 @@ export function PosPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
-  const [branchId, setBranchId] = useState<number>(() => Number(localStorage.getItem(BRANCH_KEY)) || 0);
+  // Sucursal del cajero desde la FUENTE ÚNICA (turno abierto > última usada > primera activa),
+  // para que el POS y las pantallas de inventario (Producción/Salidas) usen el MISMO almacén.
+  const { branchId, setBranchId } = useCashierBranch(branches);
   const [priceListId, setPriceListId] = useState<number>(() => Number(localStorage.getItem(PRICELIST_KEY)) || 1);
   const [activeCategory, setActiveCategory] = useState<number | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -175,6 +178,12 @@ export function PosPage() {
   // Existencia por producto en la sucursal activa (productId -> cantidad). En giro panadería el POS
   // solo muestra y vende panes CON existencia > 0: no se puede vender lo que no está en inventario.
   const [stockMap, setStockMap] = useState<Record<number, number>>({});
+  // Estado de la carga de existencias: 'ok' (cargó), 'error' (la llamada falló). Permite
+  // DISTINGUIR "no hay stock" (cuadrícula vacía legítima) de "la carga falló" (error con
+  // reintento). Antes el .catch dejaba stockMap={} y ambos casos se veían igual.
+  const [stockError, setStockError] = useState(false);
+  // Contador que fuerza recargar las existencias al pulsar "Reintentar" en el estado de error.
+  const [stockReload, setStockReload] = useState(0);
   // Existencia EN MERMA por producto en la sucursal activa (productId -> piezas en merma). En giro
   // panadería el botón "Vender como merma" solo aparece y se topa si hay piezas en merma (> 0):
   // "no se vende lo que no hay" también para la merma.
@@ -203,6 +212,9 @@ export function PosPage() {
   const [lastLineId, setLastLineId] = useState<string | null>(null);
   const [qtyInput, setQtyInput] = useState('1');
   const [quickOpen, setQuickOpen] = useState(false);
+  // Movimiento de caja (retiro OUT / ingreso IN): solo con turno abierto. Queda registrado con
+  // actor, hora y motivo; afecta el corte del turno (fórmula ya existente, no se toca).
+  const [cashMoveOpen, setCashMoveOpen] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const token = useSession((s) => s.token);
@@ -266,23 +278,19 @@ export function PosPage() {
           .then((r) => setPromos(r.data))
           .catch(() => setPromos([]));
         const active = brs.data.filter((b) => b.active);
+        // El branchId lo resuelve useCashierBranch (fuente única) al cambiar esta lista.
         setBranches(active);
-        setBranchId((prev) => (active.some((b) => b.id === prev) ? prev : active[0]?.id ?? 0));
       } catch {
         setMessage('No se pudo cargar el catálogo. Revisa tu conexión.');
       }
     })();
   }, []);
 
-  useEffect(() => {
-    if (branchId) localStorage.setItem(BRANCH_KEY, String(branchId));
-  }, [branchId]);
-
   // Carga la existencia de la sucursal (solo giro panadería) para mostrar/vender únicamente panes
   // con stock > 0. Se recarga al cambiar de sucursal y tras cada venta (reusa el contador 'pending'
   // y 'cart' vacío como señal de que algo cambió). En otros giros no se filtra por existencia.
   useEffect(() => {
-    if (!bakeryEnabled || !branchId) { setStockMap({}); return; }
+    if (!bakeryEnabled || !branchId) { setStockMap({}); setStockError(false); return; }
     let cancelled = false;
     api.get<{ productId: number; quantity: number }[]>('/inventory/stock', { params: { branchId } })
       .then((r) => {
@@ -290,10 +298,13 @@ export function PosPage() {
         const m: Record<number, number> = {};
         for (const row of r.data) m[row.productId] = Number(row.quantity) || 0;
         setStockMap(m);
+        setStockError(false);
       })
-      .catch(() => { if (!cancelled) setStockMap({}); });
+      // La carga falló (p. ej. 500 del backend): se marca el error para mostrar un estado
+      // claro con reintento, en vez de una cuadrícula vacía silenciosa que parece "sin pan".
+      .catch(() => { if (!cancelled) { setStockMap({}); setStockError(true); } });
     return () => { cancelled = true; };
-  }, [bakeryEnabled, branchId, ticket]);
+  }, [bakeryEnabled, branchId, ticket, stockReload]);
 
   // Carga la existencia EN MERMA de la sucursal (solo giro panadería) para habilitar/topar el
   // botón "Vender como merma": solo panes CON existencia de merma > 0 pueden venderse como merma
@@ -612,12 +623,14 @@ export function PosPage() {
       const typingInField = !!el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA');
       const inBarcode = el === barcodeRef.current;
       // No interferir si hay un modal abierto (cada modal maneja su propio teclado).
-      const modalOpen = checkoutOpen || customerOpen || discountOpen || quickOpen || ticket != null;
+      const modalOpen = checkoutOpen || customerOpen || discountOpen || quickOpen || cashMoveOpen || ticket != null;
 
       if (e.key === 'F2') { e.preventDefault(); barcodeRef.current?.focus(); return; }
       if (e.key === 'F3') { e.preventDefault(); searchRef.current?.focus(); return; }
       if (e.key === 'F4') { e.preventDefault(); if (!modalOpen) setCustomerOpen(true); return; }
       if (e.key === 'F7') { e.preventDefault(); if (!modalOpen) setQuickOpen(true); return; }
+      // F8: movimiento de caja (retiro/ingreso), solo con turno abierto.
+      if (e.key === 'F8') { e.preventDefault(); if (!modalOpen && shift) setCashMoveOpen(true); return; }
       if (e.key === 'F9') { e.preventDefault(); if (!modalOpen) openCheckout(); return; }
       // Enter con carrito lleno (y no escribiendo en un campo que no sea el código) → cobrar.
       if (e.key === 'Enter' && !modalOpen && !typingInField && cart.length > 0) {
@@ -631,7 +644,7 @@ export function PosPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [openCheckout, bumpLast, checkoutOpen, customerOpen, discountOpen, quickOpen, ticket, cart.length]);
+  }, [openCheckout, bumpLast, checkoutOpen, customerOpen, discountOpen, quickOpen, cashMoveOpen, shift, ticket, cart.length]);
 
   /** Agrega al carrito un artículo libre capturado en el modal "Producto rápido". */
   const addQuickItem = useCallback((item: { description: string; unitPrice: number; unit: string; taxRate: number }) => {
@@ -879,6 +892,17 @@ export function PosPage() {
           >
             <Sparkles size={16} /> Producto rápido <kbd className="pos-quick-kbd">F7</kbd>
           </button>
+          {shift && (
+            <button
+              type="button"
+              className="pos-cashmove-btn"
+              onClick={() => setCashMoveOpen(true)}
+              aria-label="Registrar movimiento de caja (retiro o ingreso de efectivo)"
+              title="Movimiento de caja: registra un retiro o ingreso de efectivo con su motivo (F8)"
+            >
+              <ArrowLeftRight size={16} /> Movimiento de caja <kbd className="pos-quick-kbd">F8</kbd>
+            </button>
+          )}
         </div>
 
         <div className="pos-cats">
@@ -936,15 +960,35 @@ export function PosPage() {
             );
           })}
           {visibleProducts.length === 0 && (
-            <div className="pos-grid-empty">
-              {products.length === 0
-                ? 'Aún no hay productos. Regístralos en la sección Productos.'
-                : search.trim() !== ''
-                  ? 'Ningún producto coincide con la búsqueda.'
-                  : bakeryEnabled
-                    ? 'No hay pan con existencia. Registra la producción del día en Inventario → Entradas para poder vender.'
-                    : 'Ningún producto coincide con la búsqueda.'}
-            </div>
+            // ESTADO DE ERROR (distinto del vacío): la carga de existencias falló. Se muestra un
+            // mensaje claro con REINTENTAR en vez de una cuadrícula vacía que parece "sin pan".
+            bakeryEnabled && stockError && search.trim() === '' ? (
+              <div className="pos-grid-state pos-grid-state-error">
+                <TriangleAlert size={30} strokeWidth={1.5} />
+                <div className="pos-grid-state-title">No se pudieron cargar las existencias</div>
+                <div className="pos-grid-state-text">
+                  Hubo un problema al consultar el inventario de la sucursal. Esto no significa que no
+                  haya pan: es un error de carga. Revisa tu conexión y reintenta.
+                </div>
+                <button type="button" className="pos-grid-state-retry" onClick={() => setStockReload((n) => n + 1)}>
+                  <RefreshCw size={15} /> Reintentar
+                </button>
+              </div>
+            ) : (
+              // ESTADO VACÍO PREMIUM: no hay existencia (o búsqueda sin match). GUÍA la acción.
+              <div className="pos-grid-state pos-grid-state-empty">
+                <PackageOpen size={30} strokeWidth={1.5} />
+                <div className="pos-grid-state-text">
+                  {products.length === 0
+                    ? 'Aún no hay productos. Regístralos en la sección Productos.'
+                    : search.trim() !== ''
+                      ? 'Ningún producto coincide con la búsqueda.'
+                      : bakeryEnabled
+                        ? 'No hay pan con existencia. Registra la producción del día en Inventario → Entradas para poder vender.'
+                        : 'Ningún producto coincide con la búsqueda.'}
+                </div>
+              </div>
+            )
           )}
         </motion.div>
       </div>
@@ -1165,6 +1209,16 @@ export function PosPage() {
           <QuickItemModal
             onCancel={() => setQuickOpen(false)}
             onConfirm={addQuickItem}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {cashMoveOpen && shift && (
+          <CashMovementModal
+            shiftId={shift.shiftId}
+            onCancel={() => setCashMoveOpen(false)}
+            onDone={() => setCashMoveOpen(false)}
           />
         )}
       </AnimatePresence>
@@ -1594,6 +1648,160 @@ function QuickItemModal({ onCancel, onConfirm }:
           <button className="btn-ghost" onClick={onCancel}>Cancelar</button>
           <button className="pos-confirm" disabled={!canConfirm} onClick={confirm}>
             <Plus size={15} /> Agregar al carrito <span className="pos-key-hint">Enter</span>
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/**
+ * Modal de MOVIMIENTO DE CAJA (giro panadería, sin supervisor): la cajera registra ella misma un
+ * RETIRO (OUT) para pagar un gasto (azúcar, harina…) o un INGRESO (IN) de efectivo (p. ej. para
+ * cambio). No requiere autorización, pero queda TRAZABLE: actor, hora y motivo obligatorio. El
+ * movimiento afecta el corte del turno (fórmula ya existente: fondo + ventas efectivo + IN − OUT).
+ * Diseño al nivel de QuickItemModal (hero, $ prefijo, tabular-nums, placeholders tenues, chips de
+ * color). Anti doble-registro con estado {@code busy} (mismo criterio que el anti doble-cobro).
+ */
+function CashMovementModal({ shiftId, onCancel, onDone }:
+  { shiftId: number; onCancel: () => void; onDone: () => void }) {
+  const [direction, setDirection] = useState<'OUT' | 'IN'>('OUT');
+  const [amountInput, setAmountInput] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const amount = round2(Number(amountInput) || 0);
+  const canConfirm = amount > 0 && reason.trim().length > 0 && !busy;
+  const isOut = direction === 'OUT';
+
+  const confirm = async () => {
+    if (!canConfirm) return;
+    setBusy(true);
+    try {
+      await api.post(`/shifts/${shiftId}/cash-movement`, {
+        direction,
+        amount,
+        reason: reason.trim(),
+      });
+      toast.success(
+        'Movimiento registrado',
+        `${isOut ? 'Retiro' : 'Ingreso'}: ${money(amount)} — ${reason.trim()}`,
+      );
+      onDone();
+    } catch (err) {
+      const ax = err as AxiosError<{ detail?: string; title?: string }>;
+      const status = ax.response?.status;
+      const detail = ax.response?.data?.detail || ax.response?.data?.title;
+      if (status === 400 || status === 422) {
+        toast.error('Revisa los datos', detail || 'El monto o el motivo no son válidos.');
+      } else if (status === 409) {
+        toast.error('No se pudo registrar', detail || 'La caja no admite movimientos en este momento.');
+      } else {
+        toast.error('No se pudo registrar el movimiento', detail || 'Revisa tu conexión e inténtalo de nuevo.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') { e.preventDefault(); void confirm(); }
+      else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canConfirm, direction, amountInput, reason, busy]);
+
+  return (
+    <motion.div className="pos-modal-overlay" onClick={onCancel}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+      <motion.div className="pos-quick-modal" onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.95, y: 14 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97 }} transition={springSoft}>
+
+        {/* Encabezado */}
+        <div className="pos-quick-hero">
+          <span className="pos-quick-hero-badge"><ArrowLeftRight size={14} /> Movimiento de caja</span>
+          <h3 className="pos-quick-hero-title">{isOut ? 'Retiro de efectivo' : 'Ingreso de efectivo'}</h3>
+          <p className="pos-quick-hero-sub">Queda registrado con tu nombre, la hora y el motivo. Afecta tu corte.</p>
+          <button className="pos-quick-close" onClick={onCancel} aria-label="Cerrar"><X size={18} /></button>
+        </div>
+
+        <div className="pos-quick-body">
+          <InfoBanner
+            tone={isOut ? 'amber' : 'green'}
+            icon={isOut ? <ArrowUpCircle size={18} /> : <ArrowDownCircle size={18} />}
+            title={isOut ? 'Vas a sacar dinero de la caja' : 'Vas a ingresar dinero a la caja'}
+          >
+            {isOut
+              ? 'Úsalo para pagar un gasto del negocio (azúcar, harina…). Sin autorización, pero queda registrado.'
+              : 'Úsalo cuando metes efectivo a la caja (por ejemplo, para tener cambio).'}
+          </InfoBanner>
+
+          {/* Tipo de movimiento (chips de color) */}
+          <div className="pos-quick-field">
+            <span className="pos-quick-label">Tipo de movimiento</span>
+            <div className="pos-move-types">
+              <button type="button"
+                className={`pos-move-type is-out ${isOut ? 'is-active' : ''}`}
+                onClick={() => setDirection('OUT')}>
+                <ArrowUpCircle size={16} /> Retiro
+              </button>
+              <button type="button"
+                className={`pos-move-type is-in ${!isOut ? 'is-active' : ''}`}
+                onClick={() => setDirection('IN')}>
+                <ArrowDownCircle size={16} /> Ingreso
+              </button>
+            </div>
+          </div>
+
+          {/* Monto */}
+          <label className="pos-quick-field">
+            <span className="pos-quick-label">Monto</span>
+            <div className="pos-quick-price pos-move-amount">
+              <span className="pos-quick-price-symbol">$</span>
+              <input className="pos-quick-input" type="number" min={0} step="0.01"
+                value={amountInput} placeholder="0.00" autoFocus
+                onChange={(e) => {
+                  // Quita ceros a la izquierda (no "05"); permite vacío para ver el placeholder.
+                  let v = e.target.value;
+                  if (/^0\d/.test(v)) v = v.replace(/^0+/, '');
+                  setAmountInput(v);
+                }} />
+            </div>
+          </label>
+
+          {/* Motivo obligatorio */}
+          <label className="pos-quick-field">
+            <span className="pos-quick-label">Motivo</span>
+            <textarea className="pos-quick-input pos-move-reason" rows={2} maxLength={300}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="¿Para qué es el movimiento? Ej. Compra de azúcar, pago de harina…" />
+          </label>
+
+          <p className="pos-quick-note">El motivo es obligatorio: así el dueño ve en el corte por qué entró o salió el dinero.</p>
+
+          {/* Resumen del movimiento */}
+          <div className="pos-quick-summary">
+            <div className="pos-quick-summary-left">
+              <span className="pos-quick-summary-label">{isOut ? 'Sale de la caja' : 'Entra a la caja'}</span>
+              <span className="pos-quick-summary-hint">Se registra a tu nombre en este turno</span>
+            </div>
+            <strong className={`pos-quick-summary-amount num ${isOut ? 'is-out' : 'is-in'}`}>
+              {isOut ? '-' : '+'}{money(amount)}
+            </strong>
+          </div>
+        </div>
+
+        <div className="pos-quick-actions">
+          <button className="btn-ghost" onClick={onCancel} disabled={busy}>Cancelar</button>
+          <button className="pos-confirm" disabled={!canConfirm} onClick={() => void confirm()}>
+            <ArrowLeftRight size={15} /> {busy
+              ? 'Registrando…'
+              : <>Registrar {isOut ? 'retiro' : 'ingreso'} <span className="pos-key-hint">Enter</span></>}
           </button>
         </div>
       </motion.div>

@@ -136,6 +136,61 @@ class SaleServiceIT extends AbstractIntegrationTest {
         }
 
         @Test
+        void cashMovementRequiresReason() {
+                setup("MotivoObligatorio");
+                long registerId = createCashRegister();
+                long shiftId = shiftService.openShift(registerId, "cajero", new BigDecimal("0.00"));
+
+                // Motivo vacío o solo espacios => se rechaza (red de seguridad del backend).
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                                () -> shiftService.recordCashMovement(shiftId, "OUT", new BigDecimal("50.00"), "",
+                                                "cajero"))
+                                .isInstanceOf(IllegalArgumentException.class);
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                                () -> shiftService.recordCashMovement(shiftId, "OUT", new BigDecimal("50.00"), "   ",
+                                                "cajero"))
+                                .isInstanceOf(IllegalArgumentException.class);
+
+                // Con motivo válido persiste y guarda el motivo recortado (trim).
+                shiftService.recordCashMovement(shiftId, "OUT", new BigDecimal("50.00"), "  Compra de azúcar  ",
+                                "cajero");
+                String reason = new JdbcTemplate(dataSource).queryForObject(
+                                "SELECT reason FROM cash_movement WHERE shift_id = ? ORDER BY id DESC LIMIT 1",
+                                String.class, shiftId);
+                assertThat(reason).isEqualTo("Compra de azúcar");
+        }
+
+        @Test
+        void summaryListsCashMovementsTrace() {
+                setup("Trazabilidad");
+                long registerId = createCashRegister();
+                long shiftId = shiftService.openShift(registerId, "cajero", new BigDecimal("0.00"));
+
+                // 1 retiro (OUT 100, azúcar) y 1 ingreso (IN 50, cambio).
+                shiftService.recordCashMovement(shiftId, "OUT", new BigDecimal("100.00"), "Compra azúcar", "cajero");
+                shiftService.recordCashMovement(shiftId, "IN", new BigDecimal("50.00"), "Cambio", "cajero");
+
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> movements = (List<Map<String, Object>>) shiftService.myShiftSummary("cajero")
+                                .orElseThrow().get("movements");
+                assertThat(movements).hasSize(2);
+                // Orden cronológico ascendente: primero el retiro, luego el ingreso.
+                assertThat(movements.get(0).get("direction")).isEqualTo("OUT");
+                assertThat((BigDecimal) movements.get(0).get("amount")).isEqualByComparingTo("100.00");
+                assertThat(movements.get(0).get("reason")).isEqualTo("Compra azúcar");
+                assertThat(movements.get(0).get("actor")).isEqualTo("cajero");
+                assertThat(movements.get(0).get("createdAt")).isNotNull();
+                assertThat(movements.get(1).get("direction")).isEqualTo("IN");
+                assertThat((BigDecimal) movements.get(1).get("amount")).isEqualByComparingTo("50.00");
+
+                // Los totales del corte siguen la fórmula congelada (IN y OUT). El método
+                // cashMovementsOf no la altera.
+                Map<String, Object> summary = shiftService.myShiftSummary("cajero").orElseThrow();
+                assertThat((BigDecimal) summary.get("cashIn")).isEqualByComparingTo("50.00");
+                assertThat((BigDecimal) summary.get("cashOut")).isEqualByComparingTo("100.00");
+        }
+
+        @Test
         void classifiesCatalogSaleAsNormal() {
                 long productId = setup("Galletas");
                 setPrice(productId, new BigDecimal("15.00"));

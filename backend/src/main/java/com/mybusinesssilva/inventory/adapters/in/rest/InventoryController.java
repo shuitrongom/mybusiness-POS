@@ -9,6 +9,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +34,8 @@ import com.mybusinesssilva.platform.security.AuthenticatedUser;
 @PreAuthorize("@moduleAccess.canUse('inventory')")
 public class InventoryController {
 
+    private static final Logger log = LoggerFactory.getLogger(InventoryController.class);
+
     private final InventoryService inventoryService;
     private final JdbcClient jdbc;
 
@@ -48,36 +53,58 @@ public class InventoryController {
     @GetMapping("/stock")
     public List<Map<String, Object>> stockOverview(
             @RequestParam(value = "branchId", required = false) Long branchId) {
-        return jdbc.sql("""
-                SELECT s.product_id, s.branch_id, b.name AS branch_name,
-                       p.name AS product_name, p.unit, p.sku,
-                       c.name AS category_name,
-                       s.quantity, s.min_quantity, p.cost,
-                       (s.quantity * p.cost) AS stock_value
-                FROM inventory_stock s
-                JOIN product p ON p.id = s.product_id
-                LEFT JOIN category c ON c.id = p.category_id
-                LEFT JOIN branch b ON b.id = s.branch_id
-                WHERE (CAST(:branchId AS bigint) IS NULL OR s.branch_id = :branchId)
-                ORDER BY p.name
-                """)
-                .param("branchId", branchId)
-                .query((rs, n) -> {
-                    Map<String, Object> m = new java.util.HashMap<>();
-                    m.put("productId", rs.getLong("product_id"));
-                    m.put("branchId", rs.getLong("branch_id"));
-                    m.put("branchName", rs.getString("branch_name"));
-                    m.put("productName", rs.getString("product_name"));
-                    m.put("sku", rs.getString("sku"));
-                    m.put("unit", rs.getString("unit"));
-                    m.put("categoryName", rs.getString("category_name"));
-                    m.put("quantity", rs.getBigDecimal("quantity"));
-                    m.put("minQuantity", rs.getBigDecimal("min_quantity"));
-                    m.put("cost", rs.getBigDecimal("cost"));
-                    m.put("stockValue", rs.getBigDecimal("stock_value"));
-                    return m;
-                })
-                .list();
+        // Este GET alimenta la cuadrícula del POS en giro panadería. Si revienta, el
+        // POS se queda
+        // sin panes; por eso se captura el fallo de datos con el branchId de contexto
+        // para que el
+        // log diga EXACTAMENTE qué consulta y qué sucursal fallaron, y se relanza para
+        // que el
+        // handler global devuelva un 500 limpio (ProblemDetail). No se devuelve una
+        // lista vacía:
+        // eso haría ver "sin stock" cuando en realidad hubo un error, y el front no
+        // podría
+        // distinguir ambos casos.
+        try {
+            return jdbc.sql("""
+                    SELECT s.product_id, s.branch_id, b.name AS branch_name,
+                           p.name AS product_name, p.unit, p.sku,
+                           c.name AS category_name,
+                           s.quantity, s.min_quantity, p.cost,
+                           (s.quantity * p.cost) AS stock_value
+                    FROM inventory_stock s
+                    JOIN product p ON p.id = s.product_id
+                    LEFT JOIN category c ON c.id = p.category_id
+                    LEFT JOIN branch b ON b.id = s.branch_id
+                    WHERE (CAST(:branchId AS bigint) IS NULL OR s.branch_id = :branchId)
+                    ORDER BY p.name
+                    """)
+                    .param("branchId", branchId)
+                    .query((rs, n) -> {
+                        Map<String, Object> m = new java.util.HashMap<>();
+                        m.put("productId", rs.getLong("product_id"));
+                        // branch_id nunca debería ser null (FK), pero se lee defensivo: 0 si lo fuera.
+                        long bid = rs.getLong("branch_id");
+                        m.put("branchId", rs.wasNull() ? 0L : bid);
+                        m.put("branchName", rs.getString("branch_name"));
+                        m.put("productName", rs.getString("product_name"));
+                        m.put("sku", rs.getString("sku"));
+                        m.put("unit", rs.getString("unit"));
+                        m.put("categoryName", rs.getString("category_name"));
+                        // quantity es NOT NULL en el esquema, pero se normaliza a 0 por robustez:
+                        // el POS lee este valor para decidir si el pan tiene existencia.
+                        BigDecimal qty = rs.getBigDecimal("quantity");
+                        m.put("quantity", qty != null ? qty : BigDecimal.ZERO);
+                        m.put("minQuantity", rs.getBigDecimal("min_quantity"));
+                        m.put("cost", rs.getBigDecimal("cost"));
+                        m.put("stockValue", rs.getBigDecimal("stock_value"));
+                        return m;
+                    })
+                    .list();
+        } catch (DataAccessException ex) {
+            log.error("Fallo al consultar /inventory/stock (branchId={}): {}",
+                    branchId, ex.getMostSpecificCause().getMessage(), ex);
+            throw ex;
+        }
     }
 
     /**

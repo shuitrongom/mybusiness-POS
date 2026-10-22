@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import {
   ShoppingCart, ShoppingBag, Boxes, Wallet, FileText, Settings,
-  Banknote, Receipt, Package, TrendingUp, Clock, User, Sparkles,
+  Banknote, Receipt, Package, TrendingUp, Clock, User, Sparkles, BadgeCheck,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { useSession } from '@/store/session';
 import { decodeToken, canUseModule } from '@/lib/jwt';
 import { staggerContainer, staggerItem } from '@/lib/motion';
+import { toast } from '@/store/toast';
+import { OpenShiftModal, cacheShift, type ActiveShift } from '@/components/OpenShiftModal';
 import './home.css';
 
 interface DashboardSummary { salesCount: number; salesTotal: number; itemsSold: number; }
@@ -86,6 +89,14 @@ export function HomePage() {
     },
   });
 
+  // Estado del día del cajero: si ya cerró su caja hoy NO puede volver a abrir (misma regla que el
+  // POS). Se usa para que el CTA "Abrir mi caja" avise en vez de abrir el modal. 'cash' lo autoriza.
+  const dayStatus = useQuery({
+    queryKey: ['shift', 'day-status'],
+    enabled: isCashier,
+    queryFn: async () => (await api.get<{ closedToday: boolean }>('/shifts/day-status')).data,
+  });
+
   const salesLive = summary.data ? `${money(summary.data.salesTotal)} hoy` : undefined;
   const stockLive = lowStock.data ? `${int(lowStock.data.length)} alertas` : undefined;
 
@@ -111,6 +122,7 @@ export function HomePage() {
         cajero={cajero}
         shift={myShift.data ?? null}
         loading={myShift.isLoading}
+        closedToday={dayStatus.data?.closedToday ?? false}
         tiles={tiles}
         onGo={navigate}
       />
@@ -153,16 +165,41 @@ export function HomePage() {
  * sus últimos tickets), más accesos grandes a sus herramientas. Si no tiene caja abierta, invita
  * a abrirla. Nunca pide analítica del negocio (nada de /bi), por lo que no genera 401.
  */
-function CashierHome({ cajero, shift, loading, tiles, onGo }: {
+function CashierHome({ cajero, shift, loading, closedToday, tiles, onGo }: {
   cajero: string;
   shift: ShiftSummary | null;
   loading: boolean;
+  closedToday: boolean;
   tiles: Tile[];
   onGo: (to: string) => void;
 }) {
+  const navigate = useNavigate();
+  // Modal premium de apertura de caja (el MISMO del POS). Al abrir con éxito, se cachea el turno y
+  // se entra al punto de venta, igual que el flujo de apertura desde el POS.
+  const [openModal, setOpenModal] = useState(false);
+  // Sucursal del cajero: mismo criterio que el POS (localStorage 'mbs.branchId', respaldo 1).
+  const branchId = Number(localStorage.getItem('mbs.branchId')) || 1;
   const abierta = shift != null;
   const saludo = new Date().getHours() < 12 ? 'Buenos días'
     : new Date().getHours() < 19 ? 'Buenas tardes' : 'Buenas noches';
+
+  // CTA "Abrir mi caja": si el cajero ya cerró su corte hoy NO puede reabrir (regla de negocio
+  // validada también en backend); se avisa y NO se abre el modal. Si puede, se abre el modal
+  // premium de apertura.
+  const onAbrirCaja = () => {
+    if (closedToday) {
+      toast.info('Tu corte de hoy ya fue cerrado', 'Podrás abrir caja de nuevo hasta el día siguiente.');
+      return;
+    }
+    setOpenModal(true);
+  };
+
+  // Al confirmar la apertura: cachea el turno recién abierto (para que el POS lo reconozca sin
+  // volver a pedir apertura) y entra al punto de venta, idéntico a la apertura desde el POS.
+  const onOpened = (s: ActiveShift) => {
+    cacheShift(s);
+    navigate('/pos');
+  };
 
   const metrics = abierta ? [
     { icon: <TrendingUp size={20} />, label: 'Ventas de hoy', value: money(shift.totalSales), accent: '#12b886' },
@@ -207,8 +244,8 @@ function CashierHome({ cajero, shift, loading, tiles, onGo }: {
         </motion.div>
       )}
 
-      {!loading && !abierta && (
-        <motion.button className="cajero-open-cta" onClick={() => onGo('/ventas/pos')}
+      {!loading && !abierta && !closedToday && (
+        <motion.button className="cajero-open-cta" onClick={onAbrirCaja}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           whileHover={{ y: -3 }} whileTap={{ scale: 0.98 }}>
           <Banknote size={26} />
@@ -218,6 +255,21 @@ function CashierHome({ cajero, shift, loading, tiles, onGo }: {
           </div>
         </motion.button>
       )}
+
+      {/* Ya cerró su corte hoy: no puede reabrir caja (regla de negocio). Estado informativo. */}
+      {!loading && !abierta && closedToday && (
+        <motion.div className="cajero-open-cta cajero-open-cta-done" aria-disabled
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <BadgeCheck size={26} />
+          <div>
+            <strong>Tu caja de hoy ya cerró</strong>
+            <span>Tu corte ya fue cerrado; podrás abrir caja de nuevo hasta el día siguiente.</span>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Modal premium de apertura (el MISMO del POS). Al confirmar, entra al punto de venta. */}
+      <OpenShiftModal open={openModal} branchId={branchId} onOpened={onOpened} />
 
       {/* Accesos del cajero */}
       <div className="cajero-section-title">Tus herramientas</div>

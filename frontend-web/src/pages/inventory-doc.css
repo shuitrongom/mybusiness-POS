@@ -302,6 +302,48 @@
   border-radius: 14px;
 }
 
+/* Estado de ERROR de carga (distinto del vacío): aviso en línea con reintento. */
+.idoc-load-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--text);
+}
+
+.idoc-load-error>svg {
+  color: var(--danger);
+  flex: none;
+}
+
+.idoc-load-error-text {
+  flex: 1;
+  line-height: 1.35;
+}
+
+.idoc-load-error-text span {
+  color: var(--text-muted);
+}
+
+.idoc-load-error-retry {
+  flex: none;
+  padding: 7px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--brand-600);
+  background: color-mix(in srgb, var(--brand-600) 12%, transparent);
+  color: var(--brand-600);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.idoc-load-error-retry:hover {
+  background: color-mix(in srgb, var(--brand-600) 20%, transparent);
+}
+
 /* =========================================================================
    Historial reciente (Producción / Entradas / Salidas): lista con grid de
    columnas compartido entre cabecera y filas, mismo lenguaje visual que la

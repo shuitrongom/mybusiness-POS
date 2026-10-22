@@ -2,9 +2,11 @@ package com.mybusinesssilva.sales.adapters.in.rest;
 
 import com.mybusinesssilva.sales.application.ShiftService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
@@ -173,7 +175,7 @@ public class ShiftController {
     public record CashMovementRequest(
             @NotNull @Pattern(regexp = "IN|OUT", message = "La dirección debe ser IN u OUT") String direction,
             @NotNull @Positive(message = "El monto debe ser mayor a 0") BigDecimal amount,
-            String reason) {
+            @NotBlank(message = "El motivo es obligatorio") @Size(max = 300, message = "El motivo no puede exceder 300 caracteres") String reason) {
     }
 
     public record CloseShiftRequest(@NotNull BigDecimal countedCash, String mode) {

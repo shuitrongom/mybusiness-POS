@@ -4,6 +4,9 @@ import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -22,6 +25,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
      * Errores de reglas de negocio (por ejemplo, límite de crédito excedido, plan
@@ -78,6 +83,49 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST, "Datos de entrada inválidos");
         problem.setTitle("Validación");
         problem.setProperty("errors", fieldErrors);
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Errores de acceso a datos de Spring JDBC (SQL mal formado, violación de
+     * restricción, o
+     * conexión perdida con la base — p. ej. Neon cerrando conexiones ociosas). Se
+     * loguea el
+     * {@code most specific cause} para que el error deje de ser opaco en los logs y
+     * se devuelve
+     * un 500 con un mensaje genérico (sin filtrar la consulta ni el detalle interno
+     * al cliente).
+     */
+    @ExceptionHandler(DataAccessException.class)
+    public ProblemDetail handleDataAccess(DataAccessException ex) {
+        log.error("Data access error on request: {}", ex.getMostSpecificCause().getMessage(), ex);
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Ocurrió un problema al consultar la información. Inténtalo de nuevo en un momento.");
+        problem.setTitle("Error de datos");
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Fallback genérico para cualquier excepción no mapeada arriba. Antes de este
+     * handler, una
+     * excepción inesperada (NPE, error de runtime, etc.) se propagaba sin traducir
+     * y
+     * terminaba
+     * en un 500 OPACO con el stack del dispatcher de Spring. Ahora el root cause
+     * completo queda
+     * en los logs y el cliente recibe un ProblemDetail 500 limpio, sin detalles
+     * internos.
+     */
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleUnexpected(Exception ex) {
+        log.error("Unhandled exception on request", ex);
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Ocurrió un error inesperado. Inténtalo de nuevo; si continúa, avisa a soporte.");
+        problem.setTitle("Error interno");
         problem.setProperty("timestamp", Instant.now());
         return problem;
     }
