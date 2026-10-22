@@ -318,7 +318,8 @@ public class ShiftService {
 
                 java.util.List<java.util.Map<String, Object>> lastSales = jdbc.sql("""
                                 SELECT id, folio, total, created_at FROM sale
-                                WHERE shift_id = :s AND status = 'COMPLETED'""" + onSaleBare + """
+                                WHERE shift_id = :s AND status = 'COMPLETED' """ + onSaleBare + """
+
                                 ORDER BY created_at DESC LIMIT 8
                                 """)
                                 .param("s", shiftId)
@@ -338,7 +339,8 @@ public class ShiftService {
                                 FROM sale_line sl
                                 JOIN sale s ON s.id = sl.sale_id
                                 LEFT JOIN product p ON p.id = sl.product_id
-                                WHERE s.shift_id = :s AND s.status = 'COMPLETED'""" + onSale + """
+                                WHERE s.shift_id = :s AND s.status = 'COMPLETED' """ + onSale + """
+
                                 GROUP BY COALESCE(p.name, sl.description)
                                 ORDER BY qty DESC LIMIT 5
                                 """)
@@ -793,7 +795,8 @@ public class ShiftService {
                                        normal_sales_count, normal_sales_total, special_sales_count,
                                        special_sales_total, created_by, created_at
                                 FROM cash_cut
-                                WHERE 1 = 1""" + resolved.sqlPredicate("is_test") + """
+                                WHERE 1 = 1 """ + resolved.sqlPredicate("is_test") + """
+
                                 ORDER BY created_at DESC LIMIT :max
                                 """)
                                 .param("max", max)

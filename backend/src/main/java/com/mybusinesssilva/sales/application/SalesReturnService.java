@@ -246,7 +246,8 @@ public class SalesReturnService {
                            AS item_count
                 FROM sales_return r
                 JOIN sale s ON s.id = r.sale_id
-                WHERE 1 = 1""" + testPredicate + """
+                WHERE 1 = 1 """ + testPredicate + """
+
                 ORDER BY r.created_at DESC
                 LIMIT :max
                 """)

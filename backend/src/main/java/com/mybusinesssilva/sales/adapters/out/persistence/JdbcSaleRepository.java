@@ -270,7 +270,8 @@ public class JdbcSaleRepository implements SaleRepository {
                                            AS items_preview
                                 FROM sale s
                                 LEFT JOIN customer c ON c.id = s.customer_id
-                                WHERE s.status = 'COMPLETED'""" + testPredicate + """
+                                WHERE s.status = 'COMPLETED' """ + testPredicate + """
+
                                   AND (CAST(:q AS text) IS NULL
                                        OR s.folio ILIKE '%' || CAST(:q AS text) || '%'
                                        OR c.name ILIKE '%' || CAST(:q AS text) || '%')
