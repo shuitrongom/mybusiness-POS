@@ -100,6 +100,54 @@ class SecurityUnitTest {
     }
 
     @Test
+    void reopenShiftIsOwnerOnlyWithCashModule() {
+        ModuleAccessEvaluator evaluator = new ModuleAccessEvaluator();
+
+        // DUEÑO con módulo cash: SÍ puede reabrir.
+        AuthenticatedUser owner = new AuthenticatedUser(
+                "dueno@panaderia.mx", "tenant_9",
+                List.of(Roles.OWNER), List.of("cash"));
+        setAuthenticated(owner);
+        assertThat(evaluator.canReopenShift()).isTrue();
+        SecurityContextHolder.clearContext();
+
+        // DUEÑO sin el módulo cash habilitado: NO puede (barrera de módulo).
+        AuthenticatedUser ownerNoCash = new AuthenticatedUser(
+                "dueno@negocio.mx", "tenant_9",
+                List.of(Roles.OWNER), List.of("sales"));
+        setAuthenticated(ownerNoCash);
+        assertThat(evaluator.canReopenShift()).isFalse();
+        SecurityContextHolder.clearContext();
+
+        // ADMIN (aunque tenga cash): NO puede reabrir (reservado al dueño, no ADMIN).
+        AuthenticatedUser admin = new AuthenticatedUser(
+                "admin@negocio.mx", "tenant_9",
+                List.of(Roles.ADMIN), List.of("cash"));
+        setAuthenticated(admin);
+        assertThat(evaluator.canReopenShift()).isFalse();
+        SecurityContextHolder.clearContext();
+
+        // CAJERA (aunque tenga cash): NO puede reabrir.
+        AuthenticatedUser cashier = new AuthenticatedUser(
+                "cajera@negocio.mx", "tenant_9",
+                List.of(Roles.CASHIER), List.of("cash"));
+        setAuthenticated(cashier);
+        assertThat(evaluator.canReopenShift()).isFalse();
+        SecurityContextHolder.clearContext();
+
+        // Super Admin (plataforma): puede, sin sujeción a módulo.
+        AuthenticatedUser superAdmin = new AuthenticatedUser(
+                "admin@mybusinesssilva.com", "",
+                List.of(Roles.SUPER_ADMIN), List.of());
+        setAuthenticated(superAdmin);
+        assertThat(evaluator.canReopenShift()).isTrue();
+        SecurityContextHolder.clearContext();
+
+        // Sin autenticación: NO puede.
+        assertThat(evaluator.canReopenShift()).isFalse();
+    }
+
+    @Test
     void superAdminBypassesModuleGating() {
         ModuleAccessEvaluator evaluator = new ModuleAccessEvaluator();
 

@@ -2,6 +2,7 @@ package com.mybusinesssilva.platform.web;
 
 import com.mybusinesssilva.catalog.domain.model.ProductHasStockException;
 import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
+import com.mybusinesssilva.sales.domain.model.ShiftReopenException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -87,6 +88,23 @@ public class GlobalExceptionHandler {
         problem.setProperty("productId", ex.productId());
         problem.setProperty("productName", ex.productName());
         problem.setProperty("stock", ex.stock());
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Reapertura de turno inválida (OWNER-only): turno inexistente, no cerrado, de
+     * un día pasado, caja ocupada, o desajuste de modo prueba. Espejo de
+     * {@link #handleProductHasStock}: 409 CONFLICT con {@code title = code} estable
+     * y las propiedades del caso para que el front pinte un modal claro. No se
+     * loguea (son reglas de negocio esperadas).
+     */
+    @ExceptionHandler(ShiftReopenException.class)
+    public ProblemDetail handleShiftReopen(ShiftReopenException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle(ex.code());
+        ex.props().forEach(problem::setProperty);
         problem.setProperty("timestamp", Instant.now());
         return problem;
     }

@@ -168,7 +168,9 @@ export function PosPage() {
   // para que el POS y las pantallas de inventario (Producción/Salidas) usen el MISMO almacén.
   const { branchId, setBranchId } = useCashierBranch(branches);
   const [priceListId, setPriceListId] = useState<number>(() => Number(localStorage.getItem(PRICELIST_KEY)) || 1);
-  const [activeCategory, setActiveCategory] = useState<number | 'all'>('all');
+  // 'waste' = pestaña "Pan de ayer / Merma": lista solo panes con existencia en merma > 0, a
+  // precio de merma. Es una vista adicional junto a las categorías (no pisa 'all' ni las cats).
+  const [activeCategory, setActiveCategory] = useState<number | 'all' | 'waste'>('all');
   const [search, setSearch] = useState('');
   const [barcode, setBarcode] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -371,10 +373,40 @@ export function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceListId, specialPrices]);
 
+  // Helpers de lectura de stock conscientes del modo (merma vs normal). Centralizan el criterio
+  // para no dispersar parches: "vendibilidad" en giro panadería = stock normal > 0 O merma > 0.
+  /** Existencia EN MERMA de un producto (entera y segura). */
+  const wasteOf = useCallback((productId: number) =>
+    Math.max(0, Math.floor(wasteStockMap[productId] ?? 0)), [wasteStockMap]);
+  /** Existencia NORMAL de un producto (entera y segura). */
+  const normalOf = useCallback((productId: number) =>
+    Math.max(0, Math.floor(stockMap[productId] ?? 0)), [stockMap]);
+  /**
+   * ¿este producto NACE en modo merma al agregarse por tile/código sin forzar? Solo cuando es
+   * panadería, no tiene stock normal, sí tiene merma y tiene precio de merma configurado (>0).
+   */
+  const bornWasteFor = useCallback((p: Product) =>
+    bakeryEnabled && normalOf(p.id) <= 0 && wasteOf(p.id) > 0 && (p.extras?.wastePrice ?? 0) > 0,
+    [bakeryEnabled, normalOf, wasteOf]);
+  /**
+   * Tope por producto CONSCIENTE DEL MODO para la cuadrícula/modal: merma si el renglón nacerá en
+   * merma (sólo-merma), normal en caso contrario. null fuera del giro (sin tope en cliente).
+   */
+  const capForProduct = useCallback((p: Product): number | null => {
+    if (!bakeryEnabled) return null;
+    return bornWasteFor(p) ? wasteOf(p.id) : normalOf(p.id);
+  }, [bakeryEnabled, bornWasteFor, wasteOf, normalOf]);
+
   const visibleProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
-      const matchCat = activeCategory === 'all' || p.categoryId === activeCategory;
+      // 'waste' (Pan de ayer): solo panes con existencia EN MERMA > 0 (el endpoint kind=waste ya
+      // filtra activos; wasteOf(inactivo)=0, así que un inactivo no aparece aquí). 'all' = todos;
+      // un número = esa categoría.
+      const matchCat =
+        activeCategory === 'all' ? true
+          : activeCategory === 'waste' ? (bakeryEnabled && wasteOf(p.id) > 0)
+            : p.categoryId === activeCategory;
       const matchText = q === '' || p.name.toLowerCase().includes(q);
       // Giro panadería: un artículo solo se OCULTA cuando está inactivo y además no tiene
       // existencia. Un activo con 0 se muestra deshabilitado ("Agotado"); un inactivo con
@@ -383,7 +415,7 @@ export function PosPage() {
       const hidden = bakeryEnabled && !p.active && stock <= 0;
       return matchCat && matchText && !hidden;
     });
-  }, [products, activeCategory, search, bakeryEnabled, stockMap]);
+  }, [products, activeCategory, search, bakeryEnabled, stockMap, wasteStockMap, wasteOf]);
 
   const addByBarcode = async () => {
     const code = barcode.trim();
@@ -426,12 +458,6 @@ export function PosPage() {
     return Math.max(0, Math.floor(source[line.productId] ?? 0));
   }, [bakeryEnabled, stockMap, wasteStockMap]);
 
-  /** Tope por producto para la cuadrícula/modal de cantidad (misma regla, sin renglón todavía). */
-  const stockCapForProduct = useCallback((productId: number): number | null => {
-    if (!bakeryEnabled) return null;
-    return Math.max(0, Math.floor(stockMap[productId] ?? 0));
-  }, [bakeryEnabled, stockMap]);
-
   // Red de seguridad visual: ¿algún renglón quedó por encima de su existencia disponible? (p. ej.
   // tras recargar el stockMap post-venta). Si lo hay, el botón de cobro se bloquea para no
   // sobrevender; el tope del renglón normalmente lo evita, esto es la última barrera del cliente.
@@ -440,11 +466,25 @@ export function PosPage() {
     return cap != null && l.quantity > cap;
   }), [cart, stockCapOf]);
 
-  const addProduct = (p: Product, qty = 1) => {
+  /**
+   * Único punto de entrada al carrito. Decide si el renglón NACE en modo merma (bornWaste):
+   * cuando hay precio de merma (>0) y existencia de merma (>0) Y, o bien se fuerza desde la
+   * pestaña "Pan de ayer" (opts.asWaste), o bien no hay stock normal (sólo-merma). En modo merma
+   * el precio es el de merma FIJO (bloqueado) y se guarda el normal para poder restaurarlo con
+   * toggleWaste. Mantiene compatibilidad hacia atrás (tercer parámetro opcional).
+   */
+  const addProduct = (p: Product, qty = 1, opts?: { asWaste?: boolean }) => {
+    const wastePrice = p.extras?.wastePrice ?? 0;
+    const bornWaste = bakeryEnabled && wastePrice > 0 && wasteOf(p.id) > 0 &&
+      (opts?.asWaste === true || normalOf(p.id) <= 0);
     addLine({
       id: crypto.randomUUID(), productId: p.id, categoryId: p.categoryId, description: p.name,
-      quantity: qty, unitPrice: effectivePrice(p), discount: 0,
-      wastePrice: p.extras?.wastePrice ?? 0,
+      quantity: qty,
+      unitPrice: bornWaste ? wastePrice : effectivePrice(p),
+      discount: 0,
+      wastePrice,
+      waste: bornWaste ? true : undefined,
+      normalPrice: bornWaste ? effectivePrice(p) : undefined,
     });
     setMessage(null);
   };
@@ -454,7 +494,10 @@ export function PosPage() {
       // Los productos del catálogo se agrupan por productId; los artículos libres (productId
       // null) siempre crean un renglón nuevo e independiente.
       if (line.productId != null) {
-        const existing = prev.find((l) => l.productId === line.productId);
+        // Se agrupa por productId Y modo (normal vs merma): un mismo pan puede tener un renglón
+        // normal y uno de merma coexistiendo sin cruzar saldos (normal descuenta normal, merma
+        // descuenta merma). Reagregar en el mismo modo suma; el otro modo crea renglón nuevo.
+        const existing = prev.find((l) => l.productId === line.productId && !!l.waste === !!line.waste);
         if (existing) {
           // Candado por existencia: al reagregar, la suma no puede superar lo disponible. Si
           // excede, se fija al máximo y se avisa sin interrumpir el flujo del cajero.
@@ -931,6 +974,17 @@ export function PosPage() {
               {c.name}
             </button>
           ))}
+          {/* Pestaña "Pan de ayer / Merma": agrupa los panes con existencia en merma a precio de
+              merma (ámbar = merma, según steering). Solo en giro panadería. */}
+          {bakeryEnabled && (
+            <button
+              className={`pos-cat pos-cat-waste ${activeCategory === 'waste' ? 'is-active' : ''}`}
+              onClick={() => setActiveCategory('waste')}
+            >
+              <span className="pos-cat-dot" style={{ background: '#f59e0b' }} />
+              Pan de ayer
+            </button>
+          )}
         </div>
 
         <AnimatePresence>
@@ -942,15 +996,26 @@ export function PosPage() {
           )}
         </AnimatePresence>
 
+        {activeCategory === 'waste' && (
+          <div className="pos-waste-banner">
+            <InfoBanner tone="amber" title="Pan de ayer" icon={<Trash2 size={18} />}>
+              Se vende a precio de merma; al cobrarlo baja de la existencia EN MERMA, no del inventario normal.
+            </InfoBanner>
+          </div>
+        )}
+
         <motion.div className="pos-grid" variants={staggerContainer} initial="hidden" animate="visible">
           {visibleProducts.map((p) => {
-            const shownPrice = effectivePrice(p);
-            const esEspecial = specialPrices[p.id] != null;
-            // Existencia (giro panadería): null fuera del giro. Un activo sin existencia queda
-            // DESHABILITADO ("Agotado", no clickable). "Bajo" (ámbar) para piezas <= LOW_STOCK.
-            const stock = bakeryEnabled ? (stockMap[p.id] ?? 0) : null;
-            const agotado = bakeryEnabled && p.active && stock! <= 0;
-            const low = stock != null && stock > 0 && stock <= LOW_STOCK && p.unit === 'pieza';
+            // En la pestaña de merma el precio relevante del tile es el de merma; fuera, el normal.
+            const shownPrice = activeCategory === 'waste' ? (p.extras?.wastePrice ?? 0) : effectivePrice(p);
+            const esEspecial = activeCategory !== 'waste' && specialPrices[p.id] != null;
+            // Existencia (giro panadería): null fuera del giro. Vendibilidad = normal>0 O merma>0.
+            // "Agotado" (deshabilitado) solo cuando NO hay ni normal ni merma. "Bajo" (ámbar) para
+            // piezas normales <= LOW_STOCK.
+            const stockN = bakeryEnabled ? normalOf(p.id) : null;
+            const wasteN = bakeryEnabled ? wasteOf(p.id) : 0;
+            const agotado = bakeryEnabled && p.active && stockN! <= 0 && wasteN <= 0;
+            const low = stockN != null && stockN > 0 && stockN <= LOW_STOCK && p.unit === 'pieza';
             return (
               <motion.button key={p.id} className={`pos-tile${agotado ? ' is-disabled' : ''}`}
                 onClick={() => { if (!agotado) setQtyModalProduct(p); }} title={p.name}
@@ -971,13 +1036,23 @@ export function PosPage() {
                 <span className="pos-tile-code">#{p.id}</span>
                 <span className="pos-tile-name">{p.name}</span>
                 {!p.active && <span className="pos-tile-inactive">Inactivo</span>}
-                {bakeryEnabled && (stock! > 0 ? (
-                  <span className={`pos-stock-chip ${low ? 'is-low' : 'is-ok'}`}>
-                    {p.unit === 'pieza' ? `${Math.floor(stock!)} pza` : `${stock} ${p.unit}`}
+                {bakeryEnabled && (
+                  // Contenedor flex (alineación por construcción): chip normal (verde/ámbar) y/o
+                  // chip de merma (ámbar) apilados sin encimarse; "Agotado" solo si no hay nada.
+                  <span className="pos-stock-chips">
+                    {stockN! > 0 && (
+                      <span className={`pos-stock-chip ${low ? 'is-low' : 'is-ok'}`}>
+                        {p.unit === 'pieza' ? `${stockN} pza` : `${stockN} ${p.unit}`}
+                      </span>
+                    )}
+                    {wasteN > 0 && (
+                      <span className="pos-stock-chip is-waste">Merma: {wasteN} pza</span>
+                    )}
+                    {stockN! <= 0 && wasteN <= 0 && (
+                      <span className="pos-stock-chip is-empty">Agotado</span>
+                    )}
                   </span>
-                ) : (
-                  <span className="pos-stock-chip is-empty">Agotado</span>
-                ))}
+                )}
                 <span className="pos-tile-foot">
                   <span className="pos-tile-price">{money(shownPrice)}</span>
                   <span className="pos-tile-unit">{p.unit}</span>
@@ -986,35 +1061,45 @@ export function PosPage() {
             );
           })}
           {visibleProducts.length === 0 && (
-            // ESTADO DE ERROR (distinto del vacío): la carga de existencias falló. Se muestra un
-            // mensaje claro con REINTENTAR en vez de una cuadrícula vacía que parece "sin pan".
-            bakeryEnabled && stockError && search.trim() === '' ? (
-              <div className="pos-grid-state pos-grid-state-error">
-                <TriangleAlert size={30} strokeWidth={1.5} />
-                <div className="pos-grid-state-title">No se pudieron cargar las existencias</div>
-                <div className="pos-grid-state-text">
-                  Hubo un problema al consultar el inventario de la sucursal. Esto no significa que no
-                  haya pan: es un error de carga. Revisa tu conexión y reintenta.
-                </div>
-                <button type="button" className="pos-grid-state-retry" onClick={() => setStockReload((n) => n + 1)}>
-                  <RefreshCw size={15} /> Reintentar
-                </button>
-              </div>
-            ) : (
-              // ESTADO VACÍO PREMIUM: no hay existencia (o búsqueda sin match). GUÍA la acción.
+            // ESTADO VACÍO de la pestaña "Pan de ayer / Merma": guía al cajero (no pisa el estado
+            // de error de carga de existencias, que sigue su propia rama abajo).
+            activeCategory === 'waste' && search.trim() === '' ? (
               <div className="pos-grid-state pos-grid-state-empty">
-                <PackageOpen size={30} strokeWidth={1.5} />
+                <Trash2 size={30} strokeWidth={1.5} />
                 <div className="pos-grid-state-text">
-                  {products.length === 0
-                    ? 'Aún no hay productos. Regístralos en la sección Productos.'
-                    : search.trim() !== ''
-                      ? 'Ningún producto coincide con la búsqueda.'
-                      : bakeryEnabled
-                        ? 'No hay pan con existencia. Registra la producción del día en Inventario → Entradas para poder vender.'
-                        : 'Ningún producto coincide con la búsqueda.'}
+                  No hay pan en merma hoy. La merma del día se genera al cerrar caja o por envejecimiento.
                 </div>
               </div>
-            )
+            ) :
+              // ESTADO DE ERROR (distinto del vacío): la carga de existencias falló. Se muestra un
+              // mensaje claro con REINTENTAR en vez de una cuadrícula vacía que parece "sin pan".
+              bakeryEnabled && stockError && search.trim() === '' ? (
+                <div className="pos-grid-state pos-grid-state-error">
+                  <TriangleAlert size={30} strokeWidth={1.5} />
+                  <div className="pos-grid-state-title">No se pudieron cargar las existencias</div>
+                  <div className="pos-grid-state-text">
+                    Hubo un problema al consultar el inventario de la sucursal. Esto no significa que no
+                    haya pan: es un error de carga. Revisa tu conexión y reintenta.
+                  </div>
+                  <button type="button" className="pos-grid-state-retry" onClick={() => setStockReload((n) => n + 1)}>
+                    <RefreshCw size={15} /> Reintentar
+                  </button>
+                </div>
+              ) : (
+                // ESTADO VACÍO PREMIUM: no hay existencia (o búsqueda sin match). GUÍA la acción.
+                <div className="pos-grid-state pos-grid-state-empty">
+                  <PackageOpen size={30} strokeWidth={1.5} />
+                  <div className="pos-grid-state-text">
+                    {products.length === 0
+                      ? 'Aún no hay productos. Regístralos en la sección Productos.'
+                      : search.trim() !== ''
+                        ? 'Ningún producto coincide con la búsqueda.'
+                        : bakeryEnabled
+                          ? 'No hay pan con existencia. Registra la producción del día en Inventario → Entradas para poder vender.'
+                          : 'Ningún producto coincide con la búsqueda.'}
+                  </div>
+                </div>
+              )
           )}
         </motion.div>
       </div>
@@ -1262,18 +1347,31 @@ export function PosPage() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {qtyModalProduct && (
-          <QuantityModal
-            product={qtyModalProduct}
-            price={effectivePrice(qtyModalProduct)}
-            maxQuantity={stockCapForProduct(qtyModalProduct.id)}
-            onCancel={() => setQtyModalProduct(null)}
-            onConfirm={(qty) => {
-              addProduct(qtyModalProduct, qty);
-              setQtyModalProduct(null);
-            }}
-          />
-        )}
+        {qtyModalProduct && (() => {
+          // El modal es consciente del modo: en la pestaña de merma SIEMPRE vende merma; fuera,
+          // nace en merma solo si es sólo-merma (bornWasteFor). Precio y tope deben coincidir con
+          // el renglón resultante (precio de merma + tope = merma disponible).
+          const fromWasteTab = activeCategory === 'waste';
+          const willBeWaste = fromWasteTab || bornWasteFor(qtyModalProduct);
+          const modalPrice = willBeWaste
+            ? (qtyModalProduct.extras?.wastePrice ?? 0)
+            : effectivePrice(qtyModalProduct);
+          const modalMax = fromWasteTab
+            ? wasteOf(qtyModalProduct.id)
+            : capForProduct(qtyModalProduct);
+          return (
+            <QuantityModal
+              product={qtyModalProduct}
+              price={modalPrice}
+              maxQuantity={modalMax}
+              onCancel={() => setQtyModalProduct(null)}
+              onConfirm={(qty) => {
+                addProduct(qtyModalProduct, qty, fromWasteTab ? { asWaste: true } : undefined);
+                setQtyModalProduct(null);
+              }}
+            />
+          );
+        })()}
       </AnimatePresence>
 
       <AnimatePresence>

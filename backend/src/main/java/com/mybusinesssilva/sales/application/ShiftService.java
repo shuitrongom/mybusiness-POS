@@ -2,8 +2,14 @@ package com.mybusinesssilva.sales.application;
 
 import com.mybusinesssilva.inventory.bakery.domain.model.WasteOrigin;
 import com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase;
+import com.mybusinesssilva.platform.audit.AuditService;
 import com.mybusinesssilva.platform.security.ModuleAccessEvaluator;
+import com.mybusinesssilva.platform.tenancy.TenantContext;
+import com.mybusinesssilva.platform.util.DeviceDetector;
+import com.mybusinesssilva.sales.domain.model.ShiftReopenException;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -38,14 +44,17 @@ public class ShiftService {
         private final BakeryUseCase bakeryUseCase;
         private final ModuleAccessEvaluator moduleAccess;
         private final com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort testModeQueryPort;
+        private final AuditService auditService;
 
         public ShiftService(JdbcClient jdbc, BakeryUseCase bakeryUseCase,
                         ModuleAccessEvaluator moduleAccess,
-                        com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort testModeQueryPort) {
+                        com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort testModeQueryPort,
+                        AuditService auditService) {
                 this.jdbc = jdbc;
                 this.bakeryUseCase = bakeryUseCase;
                 this.moduleAccess = moduleAccess;
                 this.testModeQueryPort = testModeQueryPort;
+                this.auditService = auditService;
         }
 
         /**
@@ -645,6 +654,306 @@ public class ShiftService {
         }
 
         /**
+         * REABRIR un turno cerrado por error (OWNER-only; la barrera de rol es dura en
+         * el controller vía {@code @moduleAccess.canReopenShift()}). Toma el MISMO
+         * turno (mismo id), lo revierte de {@code CLOSED} a {@code OPEN} y, por
+         * construcción, conserva intactas las ventas ({@code sale.shift_id}) y los
+         * movimientos de efectivo ({@code cash_movement.shift_id}) ya ligados a ese
+         * turno: NO crea un turno nuevo ni duplica/pierde ventas.
+         *
+         * <p>
+         * El corte Z previo NUNCA se borra: se marca ANULADO POR REAPERTURA
+         * ({@code voided=TRUE} + quién/cuándo/motivo), conservando su
+         * {@code counted_cash} como referencia. Al recerrar se genera un Z nuevo. Toda
+         * reapertura exige motivo y queda auditada ({@code recordGlobal} +
+         * {@code recordTenant}, evento {@code SHIFT_REOPENED}).
+         *
+         * <p>
+         * Idempotente: reabrir un turno ya {@code OPEN} devuelve un no-op
+         * ({@code alreadyOpen=true}) sin mutar ni auditar. Concurrencia: lock pesimista
+         * ({@code SELECT ... FOR UPDATE}) + {@code @Transactional} serializan
+         * reaperturas/cierres del mismo turno. La ventana "solo hoy" se mide contra
+         * {@code CURRENT_DATE} (el MISMO reloj con que {@code openShift} grabó
+         * {@code business_date}), no el día MX, para no bloquear el cierre nocturno
+         * mexicano.
+         *
+         * @param shiftId   turno CERRADO a reabrir
+         * @param actor     quién reabre (subject del dueño)
+         * @param reason    motivo obligatorio (no vacío); se trunca a 300 caracteres
+         * @param userAgent encabezado User-Agent (para auditar el dispositivo)
+         * @return el resultado de la reapertura (o el no-op si ya estaba abierto)
+         */
+        @Transactional
+        public ReopenResult reopenShift(long shiftId, String actor, String reason, String userAgent) {
+                // (1) Red de seguridad del motivo (el @NotBlank del DTO lo corta antes; esto
+                // protege llamadas que no pasen por el DTO). Se persiste recortado y truncado a
+                // 300 para no reventar el INSERT por longitud si el Bean Validation se omitiera.
+                if (reason == null || reason.trim().isEmpty()) {
+                        throw new IllegalArgumentException("El motivo de la reapertura es obligatorio.");
+                }
+                String trimmedReason = reason.trim();
+                if (trimmedReason.length() > 300) {
+                        trimmedReason = trimmedReason.substring(0, 300);
+                }
+
+                // (2) Lock pesimista del turno (anti-carrera): serializa reaperturas/cierres
+                // concurrentes del mismo turno.
+                java.util.Optional<ShiftRow> rowOpt = jdbc.sql("""
+                                SELECT cash_register_id, status, business_date
+                                FROM shift WHERE id = :id FOR UPDATE
+                                """)
+                                .param("id", shiftId)
+                                .query((rs, n) -> new ShiftRow(
+                                                rs.getLong("cash_register_id"),
+                                                rs.getString("status"),
+                                                rs.getObject("business_date", java.time.LocalDate.class)))
+                                .optional();
+                if (rowOpt.isEmpty()) {
+                        throw new ShiftReopenException("SHIFT_NOT_FOUND",
+                                        "El turno indicado no existe.",
+                                        Map.of("shiftId", shiftId));
+                }
+                ShiftRow row = rowOpt.get();
+
+                // (3) Idempotencia: si ya está OPEN, no-op (sin tocar ni auditar).
+                if ("OPEN".equals(row.status())) {
+                        return noOpResult(shiftId);
+                }
+
+                // (4) Debe estar CLOSED.
+                if (!"CLOSED".equals(row.status())) {
+                        throw new ShiftReopenException("SHIFT_NOT_CLOSED",
+                                        "Solo se puede reabrir un turno cerrado.",
+                                        Map.of("shiftId", shiftId, "status", String.valueOf(row.status())));
+                }
+
+                // (5) Ventana "solo hoy": comparar business_date contra CURRENT_DATE (mismo
+                // reloj del servidor con que openShift grabó business_date). NO el día MX, para
+                // no dar falso positivo de "día pasado" en el cierre nocturno mexicano.
+                boolean allowedToday = jdbc.sql("SELECT (:bd = CURRENT_DATE)")
+                                .param("bd", row.businessDate())
+                                .query(Boolean.class).single();
+                if (!allowedToday) {
+                        java.time.LocalDate today = jdbc.sql("SELECT CURRENT_DATE")
+                                        .query(java.time.LocalDate.class).single();
+                        throw new ShiftReopenException("SHIFT_REOPEN_WINDOW_EXPIRED",
+                                        "Solo puedes reabrir turnos cerrados hoy. Este turno es del día "
+                                                        + row.businessDate() + ".",
+                                        Map.of("shiftId", shiftId,
+                                                        "businessDate", String.valueOf(row.businessDate()),
+                                                        "today", String.valueOf(today)));
+                }
+
+                // (6) La caja no debe tener OTRO turno OPEN (protege uq_shift_open_per_register).
+                java.util.Optional<Long> otherOpen = jdbc.sql("""
+                                SELECT id FROM shift
+                                WHERE cash_register_id = :reg AND status = 'OPEN' AND id <> :id
+                                LIMIT 1
+                                """)
+                                .param("reg", row.cashRegisterId()).param("id", shiftId)
+                                .query(Long.class).optional();
+                if (otherOpen.isPresent()) {
+                        throw new ShiftReopenException("SHIFT_REGISTER_BUSY",
+                                        "Esa caja ya tiene otro turno abierto. Ciérralo antes de reabrir este.",
+                                        Map.of("shiftId", shiftId,
+                                                        "cashRegisterId", row.cashRegisterId(),
+                                                        "openShiftId", otherOpen.get()));
+                }
+
+                // (7) Localizar el corte Z VIGENTE (no anulado) más antiguo: el principal que se
+                // va a anular. MISMO criterio que existingClosureOf. ESTE SELECT ocurre ANTES del
+                // UPDATE del paso 8 (si se invirtiera, el UPDATE lo anularía y este SELECT no lo
+                // encontraría). Se capturan sus datos en variables locales.
+                java.util.Optional<VoidedCut> zOpt = jdbc.sql("""
+                                SELECT id, folio, counted_cash, is_test
+                                FROM cash_cut
+                                WHERE shift_id = :id AND cut_type = 'Z' AND voided = FALSE
+                                ORDER BY created_at ASC LIMIT 1
+                                """)
+                                .param("id", shiftId)
+                                .query((rs, n) -> new VoidedCut(
+                                                rs.getLong("id"), rs.getString("folio"),
+                                                rs.getBigDecimal("counted_cash"), rs.getBoolean("is_test")))
+                                .optional();
+                if (zOpt.isEmpty()) {
+                        // Dato corrupto: CLOSED sin Z vigente. Coherente con el orElseThrow de
+                        // existingClosureOf (409 genérico): no se recalcula un corte firmado.
+                        throw new IllegalStateException(
+                                        "El turno está cerrado pero no tiene corte Z vigente; revísalo manualmente.");
+                }
+                VoidedCut z = zOpt.get();
+                int salesCount = jdbc.sql("""
+                                SELECT COUNT(*) FROM sale WHERE shift_id = :id AND status = 'COMPLETED'
+                                """)
+                                .param("id", shiftId).query(Integer.class).single();
+
+                // (7b) Guardia de modo prueba: el Z a anular y el Z nuevo del recierre deben
+                // compartir is_test. Si el modo vigente difiere del del Z, bloquear (no heredar en
+                // silencio) para que la comparación de conteos no cruce real contra prueba y ambos
+                // cortes caigan en el mismo scope.
+                boolean currentTestMode = testModeQueryPort.isTestModeActive();
+                if (z.isTest() != currentTestMode) {
+                        throw new ShiftReopenException("SHIFT_REOPEN_TEST_MODE_MISMATCH",
+                                        "El modo prueba actual no coincide con el del corte. Ajusta el modo prueba "
+                                                        + "para que coincida y reintenta.",
+                                        Map.of("shiftId", shiftId,
+                                                        "cutIsTest", z.isTest(),
+                                                        "currentTestMode", currentTestMode));
+                }
+
+                // (8) Anular TODOS los Z vigentes del turno (NO borrar). Anular todos (no solo el
+                // más antiguo) garantiza el invariante "tras reabrir 0 Z vigentes; tras recerrar
+                // exactamente 1", incluso con datos legados de doble Z. El counted_cash NO se toca.
+                jdbc.sql("""
+                                UPDATE cash_cut
+                                SET voided = TRUE, voided_at = now(), voided_by = :actor, voided_reason = :reason
+                                WHERE shift_id = :id AND cut_type = 'Z' AND voided = FALSE
+                                """)
+                                .param("id", shiftId).param("actor", actor).param("reason", trimmedReason)
+                                .update();
+
+                // (9) Revertir el turno a OPEN (claim atómico espejo del cierre). closed_* y
+                // counted_cash a NULL para que el bloqueo diario deje de contar un CLOSED de hoy.
+                int claimed = jdbc.sql("""
+                                UPDATE shift
+                                SET status = 'OPEN', closed_at = NULL, closed_by = NULL, counted_cash = NULL,
+                                    reopened_at = now(), reopened_by = :actor, reopen_reason = :reason,
+                                    reopen_count = COALESCE(reopen_count, 0) + 1
+                                WHERE id = :id AND status = 'CLOSED'
+                                """)
+                                .param("id", shiftId).param("actor", actor).param("reason", trimmedReason)
+                                .update();
+                if (claimed == 0) {
+                        // Otro ganó la carrera pese al FOR UPDATE (defensivo): relee y aplica
+                        // idempotencia.
+                        return noOpResult(shiftId);
+                }
+
+                // (9b) Merma FIN_DIA: NO se revierte (decisión del diseño). Solo se detecta para
+                // advertir en el modal y auditar. Consulta directa (JdbcClient ya opera el schema
+                // del tenant por RLS); no se añade método al puerto de bakery.
+                boolean hadFinDiaWaste = moduleAccess.canUse("bakery")
+                                && Boolean.TRUE.equals(jdbc.sql("""
+                                                SELECT EXISTS(
+                                                  SELECT 1 FROM bakery_waste_movement
+                                                  WHERE shift_id = :id AND origin = 'CIERRE'
+                                                )
+                                                """)
+                                                .param("id", shiftId).query(Boolean.class).single());
+
+                // (10) Auditoría del evento SHIFT_REOPENED en AMBAS bitácoras (global + tenant).
+                // Si falla, lanza y revierte toda la transacción: una reapertura sin rastro es
+                // inaceptable para "cuidar pérdidas".
+                String device = DeviceDetector.classify(userAgent);
+                OffsetDateTime reopenedAt = OffsetDateTime.now();
+                Map<String, Object> details = new LinkedHashMap<>();
+                details.put("actor", actor);
+                details.put("device", device);
+                details.put("userAgent", userAgent);
+                details.put("reason", trimmedReason);
+                details.put("shiftId", shiftId);
+                details.put("cashRegisterId", row.cashRegisterId());
+                details.put("businessDate", String.valueOf(row.businessDate()));
+                details.put("voidedCutId", z.id());
+                details.put("voidedCutFolio", z.folio());
+                details.put("voidedCountedCash", z.countedCash());
+                details.put("salesCountAtReopen", salesCount);
+                details.put("hadFinDiaWaste", hadFinDiaWaste);
+                details.put("isTest", z.isTest());
+                details.put("at", reopenedAt.toString());
+
+                auditService.recordGlobal(actor, "SHIFT_REOPENED", "shift",
+                                String.valueOf(shiftId), details);
+                auditService.recordTenant(TenantContext.getTenantId(), actor, "SHIFT_REOPENED",
+                                "shift", String.valueOf(shiftId), details);
+
+                // (11) Resultado de la reapertura.
+                return new ReopenResult(shiftId, false, z.id(), z.folio(), z.countedCash(),
+                                salesCount, hadFinDiaWaste, z.isTest(), actor, reopenedAt.toString());
+        }
+
+        /**
+         * Construye el {@link ReopenResult} no-op (turno ya {@code OPEN}): repuebla los
+         * campos desde lo persistido sin mutar ni auditar. Los {@code reopened*} salen
+         * de {@code shift.reopened_by/at} (null si nunca se reabrió); los {@code voided*}
+         * del Z anulado de la ÚLTIMA reapertura ({@code voided_at DESC}); {@code salesCount}
+         * y {@code hadFinDiaWaste} se recomputan.
+         */
+        private ReopenResult noOpResult(long shiftId) {
+                Map<String, Object> meta = jdbc.sql("""
+                                SELECT reopened_by, reopened_at
+                                FROM shift WHERE id = :id
+                                """)
+                                .param("id", shiftId)
+                                .query((rs, n) -> {
+                                        Map<String, Object> m = new LinkedHashMap<>();
+                                        m.put("reopenedBy", rs.getString("reopened_by"));
+                                        m.put("reopenedAt", rs.getObject("reopened_at", OffsetDateTime.class));
+                                        return m;
+                                })
+                                .single();
+                java.util.Optional<VoidedCut> zOpt = jdbc.sql("""
+                                SELECT id, folio, counted_cash, is_test
+                                FROM cash_cut
+                                WHERE shift_id = :id AND cut_type = 'Z' AND voided = TRUE
+                                ORDER BY voided_at DESC NULLS LAST, created_at DESC LIMIT 1
+                                """)
+                                .param("id", shiftId)
+                                .query((rs, n) -> new VoidedCut(
+                                                rs.getLong("id"), rs.getString("folio"),
+                                                rs.getBigDecimal("counted_cash"), rs.getBoolean("is_test")))
+                                .optional();
+                int salesCount = jdbc.sql("""
+                                SELECT COUNT(*) FROM sale WHERE shift_id = :id AND status = 'COMPLETED'
+                                """)
+                                .param("id", shiftId).query(Integer.class).single();
+                boolean hadFinDiaWaste = moduleAccess.canUse("bakery")
+                                && Boolean.TRUE.equals(jdbc.sql("""
+                                                SELECT EXISTS(
+                                                  SELECT 1 FROM bakery_waste_movement
+                                                  WHERE shift_id = :id AND origin = 'CIERRE'
+                                                )
+                                                """)
+                                                .param("id", shiftId).query(Boolean.class).single());
+                OffsetDateTime reopenedAt = (OffsetDateTime) meta.get("reopenedAt");
+                return new ReopenResult(shiftId, true,
+                                zOpt.map(VoidedCut::id).orElse(null),
+                                zOpt.map(VoidedCut::folio).orElse(null),
+                                zOpt.map(VoidedCut::countedCash).orElse(null),
+                                salesCount, hadFinDiaWaste,
+                                zOpt.map(VoidedCut::isTest).orElse(null),
+                                (String) meta.get("reopenedBy"),
+                                reopenedAt == null ? null : reopenedAt.toString());
+        }
+
+        /** Fila del turno leída con lock para la reapertura. */
+        private record ShiftRow(long cashRegisterId, String status, java.time.LocalDate businessDate) {
+        }
+
+        /** Datos del corte Z anulado (o localizado) durante la reapertura. */
+        private record VoidedCut(long id, String folio, BigDecimal countedCash, boolean isTest) {
+        }
+
+        /**
+         * Resultado de la reapertura de un turno. Los campos de anulación son envoltura
+         * ANULABLE porque el no-op (turno ya abierto) puede no tener un Z anulado.
+         * {@code reopenedAt} viaja como {@code String} ISO-8601 para no depender del
+         * módulo de tiempo registrado en el {@code ObjectMapper} activo.
+         */
+        public record ReopenResult(
+                        long shiftId,
+                        boolean alreadyOpen,
+                        Long voidedCutId,
+                        String voidedCutFolio,
+                        BigDecimal voidedCountedCash,
+                        int salesCount,
+                        boolean hadFinDiaWaste,
+                        Boolean isTest,
+                        String reopenedBy,
+                        String reopenedAt) {
+        }
+
+        /**
          * Reconstruye el {@link ShiftClosure} de un turno YA CERRADO a partir de su
          * corte Z persistido (idempotencia del cierre: un segundo POST sobre un turno
          * cerrado devuelve el mismo corte Z sin recalcular ni re-persistir). Usa
@@ -660,7 +969,7 @@ public class ShiftService {
                                        normal_sales_count, normal_sales_total,
                                        special_sales_count, special_sales_total
                                 FROM cash_cut
-                                WHERE shift_id = :id AND cut_type = 'Z'
+                                WHERE shift_id = :id AND cut_type = 'Z' AND voided = FALSE
                                 ORDER BY created_at ASC LIMIT 1
                                 """)
                                 .param("id", shiftId)
@@ -806,16 +1115,43 @@ public class ShiftService {
         public java.util.List<java.util.Map<String, Object>> listCuts(int limit, String scope) {
                 int max = limit <= 0 ? 50 : Math.min(limit, 200);
                 ReportScope resolved = resolveScope(scope);
+                // had_fin_dia_waste: solo tiene sentido (y la tabla bakery_waste_movement solo
+                // existe) en giro panadería. Fuera de bakery el fragmento es FALSE constante, para
+                // no referir una tabla ausente. El modal de reapertura usa este flag para advertir
+                // que la merma de cierre NO se revierte.
+                String finDiaWasteExpr = moduleAccess.canUse("bakery")
+                                ? """
+                                  EXISTS(
+                                    SELECT 1 FROM bakery_waste_movement bwm
+                                    WHERE bwm.shift_id = cc.shift_id AND bwm.origin = 'CIERRE'
+                                  )"""
+                                : "FALSE";
+                // JOIN a shift: el front necesita el estado/día del turno para gatear el botón
+                // "Reabrir turno" (reopenable) y pintar "Anulado por reapertura" + la comparación
+                // de conteos. El booleano reopenable se calcula AQUÍ (fuente única de la regla del
+                // día): usa CURRENT_DATE (el MISMO reloj con que openShift grabó business_date), NO
+                // el día MX, para no ocultar el botón en el cierre nocturno mexicano. El scope pasa a
+                // "cc.is_test" (calificado) para no ambiguar con el JOIN.
                 return jdbc.sql("""
-                                SELECT id, folio, shift_id, cut_type, opening_float, cash_sales, card_sales,
-                                       transfer_sales, voucher_sales, cash_in, cash_out, expected_cash,
-                                       counted_cash, difference, sales_count, total_sales,
-                                       normal_sales_count, normal_sales_total, special_sales_count,
-                                       special_sales_total, created_by, created_at
-                                FROM cash_cut
-                                WHERE 1 = 1 """ + resolved.sqlPredicate("is_test") + """
+                                SELECT cc.id, cc.folio, cc.shift_id, cc.cut_type, cc.opening_float, cc.cash_sales,
+                                       cc.card_sales, cc.transfer_sales, cc.voucher_sales, cc.cash_in, cc.cash_out,
+                                       cc.expected_cash, cc.counted_cash, cc.difference, cc.sales_count,
+                                       cc.total_sales, cc.normal_sales_count, cc.normal_sales_total,
+                                       cc.special_sales_count, cc.special_sales_total, cc.created_by, cc.created_at,
+                                       cc.is_test, cc.voided, cc.voided_at, cc.voided_by, cc.voided_reason,
+                                       s.status        AS shift_status,
+                                       s.business_date AS shift_business_date,
+                                       (cc.cut_type = 'Z'
+                                        AND cc.voided = FALSE
+                                        AND s.status = 'CLOSED'
+                                        AND s.business_date = CURRENT_DATE) AS reopenable,
+                                       """ + finDiaWasteExpr + """
+                                        AS had_fin_dia_waste
+                                FROM cash_cut cc
+                                JOIN shift s ON s.id = cc.shift_id
+                                WHERE 1 = 1 """ + resolved.sqlPredicate("cc.is_test") + """
 
-                                ORDER BY created_at DESC LIMIT :max
+                                ORDER BY cc.created_at DESC LIMIT :max
                                 """)
                                 .param("max", max)
                                 .query((rs, n) -> {
@@ -842,6 +1178,16 @@ public class ShiftService {
                                         m.put("specialSalesTotal", rs.getBigDecimal("special_sales_total"));
                                         m.put("createdBy", rs.getString("created_by"));
                                         m.put("createdAt", rs.getObject("created_at", java.time.OffsetDateTime.class));
+                                        m.put("isTest", rs.getBoolean("is_test"));
+                                        m.put("voided", rs.getBoolean("voided"));
+                                        m.put("voidedAt", rs.getObject("voided_at", java.time.OffsetDateTime.class));
+                                        m.put("voidedBy", rs.getString("voided_by"));
+                                        m.put("voidedReason", rs.getString("voided_reason"));
+                                        m.put("shiftStatus", rs.getString("shift_status"));
+                                        m.put("shiftBusinessDate",
+                                                        rs.getObject("shift_business_date", java.time.LocalDate.class));
+                                        m.put("reopenable", rs.getBoolean("reopenable"));
+                                        m.put("hadFinDiaWaste", rs.getBoolean("had_fin_dia_waste"));
                                         return m;
                                 })
                                 .list();

@@ -1,0 +1,219 @@
+/* =========================================================================
+   Historial de cortes de caja: filas-tarjeta (NO tabla HTML plana), grid
+   compartido cabecera/filas, chips de color y tabular-nums. Mismo lenguaje
+   visual que las existencias del día (iday-*). Sigue diseno-premium.md.
+   ========================================================================= */
+.ccuts {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+}
+
+.ccut-head,
+.ccut-row {
+  display: grid;
+  /* Grid compartido cabecera/filas: alinean por construcción. */
+  grid-template-columns: minmax(120px, 1.1fr) 92px 80px 120px 120px 130px minmax(150px, 1fr) 44px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+}
+
+.ccut-head {
+  height: 40px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.ccut-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ccut-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.ccut-row {
+  min-height: 60px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+}
+
+.ccut-row:hover {
+  border-color: color-mix(in srgb, var(--brand-600, #2e6ef2) 38%, var(--border));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+/* Corte anulado: se atenúa para que el vigente resalte (jerarquía). */
+.ccut-row.is-voided {
+  opacity: 0.82;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--amber-600, #d97706) 32%, var(--border));
+}
+
+.ccut-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ccut-folio {
+  font-weight: 700;
+  color: var(--heading);
+}
+
+.ccut-when {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.ccut-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Chip genérico para esta pantalla (tono por clase). */
+.ccut-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ccut-chip.c-green {
+  background: color-mix(in srgb, var(--green-500, #22c55e) 16%, transparent);
+  color: var(--green-600, #16a34a);
+}
+
+.ccut-chip.c-amber {
+  background: color-mix(in srgb, var(--amber-500, #f59e0b) 16%, transparent);
+  color: var(--amber-600, #d97706);
+}
+
+.ccut-chip.c-red {
+  background: color-mix(in srgb, var(--danger, #ef4444) 15%, transparent);
+  color: var(--danger, #ef4444);
+}
+
+.ccut-chip.c-violet {
+  background: color-mix(in srgb, var(--violet-500, #8b5cf6) 16%, transparent);
+  color: var(--violet-600, #7c3aed);
+}
+
+.ccut-chip.c-brand {
+  background: color-mix(in srgb, var(--brand-600, #2e6ef2) 16%, transparent);
+  color: var(--brand-600, #2e6ef2);
+}
+
+.ccut-chip.c-neutral {
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+/* Subtexto del corte anulado: quién/cuándo/motivo. */
+.ccut-voided-note {
+  margin: 2px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* Bloque de comparación de conteos (anulado vs nuevo) dentro de la tarjeta. */
+.ccut-compare {
+  margin-top: 6px;
+  padding: 12px 18px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--brand-600, #2e6ef2) 22%, var(--border));
+  border-radius: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+}
+
+.ccut-compare-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ccut-compare-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.ccut-compare-value {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.ccut-compare-hint {
+  margin-top: 6px;
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+/* Estado vacío premium: icono + guía + borde punteado. */
+.ccut-empty {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+}
+
+.ccut-empty strong {
+  color: var(--heading);
+}
+
+/* Botón "Reabrir turno" (solo dueño, solo corte reabrible). */
+.ccut-reopen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--amber-600, #d97706) 40%, var(--border));
+  background: color-mix(in srgb, var(--amber-500, #f59e0b) 10%, transparent);
+  color: var(--amber-600, #d97706);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: filter 0.14s ease, transform 0.08s ease;
+}
+
+.ccut-reopen-btn:hover {
+  filter: brightness(1.05);
+}
+
+.ccut-reopen-btn:active {
+  transform: translateY(1px);
+}

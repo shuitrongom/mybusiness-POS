@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -152,6 +153,24 @@ public class ShiftController {
                 actor == null ? "unknown" : actor.subject(), request.countedCash(), mode);
     }
 
+    /**
+     * Reabrir un turno cerrado por error (OWNER-only). Barrera dura: la expresión
+     * compone explícitamente {@code canUse('cash')} Y {@code canReopenShift()} —en
+     * Spring Security el {@code @PreAuthorize} de método REEMPLAZA (no suma en AND)
+     * al de la clase, por eso no basta con el de la clase. Un no-OWNER recibe 403.
+     */
+    @PostMapping("/{id}/reopen")
+    @PreAuthorize("@moduleAccess.canUse('cash') and @moduleAccess.canReopenShift()")
+    public ShiftService.ReopenResult reopen(
+            @AuthenticationPrincipal AuthenticatedUser actor,
+            @PathVariable long id,
+            @RequestHeader(value = "User-Agent", required = false) String userAgent,
+            @Valid @RequestBody ReopenShiftRequest request) {
+        return shiftService.reopenShift(id,
+                actor == null ? "unknown" : actor.subject(),
+                request.reason(), userAgent);
+    }
+
     /** Corte X: lectura parcial del turno sin cerrarlo. */
     @PostMapping("/{id}/cut-x")
     public ShiftService.ShiftClosure cutX(
@@ -179,5 +198,9 @@ public class ShiftController {
     }
 
     public record CloseShiftRequest(@NotNull BigDecimal countedCash, String mode) {
+    }
+
+    public record ReopenShiftRequest(
+            @NotBlank(message = "El motivo de la reapertura es obligatorio") @Size(max = 300, message = "El motivo no puede exceder 300 caracteres") String reason) {
     }
 }

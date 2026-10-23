@@ -219,6 +219,33 @@ public class ModuleAccessEvaluator {
         return user.isSuperAdmin() || user.hasRole(Roles.OWNER);
     }
 
+    /**
+     * Reapertura de turno (OWNER-only): solo el DUEÑO (rol {@code OWNER}) o el
+     * Super Admin pueden reabrir un turno cerrado por error, y el negocio debe
+     * tener habilitado el módulo comercial {@code cash}. Es una acción sensible que
+     * "cuida pérdidas" (anula el corte previo y revierte el turno a abierto), por
+     * eso se reserva al dueño; ni ADMIN ni cajeras.
+     *
+     * <p>
+     * Mismo molde que {@link #canManageTestMode()} pero incluyendo la verificación
+     * de módulo explícita (como {@link #canManageCashRegisters()}), para que la
+     * barrera dura quede garantizada aunque la expresión del {@code @PreAuthorize}
+     * del endpoint omitiera el {@code canUse('cash')} en el futuro.
+     *
+     * @return true si el usuario puede reabrir un turno de caja
+     */
+    public boolean canReopenShift() {
+        AuthenticatedUser user = currentUser();
+        if (user == null) {
+            return false;
+        }
+        if (user.isSuperAdmin()) {
+            // Plataforma: no sujeta a la habilitación por módulo de un negocio.
+            return true;
+        }
+        return user.hasModule("cash") && user.hasRole(Roles.OWNER);
+    }
+
     private boolean isOwnerOrAdmin(AuthenticatedUser user) {
         return user.hasRole(Roles.OWNER) || user.hasRole(Roles.ADMIN);
     }

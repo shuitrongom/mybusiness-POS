@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { Calculator, Wallet, FileText, Printer } from 'lucide-react';
+import { Calculator, Wallet, FileText, Printer, RotateCcw, Receipt } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { money } from '@/lib/format';
@@ -9,9 +9,14 @@ import { fadeInUp, pressable, staggerContainer, staggerItem } from '@/lib/motion
 import { PrintableVoucher } from '@/components/PrintableVoucher';
 import { type VoucherData } from '@/components/Voucher';
 import { ScopeSelector, type ReportScope } from '@/components/ScopeSelector';
+import { InfoBanner } from '@/components/InfoBanner';
+import { ReopenShiftModal } from '@/components/ReopenShiftModal';
 import { useTestMode } from '@/lib/testMode';
+import { useSession } from '@/store/session';
+import { decodeToken, isOwner } from '@/lib/jwt';
 import '@/pages/dashboard.css';
 import '@/pages/products.css';
+import '@/pages/cash-cuts.css';
 
 interface CashCut {
   id: number;
@@ -25,6 +30,29 @@ interface CashCut {
   difference: number | null;
   createdBy: string | null;
   createdAt: string;
+  isTest: boolean;
+  voided: boolean;
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidedReason: string | null;
+  shiftStatus: string;
+  shiftBusinessDate: string;
+  reopenable: boolean;
+  hadFinDiaWaste: boolean;
+}
+
+/** Resultado de reabrir un turno (POST /shifts/{id}/reopen). */
+interface ReopenResult {
+  shiftId: number;
+  alreadyOpen: boolean;
+  voidedCutId: number | null;
+  voidedCutFolio: string | null;
+  voidedCountedCash: number | null;
+  salesCount: number;
+  hadFinDiaWaste: boolean;
+  isTest: boolean | null;
+  reopenedBy: string | null;
+  reopenedAt: string | null;
 }
 
 interface Branch {
@@ -71,6 +99,11 @@ export function CashierPage() {
   const [countedCash, setCountedCash] = useState('');
   const [closure, setClosure] = useState<ShiftClosure | null>(null);
   const [voucher, setVoucher] = useState<VoucherData | null>(null);
+
+  // Reapertura de turno (solo el dueño). El objetivo guarda el corte Z a reabrir.
+  const token = useSession((s) => s.token);
+  const owner = isOwner(decodeToken(token));
+  const [reopenTarget, setReopenTarget] = useState<CashCut | null>(null);
 
   // Comprobante de corte (X o Z) para imprimir como respaldo.
   const cutVoucher = (c: ShiftClosure, type: 'X' | 'Z'): VoucherData => ({
@@ -226,12 +259,65 @@ export function CashierPage() {
     onError: () => toast.error('No se pudo generar el corte X'),
   });
 
+  // Reabrir un turno cerrado por error (solo el dueño). Anula el corte y revierte el turno a
+  // abierto; la cajera vuelve a vender. En error 409, se pinta el mensaje del ProblemDetail.
+  const reopenShift = useMutation({
+    mutationFn: async (vars: { shiftId: number; reason: string }) =>
+      (await api.post<ReopenResult>(`/shifts/${vars.shiftId}/reopen`, { reason: vars.reason })).data,
+    onSuccess: (data) => {
+      setReopenTarget(null);
+      // Refresca el historial y desbloquea las superficies de la cajera.
+      queryClient.invalidateQueries({ queryKey: ['cash-cuts'] });
+      queryClient.invalidateQueries({ queryKey: ['shift', 'day-status'] });
+      queryClient.invalidateQueries({ queryKey: ['cashier', 'my-day'] });
+      queryClient.invalidateQueries({ queryKey: ['shift', 'active'] });
+      toast.success(
+        data.alreadyOpen ? 'El turno ya estaba abierto' : 'Turno reabierto',
+        data.alreadyOpen
+          ? 'No se hicieron cambios; la cajera ya podía continuar.'
+          : 'La cajera puede continuar donde quedó. El corte anterior quedó anulado.',
+      );
+    },
+    onError: (err) => {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'No se pudo reabrir el turno. Inténtalo de nuevo.';
+      toast.error('No se pudo reabrir el turno', detail);
+    },
+  });
+
   const activeBranches = (branches.data ?? []).filter((b) => b.active);
+
+  // Comparación de conteos: por (shiftId, isTest) localiza el Z ANULADO (voided=true) más reciente
+  // del turno, para emparejarlo con el Z vigente en su propia tarjeta. La guardia de modo prueba
+  // del backend garantiza que ambos comparten isTest; aquí se agrupa con lo que el scope activo ya
+  // trajo (no se reconsulta /cuts).
+  const voidedZByShift = useMemo(() => {
+    const map = new Map<string, CashCut>();
+    for (const c of cuts.data ?? []) {
+      if (c.cutType !== 'Z' || !c.voided) continue;
+      const key = `${c.shiftId}:${c.isTest}`;
+      const prev = map.get(key);
+      // Conserva el Z anulado más reciente (por fecha de creación).
+      if (!prev || new Date(c.createdAt) > new Date(prev.createdAt)) map.set(key, c);
+    }
+    return map;
+  }, [cuts.data]);
+
+  // Tono del chip de diferencia: verde si cuadra, ámbar faltante leve, rojo faltante relevante.
+  const diffTone = (diff: number | null): string => {
+    if (diff == null || diff === 0) return 'c-green';
+    if (diff > 0) return 'c-green'; // sobra: no es pérdida
+    return diff >= -50 ? 'c-amber' : 'c-red'; // faltante: leve vs relevante (posible pérdida)
+  };
 
   return (
     <div>
       <h1 className="page-title">Cortes de caja</h1>
       <p className="page-sub">Elige sucursal y caja, abre turno, registra efectivo y haz el arqueo</p>
+
+      <InfoBanner icon={<Receipt size={18} />} title="Cortes del día" tone="brand">
+        Aquí ves tus cortes del día. Un turno cerrado por error puede reabrirse el mismo día.
+      </InfoBanner>
 
       {openedShiftId === null ? (
         <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
@@ -353,45 +439,125 @@ export function CashierPage() {
           <h3 className="sec-title"><FileText size={18} /> Historial de cortes (X / Z)</h3>
           <ScopeSelector value={scope} onChange={setScopePick} />
         </div>
-        <table className="table" style={{ marginTop: 'var(--space-3)' }}>
-          <thead>
-            <tr>
-              <th>Folio</th><th>Tipo</th><th>Turno</th>
-              <th style={{ textAlign: 'right' }}>Ventas</th>
-              <th style={{ textAlign: 'right' }}>Total</th>
-              <th style={{ textAlign: 'right' }}>Diferencia</th>
-              <th>Fecha</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {(cuts.data ?? []).map((c) => (
-              <tr key={c.id}>
-                <td><strong>{c.folio}</strong></td>
-                <td>
-                  <span className={`badge ${c.cutType === 'Z' ? 'badge-danger' : 'badge-muted'}`}>
-                    Corte {c.cutType}
-                  </span>
-                </td>
-                <td>#{c.shiftId}</td>
-                <td style={{ textAlign: 'right' }}>{c.salesCount}</td>
-                <td style={{ textAlign: 'right' }}>{money(c.totalSales)}</td>
-                <td style={{ textAlign: 'right' }}>{c.difference != null ? money(c.difference) : '—'}</td>
-                <td>{new Date(c.createdAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                <td style={{ textAlign: 'right' }}>
-                  <button className="icon-btn" onClick={() => setVoucher(cutRowVoucher(c))} aria-label="Imprimir">
-                    <Printer size={15} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {(cuts.data ?? []).length === 0 && (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-5)' }}>
-                Aún no hay cortes registrados.
-              </td></tr>
-            )}
-          </tbody>
-        </table>
+
+        {(cuts.data ?? []).length === 0 ? (
+          <div className="ccut-empty">
+            <Receipt size={26} />
+            <strong>Aún no hay cortes hoy</strong>
+            <span>Cierra un turno para generar tu corte Z.</span>
+          </div>
+        ) : (
+          <div className="ccuts">
+            <div className="ccut-head">
+              <span>Folio</span>
+              <span>Tipo</span>
+              <span>Turno</span>
+              <span className="ccut-num">Ventas</span>
+              <span className="ccut-num">Total</span>
+              <span className="ccut-num">Diferencia</span>
+              <span>Estado / fecha</span>
+              <span></span>
+            </div>
+            <div className="ccut-body">
+              {(cuts.data ?? []).map((c) => {
+                const key = `${c.shiftId}:${c.isTest}`;
+                const voidedPair = voidedZByShift.get(key);
+                // La comparación se pinta una sola vez, en la tarjeta del Z VIGENTE del turno,
+                // cuando existe su par anulado.
+                const showCompare = c.cutType === 'Z' && !c.voided
+                  && voidedPair != null && voidedPair.countedCash != null && c.countedCash != null;
+                const prev = voidedPair?.countedCash ?? null;
+                const now = c.countedCash;
+                const delta = (showCompare && prev != null && now != null) ? now - prev : null;
+                return (
+                  <div className="ccut-card" key={c.id}>
+                    <div className={`ccut-row ${c.voided ? 'is-voided' : ''}`}>
+                      <span className="ccut-folio">{c.folio}</span>
+                      <span>
+                        <span className={`ccut-chip ${c.cutType === 'Z' ? 'c-brand' : 'c-violet'}`}>
+                          Corte {c.cutType}
+                        </span>
+                      </span>
+                      <span>#{c.shiftId}</span>
+                      <span className="ccut-num">{c.salesCount}</span>
+                      <span className="ccut-num">{money(c.totalSales)}</span>
+                      <span className="ccut-num">
+                        {c.difference != null ? (
+                          <span className={`ccut-chip ${diffTone(c.difference)}`}>{money(c.difference)}</span>
+                        ) : (
+                          <span className="ccut-chip c-neutral">—</span>
+                        )}
+                      </span>
+                      <span>
+                        {c.voided ? (
+                          <span className="ccut-chip c-amber">Anulado por reapertura</span>
+                        ) : (
+                          <span className="ccut-when">
+                            {new Date(c.createdAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}
+                          </span>
+                        )}
+                      </span>
+                      <span className="ccut-actions">
+                        <button className="icon-btn" onClick={() => setVoucher(cutRowVoucher(c))} aria-label="Imprimir">
+                          <Printer size={15} />
+                        </button>
+                      </span>
+                    </div>
+
+                    {/* Subtexto del corte anulado: quién/cuándo/motivo (traza sin abrir auditoría). */}
+                    {c.voided && (
+                      <p className="ccut-voided-note">
+                        Anulado{c.voidedBy ? ` por ${c.voidedBy}` : ''}
+                        {c.voidedAt ? ` el ${new Date(c.voidedAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}` : ''}
+                        {c.voidedReason ? ` · Motivo: ${c.voidedReason}` : ''}
+                      </p>
+                    )}
+
+                    {/* Comparación de conteos (anulado vs nuevo) + diferencia con chip de color. */}
+                    {showCompare && (
+                      <div className="ccut-compare">
+                        <div className="ccut-compare-item">
+                          <span className="ccut-compare-label">Contó anterior (anulado)</span>
+                          <span className="ccut-compare-value">{money(prev ?? 0)}</span>
+                        </div>
+                        <div className="ccut-compare-item">
+                          <span className="ccut-compare-label">Contó nuevo</span>
+                          <span className="ccut-compare-value">{money(now ?? 0)}</span>
+                        </div>
+                        <div className="ccut-compare-item">
+                          <span className="ccut-compare-label">Diferencia</span>
+                          <span className={`ccut-chip ${diffTone(delta)}`}>{money(delta ?? 0)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Botón Reabrir turno: solo el dueño y solo si el backend lo marca reabrible. */}
+                    {owner && c.reopenable && (
+                      <div style={{ padding: '6px 2px 0', display: 'flex', justifyContent: 'flex-end' }}>
+                        <button className="ccut-reopen-btn" onClick={() => setReopenTarget(c)}>
+                          <RotateCcw size={14} /> Reabrir turno
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </motion.div>
+
+      <ReopenShiftModal
+        open={reopenTarget != null}
+        shiftId={reopenTarget?.shiftId ?? null}
+        folio={reopenTarget?.folio ?? null}
+        hadFinDiaWaste={reopenTarget?.hadFinDiaWaste ?? false}
+        busy={reopenShift.isPending}
+        onConfirm={(reason) => {
+          if (reopenTarget) reopenShift.mutate({ shiftId: reopenTarget.shiftId, reason });
+        }}
+        onCancel={() => setReopenTarget(null)}
+      />
 
       {voucher && <PrintableVoucher data={voucher} onDone={() => setVoucher(null)} />}
     </div>

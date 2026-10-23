@@ -189,6 +189,19 @@
   color: #fff;
 }
 
+/* Pestaña "Pan de ayer / Merma": activa con la misma mecánica que el resto (fondo brand). El
+   punto va ámbar por estilo inline (ámbar = merma). */
+.pos-cat-waste.is-active {
+  background: var(--brand-600);
+  border-color: var(--brand-600);
+  color: #fff;
+}
+
+/* Banner de contexto de la pestaña "Pan de ayer" (mismo patrón de ancho que el de modo prueba). */
+.pos-waste-banner {
+  grid-column: 1 / -1;
+}
+
 .pos-message {
   background: color-mix(in srgb, var(--brand-500) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--brand-500) 30%, transparent);
@@ -2668,10 +2681,22 @@ textarea.pos-move-reason {
    existencia queda deshabilitado (no clickable). Un inactivo con stock
    sigue vendible y se marca con un chip neutro "Inactivo".
    ===================================================================== */
-.pos-stock-chip {
+/* Contenedor de chips de existencia (arriba-derecha del tile): apila sin encimarse el chip
+   normal (verde/ámbar) y el de merma (ámbar). Alineación por construcción: los chips son
+   estáticos y el contenedor los posiciona. */
+.pos-stock-chips {
   position: absolute;
   top: 6px;
   right: 6px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.pos-stock-chip {
+  position: static;
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
@@ -2680,7 +2705,6 @@ textarea.pos-move-reason {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  z-index: 2;
 }
 
 .pos-stock-chip.is-ok {
@@ -2691,6 +2715,12 @@ textarea.pos-move-reason {
 .pos-stock-chip.is-low {
   background: color-mix(in srgb, #f59e0b 18%, transparent);
   color: #f59e0b;
+}
+
+/* Chip de MERMA (ámbar oscuro, coherente con .pos-line-waste). */
+.pos-stock-chip.is-waste {
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #b45309;
 }
 
 .pos-stock-chip.is-empty {
