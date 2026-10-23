@@ -44,14 +44,14 @@ public class JdbcProductRepository implements ProductRepository {
                      price2, price3, price4, price5, waste_price, last_cost, avg_cost,
                      min_stock, max_stock, reorder_point,
                      for_sale, track_inventory, track_lots, allow_below_cost, blocked,
-                     is_composite, on_sale, loyalty_points)
+                     is_composite, on_sale, loyalty_points, is_bakery)
                 VALUES (:sku, :name, :categoryId, :unit, :weight, :satProd, :satUnit,
                         :price, :cost, :active, CAST(:attrs AS jsonb), :imageUrl,
                         :description, :brand, :supplierId, :taxRate, :iepsRate,
                         :price2, :price3, :price4, :price5, :wastePrice, :lastCost, :avgCost,
                         :minStock, :maxStock, :reorderPoint,
                         :forSale, :trackInventory, :trackLots, :allowBelowCost, :blocked,
-                        :isComposite, :onSale, :loyaltyPoints)
+                        :isComposite, :onSale, :loyaltyPoints, :isBakery)
                 RETURNING id
                 """)
                 .param("sku", p.sku())
@@ -89,6 +89,7 @@ public class JdbcProductRepository implements ProductRepository {
                 .param("isComposite", x.isComposite())
                 .param("onSale", x.onSale())
                 .param("loyaltyPoints", x.loyaltyPoints())
+                .param("isBakery", x.isBakery())
                 .query(Long.class)
                 .single();
 
@@ -114,6 +115,7 @@ public class JdbcProductRepository implements ProductRepository {
                     for_sale = :forSale, track_inventory = :trackInventory, track_lots = :trackLots,
                     allow_below_cost = :allowBelowCost, blocked = :blocked,
                     is_composite = :isComposite, on_sale = :onSale, loyalty_points = :loyaltyPoints,
+                    is_bakery = :isBakery,
                     updated_at = now()
                 WHERE id = :id
                 """)
@@ -153,6 +155,7 @@ public class JdbcProductRepository implements ProductRepository {
                 .param("isComposite", x.isComposite())
                 .param("onSale", x.onSale())
                 .param("loyaltyPoints", x.loyaltyPoints())
+                .param("isBakery", x.isBakery())
                 .update();
 
         jdbc.sql("DELETE FROM product_barcode WHERE product_id = :id").param("id", p.id()).update();
@@ -362,7 +365,8 @@ public class JdbcProductRepository implements ProductRepository {
                 rs.getBoolean("blocked"),
                 rs.getBoolean("is_composite"),
                 rs.getBoolean("on_sale"),
-                rs.getBigDecimal("loyalty_points"));
+                rs.getBigDecimal("loyalty_points"),
+                rs.getBoolean("is_bakery"));
         return new Product(
                 id,
                 rs.getString("sku"),

@@ -54,6 +54,7 @@ interface DayRow {
   otherExits: number;
   wasteOut: number;
   pasoMerma: number;
+  aged: number;
   reparto: number;
   waste: number;
   wasteBalance: number;
@@ -73,7 +74,8 @@ const MV_COLOR = {
   produced: '#2e6ef2',   // azul: producción (entró stock)
   soldPos: '#12b886',    // verde: venta POS (ok)
   otherExits: '#64748b', // neutro: salida normal
-  pasoMerma: '#d97706',  // ámbar: pasó a merma
+  pasoMerma: '#d97706',  // ámbar: pasó a merma (MANUAL + CIERRE)
+  aged: '#d97706',       // ámbar: pan del día anterior envejecido a merma por el sistema
   reparto: '#0ea5e9',    // sky: reparto de merma
   wasteBal: '#f59e0b',   // ámbar claro: saldo de merma arrastrado
 } as const;
@@ -152,11 +154,12 @@ export function BakeryDayStockPage() {
         produced: acc.produced + (r.produced || 0),
         soldPos: acc.soldPos + (r.soldPos || 0),
         otherExits: acc.otherExits + (r.otherExits || 0),
+        aged: acc.aged + (r.aged || 0),
         waste: acc.waste + (r.waste || 0),
         remaining: acc.remaining + (r.remaining || 0),
         value: acc.value + (r.value || 0),
       }),
-      { initial: 0, hasInitial: false, produced: 0, soldPos: 0, otherExits: 0, waste: 0, remaining: 0, value: 0 },
+      { initial: 0, hasInitial: false, produced: 0, soldPos: 0, otherExits: 0, aged: 0, waste: 0, remaining: 0, value: 0 },
     );
     // Base del % vendido: lo que estuvo disponible para vender = inicial (si hay) + producido.
     const base = (t.hasInitial ? t.initial : 0) + t.produced;
@@ -187,6 +190,16 @@ export function BakeryDayStockPage() {
         </InfoBanner>
       </div>
 
+      {totals.aged > 0 && (
+        <div style={{ marginTop: 'var(--space-3)' }}>
+          <InfoBanner icon={<Trash2 size={18} />} tone="amber" title="Pan del día anterior pasó a merma">
+            El sistema pasó automáticamente a merma {num(totals.aged)} pieza(s) de pan que no se
+            vendieron el día anterior (envejecimiento). Revísalas en Salidas para venderlas como
+            merma o repartirlas.
+          </InfoBanner>
+        </div>
+      )}
+
       {/* KPIs del día — más información: existencia inicial, producido, vendido POS, otras salidas,
           merma (saldo), valor en existencia y % vendido global. */}
       <motion.div className="inv-kpis" variants={staggerContainer} initial="hidden" animate="visible">
@@ -197,6 +210,7 @@ export function BakeryDayStockPage() {
         <Kpi icon={<ShoppingBag size={18} />} tint="green" label="Vendido (POS)" value={num(totals.soldPos)} />
         <Kpi icon={<TrendingUp size={18} />} tint="blue" label="% vendido global" value={`${totals.soldPct}%`} />
         <Kpi icon={<Boxes size={18} />} tint="violet" label="Otras salidas" value={num(totals.otherExits)} />
+        <Kpi icon={<Trash2 size={18} />} tint="amber" label="Pasó a merma hoy" value={num(totals.aged)} />
         <Kpi icon={<Trash2 size={18} />} tint="amber" label="En merma (saldo)" value={num(totals.waste)} />
         <Kpi icon={<DollarSign size={18} />} tint="green" label="Valor en existencia" value={money(totals.value)} />
       </motion.div>
@@ -250,7 +264,7 @@ export function BakeryDayStockPage() {
                   const pct = base > 0 ? Math.min(100, Math.round((r.soldPos / base) * 100)) : 0;
                   const isOpen = expanded === r.productId;
                   const hasMovements = (r.produced || r.soldPos || r.otherExits || r.pasoMerma
-                    || r.reparto || r.wasteOut || r.wasteBalance) > 0;
+                    || r.aged || r.reparto || r.wasteOut || r.wasteBalance) > 0;
                   return (
                     <div className="iday-card" key={r.productId}>
                       <motion.div
@@ -317,6 +331,7 @@ export function BakeryDayStockPage() {
                                   {r.soldPos > 0 && <MvChip color={MV_COLOR.soldPos} label="Vendido POS" value={r.soldPos} />}
                                   {r.otherExits > 0 && <MvChip color={MV_COLOR.otherExits} label="Otras salidas" value={r.otherExits} />}
                                   {r.pasoMerma > 0 && <MvChip color={MV_COLOR.pasoMerma} label="Pasó a merma" value={r.pasoMerma} />}
+                                  {r.aged > 0 && <MvChip color={MV_COLOR.aged} label="Envejecido a merma" value={r.aged} />}
                                   {r.reparto > 0 && <MvChip color={MV_COLOR.reparto} label="Reparto de merma" value={r.reparto} />}
                                   {r.wasteBalance > 0 && <MvChip color={MV_COLOR.wasteBal} label="Saldo en merma" value={r.wasteBalance} />}
                                 </div>

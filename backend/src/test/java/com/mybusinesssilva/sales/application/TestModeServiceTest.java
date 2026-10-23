@@ -121,7 +121,7 @@ class TestModeServiceTest {
     @Test
     void adjustsEachStockRowToZeroWithExactReasonAndActor() {
         stubJdbc(9L, true, 128L, 6L);
-        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(new BigDecimal("90"), 3));
+        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(new BigDecimal("90"), 3, new BigDecimal("450")));
         when(inventoryRepository.stockWithBalance()).thenReturn(List.of(
                 new StockLevel(101L, 1L, new BigDecimal("48"), BigDecimal.ZERO),
                 new StockLevel(102L, 1L, new BigDecimal("30"), BigDecimal.ZERO)));
@@ -146,7 +146,7 @@ class TestModeServiceTest {
     @Test
     void idempotentWhenTestModeAlreadyOff() {
         stubJdbc(9L, false, 128L, 6L);
-        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(new BigDecimal("90"), 3));
+        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(new BigDecimal("90"), 3, new BigDecimal("450")));
 
         CutoverSummary summary = service.cutover("owner@panaderia.mx", "UA");
 
@@ -162,7 +162,7 @@ class TestModeServiceTest {
     @Test
     void propagatesWhenAdjustFailsAndDoesNotAudit() {
         stubJdbc(9L, true, 1L, 1L);
-        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(BigDecimal.ZERO, 0));
+        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(BigDecimal.ZERO, 0, BigDecimal.ZERO));
         when(inventoryRepository.stockWithBalance()).thenReturn(List.of(
                 new StockLevel(101L, 1L, new BigDecimal("48"), BigDecimal.ZERO)));
         doThrow(new DataAccessResourceFailureException("db down"))
@@ -177,7 +177,7 @@ class TestModeServiceTest {
     @Test
     void onlyReadsWasteNeverWrites() {
         stubJdbc(9L, true, 0L, 0L);
-        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(new BigDecimal("90"), 3));
+        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(new BigDecimal("90"), 3, new BigDecimal("450")));
         when(inventoryRepository.stockWithBalance()).thenReturn(List.of());
 
         service.cutover("owner@panaderia.mx", "UA");
@@ -192,7 +192,7 @@ class TestModeServiceTest {
     @SuppressWarnings("unchecked")
     void auditsCutoverWithDeviceUserAgentAndSummary() {
         stubJdbc(9L, true, 128L, 6L);
-        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(new BigDecimal("90"), 3));
+        when(bakeryUseCase.wasteSummary()).thenReturn(new WasteSummary(new BigDecimal("90"), 3, new BigDecimal("450")));
         when(inventoryRepository.stockWithBalance()).thenReturn(List.of(
                 new StockLevel(101L, 1L, new BigDecimal("48"), BigDecimal.ZERO)));
 

@@ -11,6 +11,9 @@ package com.mybusinesssilva.inventory.bakery.domain.model;
  *       (baja normal, sube merma).</li>
  *   <li>{@link #VENTA}: venta especial de merma en el POS (baja merma, no toca el normal).</li>
  *   <li>{@link #REPARTO}: la merma se dio a un repartidor (baja merma, no toca el normal).</li>
+ *   <li>{@link #ENVEJECIMIENTO}: el sistema transfiere a merma el pan del día anterior al
+ *       cambiar el día natural -cron/catch-up- o al pasar de modo prueba a real
+ *       (baja normal, sube merma).</li>
  * </ul>
  */
 public enum WasteOrigin {
@@ -25,7 +28,14 @@ public enum WasteOrigin {
     VENTA(false),
 
     /** Salida de merma por reparto a repartidor. */
-    REPARTO(false);
+    REPARTO(false),
+
+    /**
+     * Transición automática disparada por el SISTEMA: el pan del día anterior pasa a merma
+     * al cambiar el día natural (cron nocturno o catch-up al abrir turno) y al pasar el
+     * negocio de modo prueba a real. Baja el stock normal, sube la merma.
+     */
+    ENVEJECIMIENTO(true);
 
     private final boolean fromNormalStock;
 

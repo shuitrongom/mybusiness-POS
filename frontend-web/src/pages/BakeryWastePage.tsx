@@ -36,6 +36,7 @@ const ORIGIN_LABEL: Record<string, string> = {
   MANUAL: 'Merma manual',
   VENTA: 'Venta de merma',
   REPARTO: 'Reparto',
+  ENVEJECIMIENTO: 'Envejecimiento',
 };
 
 /** Color del chip por origen (coherente con el resto de la UI). */
@@ -45,6 +46,7 @@ function originColor(origin: string | null): string {
     case 'MANUAL': return '#d97706';
     case 'VENTA': return '#12b886';
     case 'REPARTO': return '#0ea5e9';
+    case 'ENVEJECIMIENTO': return '#d97706';
     default: return '#64748b';
   }
 }
@@ -93,6 +95,7 @@ export function BakeryWastePage() {
       <div style={{ margin: 'var(--space-3) 0' }}>
         <InfoBanner icon={<Trash2 size={18} />} tone="amber" title="Trazabilidad de merma">
           Cada movimiento de merma queda registrado con su origen: CIERRE (automático al cerrar caja),
+          ENVEJECIMIENTO (pan del día anterior pasado a merma por el sistema al no venderse),
           MANUAL (en salidas), VENTA (merma vendida en el POS) y REPARTO (entregada a repartidor).
           Aquí ves la pérdida entre el precio normal y el de merma.
         </InfoBanner>

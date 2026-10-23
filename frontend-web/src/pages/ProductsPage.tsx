@@ -39,6 +39,9 @@ interface ProductExtras {
   isComposite: boolean;
   onSale: boolean;
   loyaltyPoints: number;
+  // Giro panadería: marca el artículo como "pan". El sistema lo pasa a merma al día siguiente si
+  // no se vende (envejecimiento automático). Los artículos que no son pan (empaque, etc.) no.
+  isBakery: boolean;
 }
 
 interface Product {
@@ -132,6 +135,7 @@ interface DraftForm {
   isComposite: boolean;
   onSale: boolean;
   loyaltyPoints: string;
+  isBakery: boolean;
 }
 
 function emptyDraft(isBakery = false): DraftForm {
@@ -145,6 +149,9 @@ function emptyDraft(isBakery = false): DraftForm {
     minStock: '', maxStock: '', reorderPoint: '',
     forSale: true, trackInventory: true, trackLots: false, allowBelowCost: false,
     blocked: false, isComposite: false, onSale: false, loyaltyPoints: '',
+    // En giro panadería un producto nuevo es pan por default (todos los artículos del giro son
+    // pan, salvo que el dueño lo desmarque, ej. empaque). Otros giros nunca lo marcan.
+    isBakery,
   };
 }
 
@@ -168,6 +175,7 @@ function draftFromProduct(p: Product): DraftForm {
     forSale: x.forSale, trackInventory: x.trackInventory, trackLots: x.trackLots,
     allowBelowCost: x.allowBelowCost, blocked: x.blocked, isComposite: x.isComposite,
     onSale: x.onSale, loyaltyPoints: String(x.loyaltyPoints ?? 0),
+    isBakery: x.isBakery ?? false,
   };
 }
 
@@ -206,6 +214,7 @@ function draftToPayload(d: DraftForm) {
     isComposite: d.isComposite,
     onSale: d.onSale,
     loyaltyPoints: num(d.loyaltyPoints),
+    isBakery: d.isBakery,
   };
 }
 
@@ -389,6 +398,17 @@ export function ProductsPage() {
                     <span className="plist-name-text">{p.name}</span>
                     {!p.active && <span className="plist-badge plist-badge-off">Inactivo</span>}
                     {p.extras?.onSale && <span className="plist-badge plist-badge-sale">Oferta</span>}
+                    {isBakery && (
+                      p.extras?.isBakery
+                        ? <span className="plist-badge" style={{
+                          background: 'color-mix(in srgb, #d97706 16%, transparent)',
+                          color: '#d97706',
+                        }}>Pan</span>
+                        : <span className="plist-badge" style={{
+                          background: 'color-mix(in srgb, #64748b 16%, transparent)',
+                          color: '#64748b',
+                        }}>Empaque</span>
+                    )}
                   </div>
                   <div className="plist-sub">
                     {[categoryName(p.categoryId), p.sku ? `SKU ${p.sku}` : null].filter(Boolean).join(' · ') || 'Sin categoría'}
@@ -588,11 +608,31 @@ export function ProductsPage() {
                       </label>
                     </div>
                     {isBakery && (
-                      <label className="field">
-                        <span>Precio de merma</span>
-                        <input type="number" step="0.01" value={draft.wastePrice}
-                          onChange={(e) => set('wastePrice', e.target.value)} placeholder="0.00" />
-                      </label>
+                      <>
+                        <div className="switch-row" style={{ justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontWeight: 600 }}>¿Es pan?</span>
+                            <span className="drawer-note" style={{ margin: 0 }}>
+                              Si es pan, el sistema lo pasa a merma al día siguiente si no se vende.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={draft.isBakery}
+                            aria-label="¿Es pan?"
+                            className={`plist-switch ${draft.isBakery ? 'is-on' : ''}`}
+                            onClick={() => set('isBakery', !draft.isBakery)}
+                          >
+                            <span className="plist-switch-knob" />
+                          </button>
+                        </div>
+                        <label className="field">
+                          <span>Precio de merma</span>
+                          <input type="number" step="0.01" value={draft.wastePrice}
+                            onChange={(e) => set('wastePrice', e.target.value)} placeholder="0.00" />
+                        </label>
+                      </>
                     )}
                     <div className="grid-2">
                       <label className="field">

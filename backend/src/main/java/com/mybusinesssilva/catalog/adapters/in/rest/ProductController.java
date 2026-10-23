@@ -110,7 +110,8 @@ public class ProductController {
                 r.blocked() != null && r.blocked(),
                 r.isComposite() != null && r.isComposite(),
                 r.onSale() != null && r.onSale(),
-                r.loyaltyPoints());
+                r.loyaltyPoints(),
+                r.isBakery() == null ? false : r.isBakery());
         return new Product(
                 id, r.sku(), r.name(), r.categoryId(),
                 r.unit(), r.soldByWeight(), r.satProdServ(), r.satUnit(),
@@ -199,7 +200,10 @@ public class ProductController {
             Boolean blocked,
             Boolean isComposite,
             Boolean onSale,
-            BigDecimal loyaltyPoints) {
+            BigDecimal loyaltyPoints,
+            // Marca de artículo de panadería (pan). En el update el front envía SIEMPRE el
+            // estado del toggle, así que no se pierde; default false si el cliente no lo manda.
+            Boolean isBakery) {
     }
 
     /** Cuerpo del PATCH de habilitación: solo el nuevo estado activo. */

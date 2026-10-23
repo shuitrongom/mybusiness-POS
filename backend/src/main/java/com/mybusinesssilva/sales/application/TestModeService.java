@@ -1,6 +1,7 @@
 package com.mybusinesssilva.sales.application;
 
 import com.mybusinesssilva.inventory.application.InventoryService;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteOrigin;
 import com.mybusinesssilva.inventory.bakery.domain.model.WasteSummary;
 import com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase;
 import com.mybusinesssilva.inventory.domain.model.StockLevel;
@@ -109,10 +110,19 @@ public class TestModeService {
      * <li>Bloquea la fila del negocio ({@code FOR UPDATE}) y lee el estado previo.</li>
      * <li>Cuenta (informativo) las ventas/cortes de práctica que se conservan
      * (Opción B: nada se borra).</li>
-     * <li>Lee (sin tocar) el agregado de merma que se arrastra.</li>
-     * <li>GUARDA idempotente: si el modo prueba ya está OFF, no re-ejecuta el ajuste
-     * de inventario ni audita; devuelve un resumen con {@code executed=false}.</li>
+     * <li>GUARDA idempotente: si el modo prueba ya está OFF, no re-ejecuta el barrido
+     * de merma ni el ajuste de inventario ni audita; lee la merma actual (solo
+     * lectura) y devuelve un resumen con {@code executed=false}.</li>
      * <li>Apaga el flag {@code test_mode} del negocio.</li>
+     * <li>ENVEJECE el pan remanente: el stock normal VIVO de pan de todas las
+     * sucursales ({@code bakeryUseCase.bakeryNormalStock()}, barrido GLOBAL, F-2)
+     * pasa a merma con origen {@code ENVEJECIMIENTO} ANTES del ajuste a 0, para no
+     * perder como "ajuste" el pan de la etapa de prueba. Reconciliación (F-3): D-4
+     * reemplaza deliberadamente la recomendación camino-1 del informe D.3; el
+     * no-doble-conteo se cumple por construcción porque solo se pasa a merma el
+     * stock_normal remanente VIVO al momento del corte.</li>
+     * <li>Lee (sin tocar) el agregado de merma DESPUÉS del barrido, para informar el
+     * total final conservado (piezas + $).</li>
      * <li>Lleva a 0 cada existencia vendible (todas las sucursales) vía
      * {@link InventoryService#adjust} — DEJANDO kardex por cada ajuste; nunca un
      * UPDATE silencioso de {@code inventory_stock}.</li>
@@ -130,19 +140,46 @@ public class TestModeService {
     public CutoverSummary cutover(String actor, String userAgent) {
         BusinessRow business = loadBusinessForUpdate();
         PracticeSummary practice = countPractice();
-        WasteSummary waste = bakeryUseCase.wasteSummary();
 
         if (!business.testMode()) {
-            // Idempotencia: el modo prueba ya está OFF ⇒ no se re-ejecuta el ajuste a 0 ni
-            // se audita un nuevo corte. Resumen informativo con executed=false.
+            // Idempotencia: el modo prueba ya está OFF ⇒ no se re-ejecuta el barrido de
+            // merma ni el ajuste a 0 ni se audita un nuevo corte. Se lee la merma actual
+            // (solo lectura) para informar el resumen con executed=false.
+            WasteSummary wasteNow = bakeryUseCase.wasteSummary();
             return new CutoverSummary(false, false, business.id(),
-                    practice, StockSummary.empty(), waste, recentChanges(business.id()));
+                    practice, StockSummary.empty(), wasteNow, recentChanges(business.id()));
         }
 
         // Transición true→false la realiza ESTA ejecución (serializada por FOR UPDATE).
         jdbc.sql("UPDATE admin.business SET test_mode = false WHERE schema_name = :schema")
                 .param("schema", TenantContext.getTenantId())
                 .update();
+
+        // ENVEJECIMIENTO del pan remanente ANTES de reiniciar el inventario: el stock
+        // normal VIVO de pan de todas las sucursales pasa a merma (origen ENVEJECIMIENTO)
+        // para que la operación real arranque con la merma del pan de la etapa de prueba
+        // en su existencia correcta (no se pierde como "ajuste a 0"). F-2: se usa el barrido
+        // GLOBAL bakeryNormalStock() (todas las sucursales), no por sucursal.
+        //
+        // F-3 (reconciliación): D-4 reemplaza DELIBERADAMENTE la recomendación camino-1 del
+        // informe D.3. El no-doble-conteo se cumple POR CONSTRUCCIÓN: solo se transfiere a
+        // merma el stock_normal remanente VIVO al momento del corte, y el ajuste a 0 que
+        // sigue opera sobre el inventario ya descontado por esa transferencia, de modo que
+        // ninguna pieza se cuenta dos veces (primero sale de normal→merma, luego el resto
+        // de existencias vendibles se lleva a 0).
+        for (Map<String, Object> row : bakeryUseCase.bakeryNormalStock()) {
+            long productId = ((Number) row.get("productId")).longValue();
+            long branchId = ((Number) row.get("branchId")).longValue();
+            BigDecimal quantity = (BigDecimal) row.get("quantity");
+            if (quantity != null && quantity.signum() > 0) {
+                bakeryUseCase.transferToWaste(productId, branchId, quantity,
+                        WasteOrigin.ENVEJECIMIENTO, actor, null, null);
+            }
+        }
+
+        // Lee la merma DESPUÉS del barrido para informar el total final conservado
+        // (incluye el pan que acaba de envejecer en este corte).
+        WasteSummary waste = bakeryUseCase.wasteSummary();
 
         // Lleva a 0 cada existencia vendible dejando kardex (ADJUSTMENT) por fila.
         List<StockLevel> pending = inventoryRepository.stockWithBalance();
@@ -156,7 +193,7 @@ public class TestModeService {
         }
         StockSummary stock = new StockSummary(lines.size(), total, lines);
 
-        // Auditoría del corte: 11 pares ⇒ Map.ofEntries (Map.of admite máximo 10).
+        // Auditoría del corte: 12 pares ⇒ Map.ofEntries (Map.of admite máximo 10).
         auditService.recordGlobal(actor, "TEST_MODE_CUTOVER", "business",
                 String.valueOf(business.id()),
                 Map.ofEntries(
@@ -169,7 +206,8 @@ public class TestModeService {
                         Map.entry("stockRowsAdjusted", stock.rowsAdjusted()),
                         Map.entry("stockUnitsRemoved", stock.totalUnitsRemoved().toPlainString()),
                         Map.entry("wastePieces", waste.totalPieces().toPlainString()),
-                        Map.entry("wasteProducts", waste.productCount())));
+                        Map.entry("wasteProducts", waste.productCount()),
+                        Map.entry("wasteValue", waste.wasteValue().toPlainString())));
 
         return new CutoverSummary(true, false, business.id(),
                 practice, stock, waste, recentChanges(business.id()));

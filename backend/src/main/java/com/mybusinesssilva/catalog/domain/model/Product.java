@@ -90,6 +90,8 @@ public record Product(
      * @param isComposite    artículo compuesto (kit)
      * @param onSale         en oferta
      * @param loyaltyPoints  puntos de lealtad que otorga
+     * @param isBakery       artículo de panadería (pan): el candado de fin de día y el
+     *                       envejecimiento automático solo aplican a estos productos
      */
     public record ProductExtras(
             String description,
@@ -114,7 +116,8 @@ public record Product(
             boolean blocked,
             boolean isComposite,
             boolean onSale,
-            BigDecimal loyaltyPoints) {
+            BigDecimal loyaltyPoints,
+            boolean isBakery) {
 
         public ProductExtras {
             taxRate = taxRate == null ? new BigDecimal("0.16") : taxRate;
@@ -146,7 +149,7 @@ public record Product(
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                     BigDecimal.ZERO,
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                    true, true, false, false, false, false, false, BigDecimal.ZERO);
+                    true, true, false, false, false, false, false, BigDecimal.ZERO, false);
         }
     }
 

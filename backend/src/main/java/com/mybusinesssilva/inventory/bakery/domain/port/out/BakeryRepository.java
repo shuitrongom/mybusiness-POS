@@ -126,6 +126,43 @@ public interface BakeryRepository {
     List<Map<String, Object>> productsWithNormalStock(long branchId);
 
     /**
+     * Guardia IDEMPOTENTE del envejecimiento: intenta registrar una corrida para la
+     * sucursal en el día natural de hoy (America/Mexico_City) con
+     * {@code ON CONFLICT (branch_id, business_date) DO NOTHING}.
+     *
+     * @return {@code 1} si esta llamada ganó la corrida del día (hay que envejecer);
+     *         {@code 0} si ya existía (otro cron/catch-up ya la ejecutó hoy)
+     */
+    int markAgingRun(long branchId);
+
+    /**
+     * Candidatos a envejecimiento en una sucursal: por cada producto de pan ACTIVO
+     * con existencia normal &gt; 0, la cantidad del día ANTERIOR a envejecer =
+     * {@code GREATEST(existencia_actual - producido_hoy, 0)} (lo producido hoy NO
+     * envejece). Solo devuelve filas con cantidad &gt; 0.
+     *
+     * @return mapas {@code {productId, quantity}} (cantidad = piezas a envejecer)
+     */
+    List<Map<String, Object>> agingCandidates(long branchId);
+
+    /**
+     * Existencia NORMAL viva de pan en TODAS las sucursales del tenant (corte
+     * global prueba→real). Por cada producto de pan con existencia normal &gt; 0.
+     *
+     * @return mapas {@code {productId, branchId, quantity}} con existencia normal
+     *         positiva, ordenados por sucursal y producto
+     */
+    List<Map<String, Object>> bakeryNormalStock();
+
+    /**
+     * Ids de las sucursales ACTIVAS del tenant en curso. La RLS aísla por tenant,
+     * así que la consulta no necesita filtro de schema.
+     *
+     * @return ids de sucursal activos, ordenados ascendentemente
+     */
+    List<Long> activeBranchIds();
+
+    /**
      * Productos de pan ACTIVOS con existencia &gt; 0 del tipo pedido, para el
      * selector de Salidas.
      *

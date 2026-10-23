@@ -51,6 +51,12 @@ spring:
       app_user: pos_app
 
 app:
+  bakery:
+    # Envejecimiento automático de pan (día anterior -> merma). Corre cada noche en la
+    # zona del negocio (America/Mexico_City). El BakeryAgingScheduler lee este cron;
+    # si no se define, usa el default del @Scheduled (0 5 0 * * *). Configurable por
+    # BAKERY_AGING_CRON. Coherente con el patrón de app.trial.check-cron del licensing.
+    aging-cron: ${BAKERY_AGING_CRON:0 5 0 * * *}
   cfdi:
     # Proveedor de timbrado: 'simulated' (sandbox, por defecto) o 'real' cuando se contrate un PAC.
     pac: ${CFDI_PAC:simulated}

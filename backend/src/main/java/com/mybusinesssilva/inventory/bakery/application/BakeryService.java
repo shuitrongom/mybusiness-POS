@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -174,6 +175,35 @@ public class BakeryService implements BakeryUseCase {
     @Override
     public List<Map<String, Object>> productsWithNormalStock(long branchId) {
         return repository.productsWithNormalStock(branchId);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void ageLeftoverToWaste(long branchId, String actor) {
+        // Guardia idempotente: una corrida por (sucursal, día natural). Si ya corrió
+        // hoy (cron o catch-up), markAgingRun devuelve 0 y no se vuelve a envejecer.
+        if (repository.markAgingRun(branchId) == 0) {
+            return;
+        }
+        // Por cada producto candidato, el pan del día anterior (existencia normal menos
+        // lo producido hoy) pasa a merma con origen ENVEJECIMIENTO (saleId/shiftId nulos).
+        for (Map<String, Object> row : repository.agingCandidates(branchId)) {
+            long pid = ((Number) row.get("productId")).longValue();
+            BigDecimal q = (BigDecimal) row.get("quantity");
+            if (q != null && q.signum() > 0) {
+                transferToWaste(pid, branchId, q, WasteOrigin.ENVEJECIMIENTO, actor, null, null);
+            }
+        }
+    }
+
+    @Override
+    public List<Long> activeBranchIds() {
+        return repository.activeBranchIds();
+    }
+
+    @Override
+    public List<Map<String, Object>> bakeryNormalStock() {
+        return repository.bakeryNormalStock();
     }
 
     @Override

@@ -6,6 +6,8 @@ import com.mybusinesssilva.platform.security.ModuleAccessEvaluator;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ShiftService {
+
+        private static final Logger log = LoggerFactory.getLogger(ShiftService.class);
 
         private final JdbcClient jdbc;
         private final BakeryUseCase bakeryUseCase;
@@ -81,7 +85,7 @@ public class ShiftService {
                                         "Tu corte de caja de hoy ya fue cerrado. No puedes volver a abrir esta caja "
                                                         + "hasta el día siguiente. Si necesitas operar, solicita al administrador.");
                 }
-                return jdbc.sql("""
+                long shiftId = jdbc.sql("""
                                 INSERT INTO shift (cash_register_id, branch_id, opened_by, opening_float,
                                                    handover_from, notes, business_date, status)
                                 VALUES (:reg, :branch, :by, :float, :handover, :notes, CURRENT_DATE, 'OPEN')
@@ -95,6 +99,20 @@ public class ShiftService {
                                 .param("notes", notes)
                                 .query(Long.class)
                                 .single();
+                // CATCH-UP de envejecimiento (idempotente y NO bloqueante): si el cron nocturno
+                // no corrió (servidor caído, zona dormida), al abrir caja el pan del día anterior
+                // se pasa a merma antes de operar. Se invoca por el PORT (bakeryUseCase, bean
+                // distinto) para que su @Transactional(REQUIRES_NEW) abra su propia transacción
+                // vía el proxy; un fallo aquí jamás debe abortar la apertura de caja.
+                if (branchId != null && moduleAccess.canUse("bakery")) {
+                        try {
+                                bakeryUseCase.ageLeftoverToWaste(branchId, "SISTEMA");
+                        } catch (Exception e) {
+                                log.warn("Catch-up de envejecimiento falló al abrir turno branch={}: {}",
+                                                branchId, e.getMessage());
+                        }
+                }
+                return shiftId;
         }
 
         /**

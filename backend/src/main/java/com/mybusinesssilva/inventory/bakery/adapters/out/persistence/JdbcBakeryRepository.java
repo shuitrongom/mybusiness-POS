@@ -223,15 +223,17 @@ public class JdbcBakeryRepository implements BakeryRepository {
         // lecturas de merma (productsWithStock / productsWithNormalStock), de modo que
         // la cifra reportada cuadre con lo que el dueño ve en Salidas. NO escribe merma.
         return jdbc.sql("""
-                SELECT COALESCE(SUM(s.quantity), 0)           AS total_pieces,
-                       COUNT(*) FILTER (WHERE s.quantity > 0)  AS product_count
+                SELECT COALESCE(SUM(s.quantity), 0)                    AS total_pieces,
+                       COUNT(*) FILTER (WHERE s.quantity > 0)          AS product_count,
+                       COALESCE(SUM(s.quantity * p.waste_price), 0)    AS total_value
                 FROM bakery_waste_stock s
                 JOIN product p ON p.id = s.product_id
                 WHERE s.quantity > 0 AND p.active = TRUE
                 """)
                 .query((rs, n) -> new WasteSummary(
                         rs.getBigDecimal("total_pieces"),
-                        rs.getInt("product_count")))
+                        rs.getInt("product_count"),
+                        rs.getBigDecimal("total_value")))
                 .single();
     }
 
@@ -335,9 +337,10 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 SELECT ('WASTE-' || w.id)                   AS row_key,
                        w.origin                             AS kind,
                        s.folio                              AS folio,
-                       CASE w.origin WHEN 'MANUAL'  THEN 'Paso a merma'
-                                     WHEN 'REPARTO' THEN 'Reparto de merma'
-                                     WHEN 'CIERRE'  THEN 'Sobrante a merma (fin del día)'
+                       CASE w.origin WHEN 'MANUAL'        THEN 'Paso a merma'
+                                     WHEN 'REPARTO'       THEN 'Reparto de merma'
+                                     WHEN 'CIERRE'        THEN 'Sobrante a merma (fin del día)'
+                                     WHEN 'ENVEJECIMIENTO' THEN 'Pan del día anterior a merma'
                                      ELSE w.origin END       AS concept,
                        b.name                               AS branch_name,
                        w.quantity                           AS total_qty,
@@ -350,7 +353,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 JOIN branch b ON b.id = w.branch_id
                 JOIN product pw ON pw.id = w.product_id
                 LEFT JOIN sale s ON s.id = w.sale_id
-                WHERE w.origin IN ('MANUAL', 'REPARTO', 'CIERRE')
+                WHERE w.origin IN ('MANUAL', 'REPARTO', 'CIERRE', 'ENVEJECIMIENTO')
                   AND (CAST(:branch AS bigint) IS NULL OR w.branch_id = CAST(:branch AS bigint))
 
                 ORDER BY created_at DESC
@@ -394,6 +397,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 FROM inventory_stock st
                 JOIN product p ON p.id = st.product_id
                 WHERE st.branch_id = :bid AND st.quantity > 0 AND p.active = TRUE
+                  AND p.is_bakery = TRUE
                 ORDER BY st.product_id
                 """)
                 .param("bid", branchId)
@@ -403,6 +407,84 @@ public class JdbcBakeryRepository implements BakeryRepository {
                     m.put("quantity", rs.getBigDecimal("quantity"));
                     return m;
                 })
+                .list();
+    }
+
+    @Override
+    public int markAgingRun(long branchId) {
+        // Candado de idempotencia a nivel BD: UNIQUE(branch_id, business_date). El
+        // día natural del negocio es (now() AT TIME ZONE 'America/Mexico_City')::date.
+        // ON CONFLICT DO NOTHING => update()==0 si otro cron/catch-up ya corrió hoy.
+        return jdbc.sql("""
+                INSERT INTO bakery_aging_run (branch_id, business_date)
+                VALUES (:bid, (now() AT TIME ZONE '%s')::date)
+                ON CONFLICT (branch_id, business_date) DO NOTHING
+                """.formatted(TZ))
+                .param("bid", branchId)
+                .update();
+    }
+
+    @Override
+    public List<Map<String, Object>> agingCandidates(long branchId) {
+        // prod_hoy = piezas producidas HOY por producto en la sucursal (no envejecen).
+        // a_envejecer = GREATEST(existencia_normal_actual - producido_hoy, 0): el pan
+        // del día anterior que sigue vivo. Solo productos de pan ACTIVOS con saldo > 0.
+        return jdbc.sql("""
+                WITH prod_hoy AS (
+                    SELECT pl.product_id, COALESCE(SUM(pl.quantity), 0) AS producido_hoy
+                    FROM bakery_production_line pl
+                    JOIN bakery_production p ON p.id = pl.production_id
+                    WHERE p.branch_id = :bid
+                      AND p.production_date = (now() AT TIME ZONE '%s')::date
+                    GROUP BY pl.product_id
+                )
+                SELECT st.product_id,
+                       GREATEST(st.quantity - COALESCE(ph.producido_hoy, 0), 0) AS a_envejecer
+                FROM inventory_stock st
+                JOIN product pr ON pr.id = st.product_id
+                LEFT JOIN prod_hoy ph ON ph.product_id = st.product_id
+                WHERE st.branch_id = :bid
+                  AND st.quantity > 0
+                  AND pr.active = TRUE
+                  AND pr.is_bakery = TRUE
+                  AND GREATEST(st.quantity - COALESCE(ph.producido_hoy, 0), 0) > 0
+                ORDER BY st.product_id
+                """.formatted(TZ))
+                .param("bid", branchId)
+                .query((rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("productId", rs.getLong("product_id"));
+                    m.put("quantity", rs.getBigDecimal("a_envejecer"));
+                    return m;
+                })
+                .list();
+    }
+
+    @Override
+    public List<Map<String, Object>> bakeryNormalStock() {
+        // Corte global prueba→real: todo el stock normal vivo de pan, en todas las
+        // sucursales del tenant (la RLS ya aísla por tenant).
+        return jdbc.sql("""
+                SELECT st.product_id, st.branch_id, st.quantity
+                FROM inventory_stock st
+                JOIN product p ON p.id = st.product_id
+                WHERE st.quantity > 0 AND p.is_bakery = TRUE
+                ORDER BY st.branch_id, st.product_id
+                """)
+                .query((rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("productId", rs.getLong("product_id"));
+                    m.put("branchId", rs.getLong("branch_id"));
+                    m.put("quantity", rs.getBigDecimal("quantity"));
+                    return m;
+                })
+                .list();
+    }
+
+    @Override
+    public List<Long> activeBranchIds() {
+        return jdbc.sql("SELECT id FROM branch WHERE active = TRUE ORDER BY id")
+                .query(Long.class)
                 .list();
     }
 
@@ -610,7 +692,8 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 ),
                 wmov AS (
                     SELECT w.product_id,
-                           SUM(CASE WHEN w.origin = 'MANUAL'  THEN w.quantity ELSE 0 END) AS paso_merma,
+                           SUM(CASE WHEN w.origin = 'ENVEJECIMIENTO' THEN w.quantity ELSE 0 END) AS aged,
+                           SUM(CASE WHEN w.origin IN ('MANUAL','CIERRE') THEN w.quantity ELSE 0 END) AS paso_merma,
                            SUM(CASE WHEN w.origin = 'REPARTO' THEN w.quantity ELSE 0 END) AS reparto
                     FROM bakery_waste_movement w
                     WHERE w.branch_id = :bid
@@ -629,6 +712,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                        COALESCE(soldPos.sold, 0)         AS sold_pos,
                        COALESCE(otherOut.other_exits, 0) AS other_exits,
                        COALESCE(wasteOut.waste_out, 0)   AS waste_out,
+                       COALESCE(wmov.aged, 0)            AS aged,
                        COALESCE(wmov.paso_merma, 0)      AS paso_merma,
                        COALESCE(wmov.reparto, 0)         AS reparto,
                        COALESCE(norm.quantity, 0)        AS current_stock,
@@ -657,6 +741,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                     BigDecimal soldPos = rs.getBigDecimal("sold_pos");
                     BigDecimal otherExits = rs.getBigDecimal("other_exits");
                     BigDecimal wasteOut = rs.getBigDecimal("waste_out");
+                    BigDecimal aged = rs.getBigDecimal("aged");
                     BigDecimal pasoMerma = rs.getBigDecimal("paso_merma");
                     BigDecimal reparto = rs.getBigDecimal("reparto");
                     BigDecimal wasteBalance = rs.getBigDecimal("waste");
@@ -674,6 +759,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                     m.put("soldPos", soldPos);
                     m.put("otherExits", otherExits);
                     m.put("wasteOut", wasteOut);
+                    m.put("aged", aged);
                     m.put("pasoMerma", pasoMerma);
                     m.put("reparto", reparto);
                     // "waste" = saldo arrastrado de merma (regla del dueño: la merma se arrastra

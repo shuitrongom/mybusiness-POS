@@ -37,7 +37,7 @@ interface CutoverSummary {
     totalUnitsRemoved: number;
     lines: { productId: number; branchId: number; previousQuantity: number }[];
   };
-  waste: { totalPieces: number; productCount: number };
+  waste: { totalPieces: number; productCount: number; wasteValue: number };
   recentChanges: AuditEvent[];
 }
 
@@ -313,8 +313,13 @@ export function TestModeSettingsPage() {
                     <div className="tm-summary-chips">
                       <span className="tm-chip green num">{fmtNum(summary.waste.totalPieces)} piezas</span>
                       <span className="tm-chip green num">{fmtNum(summary.waste.productCount)} artículos</span>
+                      <span className="tm-chip amber num">${fmtNum(summary.waste.wasteValue)}</span>
                     </div>
-                    <p className="tm-summary-note">Tu merma se mantiene; regístrala o repártela desde Salidas.</p>
+                    <p className="tm-summary-note">
+                      Inicias fase real con {fmtNum(summary.waste.totalPieces)} piezas / $
+                      {fmtNum(summary.waste.wasteValue)} en merma. Tu merma se mantiene; regístrala o
+                      repártela desde Salidas.
+                    </p>
                   </div>
                 </div>
               </>

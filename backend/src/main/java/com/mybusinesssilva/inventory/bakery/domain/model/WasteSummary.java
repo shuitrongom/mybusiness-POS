@@ -9,6 +9,8 @@ import java.math.BigDecimal;
  *
  * @param totalPieces  suma de piezas en merma de artículos activos
  * @param productCount número de artículos activos con existencia de merma &gt; 0
+ * @param wasteValue   valor $ de la merma conservada = SUM(quantity * waste_price)
+ *                     de los artículos activos con existencia de merma &gt; 0
  */
-public record WasteSummary(BigDecimal totalPieces, int productCount) {
+public record WasteSummary(BigDecimal totalPieces, int productCount, BigDecimal wasteValue) {
 }

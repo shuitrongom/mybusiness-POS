@@ -155,6 +155,33 @@ public interface BakeryUseCase {
     List<Map<String, Object>> productsWithNormalStock(long branchId);
 
     /**
+     * ENVEJECIMIENTO (pan del día anterior → merma): transfiere a merma el pan que
+     * quedó vivo del día anterior en la sucursal (todo el stock normal MENOS lo
+     * producido hoy), con origen {@link WasteOrigin#ENVEJECIMIENTO}. Es IDEMPOTENTE
+     * por (sucursal, día natural): solo se ejecuta una vez al día aunque lo disparen
+     * el cron nocturno y el catch-up de apertura de turno. Corre en su PROPIA
+     * transacción ({@code REQUIRES_NEW}) para no arrastrar al llamador si falla.
+     *
+     * @param branchId sucursal a envejecer
+     * @param actor    quién origina el movimiento (p. ej. {@code "SISTEMA"})
+     */
+    void ageLeftoverToWaste(long branchId, String actor);
+
+    /**
+     * Ids de las sucursales ACTIVAS del tenant en curso, para que el scheduler de
+     * envejecimiento itere sucursal por sucursal. La RLS aísla por tenant.
+     */
+    List<Long> activeBranchIds();
+
+    /**
+     * Existencia NORMAL viva de pan en TODAS las sucursales del tenant, como mapas
+     * {@code {productId, branchId, quantity}}. Lo usa el corte prueba→real para
+     * pasar el pan remanente a merma (origen {@link WasteOrigin#ENVEJECIMIENTO})
+     * antes de reiniciar el inventario.
+     */
+    List<Map<String, Object>> bakeryNormalStock();
+
+    /**
      * Productos de pan con existencia &gt; 0 del tipo pedido, para el selector de
      * Salidas:
      * {@code "normal"} (merma manual / salida normal) o {@code "waste"} (reparto de
