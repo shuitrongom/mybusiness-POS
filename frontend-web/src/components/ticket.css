@@ -51,6 +51,12 @@
   color: #374151;
 }
 
+/* Línea de cliente del ticket: ocupa el ancho completo, legible bajo la meta. */
+.ticket-customer {
+  justify-content: flex-start;
+  font-weight: 600;
+}
+
 .ticket-divider {
   border-top: 1px dashed #9ca3af;
   margin: 10px 0;

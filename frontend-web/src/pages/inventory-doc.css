@@ -910,3 +910,39 @@
   display: flex;
   justify-content: center;
 }
+
+/* =========================================================================
+   Existencias del día: chips de estado del artículo en la celda de nombre.
+   "Inactivo" (gris/neutro) marca productos desactivados que siguen visibles por
+   tener saldo; el chip de merma (ámbar) explica por qué sigue a la vista cuando
+   su existencia normal es 0 pero arrastra saldo de merma.
+   ========================================================================= */
+.iday-badge-off {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, #64748b 22%, transparent);
+  color: #94a3b8;
+}
+
+.iday-waste-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #f59e0b;
+}

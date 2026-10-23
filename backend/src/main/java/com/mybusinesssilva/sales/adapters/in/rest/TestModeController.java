@@ -2,6 +2,7 @@ package com.mybusinesssilva.sales.adapters.in.rest;
 
 import com.mybusinesssilva.platform.security.AuthenticatedUser;
 import com.mybusinesssilva.sales.application.TestModeService;
+import com.mybusinesssilva.sales.application.TestModeService.CutoverSummary;
 import com.mybusinesssilva.sales.application.TestModeService.TestModeStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -9,6 +10,7 @@ import java.util.Map;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -66,6 +68,23 @@ public class TestModeController {
             @Valid @RequestBody UpdateTestModeRequest request) {
         return testModeService.setActive(
                 request.active(),
+                actor == null ? "unknown" : actor.subject(),
+                userAgent);
+    }
+
+    /**
+     * CORTE PRUEBA→REAL: finaliza el modo prueba e inicia la operación real. Solo el
+     * dueño (mismo gate OWNER-only que el {@code PUT}). Es una ACCIÓN, no un toggle:
+     * no recibe body. Conserva todo el histórico de prueba (Opción B), reinicia el
+     * stock vendible a 0 con kardex, LEE la merma (se arrastra) y audita el corte.
+     * Devuelve el resumen para el modal de resultado del frontend.
+     */
+    @PostMapping("/cutover")
+    @PreAuthorize("@moduleAccess.canManageTestMode()")
+    public CutoverSummary cutover(
+            @AuthenticationPrincipal AuthenticatedUser actor,
+            @RequestHeader(value = "User-Agent", required = false) String userAgent) {
+        return testModeService.cutover(
                 actor == null ? "unknown" : actor.subject(),
                 userAgent);
     }

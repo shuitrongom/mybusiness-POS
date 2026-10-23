@@ -110,6 +110,47 @@ public class SaleController {
         }
 
         /**
+         * Lista de ventas COMPLETED para la pantalla de REIMPRESIÓN de tickets, con
+         * filtros server-side (fecha día/rango, sucursal, método de pago, tipo de
+         * venta) y búsqueda inteligente por folio/cajero/cliente/producto. El scope de
+         * modo prueba lo resuelve el backend ({@code resolveScope(null)} → both si el
+         * modo prueba está ON, real si OFF); el front NO envía {@code scope}.
+         */
+        @org.springframework.web.bind.annotation.GetMapping("/reprint")
+        public List<java.util.Map<String, Object>> reprintList(
+                        @RequestParam(value = "limit", required = false, defaultValue = "300") int limit,
+                        @RequestParam(value = "q", required = false) String q,
+                        @RequestParam(value = "from", required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+                        @RequestParam(value = "to", required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+                        @RequestParam(value = "branchId", required = false) Long branchId,
+                        @RequestParam(value = "method", required = false) String method,
+                        @RequestParam(value = "saleType", required = false) String saleType) {
+                String query = (q == null || q.isBlank()) ? null : q.trim();
+                String methodParam = (method == null || method.isBlank()) ? null : method.trim();
+                String saleTypeParam = (saleType == null || saleType.isBlank()) ? null : saleType.trim();
+                // scope=null: el front no lo manda; resolveScope resuelve el default por
+                // test_mode (both si ON, real si OFF). No se hardcodea is_test=false.
+                return saleRepository.reprintList(limit, query, from, to, branchId, methodParam,
+                                saleTypeParam, resolveScope(null)).stream()
+                                .map(s -> {
+                                        java.util.Map<String, Object> m = new java.util.HashMap<>();
+                                        m.put("saleId", s.saleId());
+                                        m.put("folio", s.folio());
+                                        m.put("createdAt", s.createdAt());
+                                        m.put("cashier", s.cashier());
+                                        m.put("branchName", s.branchName());
+                                        m.put("total", s.total());
+                                        m.put("customerName", s.customerName());
+                                        m.put("paymentMethods", s.paymentMethods());
+                                        m.put("saleType", s.saleType());
+                                        m.put("itemCount", s.itemCount());
+                                        m.put("itemsPreview", s.itemsPreview());
+                                        return m;
+                                })
+                                .toList();
+        }
+
+        /**
          * Lista las listas de precio activas del negocio para el selector del punto de
          * venta.
          */

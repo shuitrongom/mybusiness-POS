@@ -13,8 +13,8 @@
 .plist-head,
 .plist-row {
   display: grid;
-  /* avatar | nombre+meta | unidad | costo | precio+margen | IVA | código | acciones */
-  grid-template-columns: 48px minmax(170px, 1fr) 84px 96px 128px 72px 100px 96px;
+  /* avatar | nombre+meta | unidad | costo | precio+margen | IVA | código | estado | acciones */
+  grid-template-columns: 48px minmax(170px, 1fr) 84px 96px 128px 72px 100px 64px 96px;
   align-items: center;
   gap: 16px;
   padding: 0 18px;
@@ -239,4 +239,59 @@
   border: 1px dashed var(--border);
   border-radius: 14px;
   margin-top: 8px;
+}
+
+/* =========================================================================
+   Switch de Estado (activar / desactivar) por fila. Pista 38x22 con perilla
+   blanca animada; OFF neutro, ON azul de marca. Foco visible para teclado.
+   ========================================================================= */
+.plist-switch {
+  justify-self: center;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex: 0 0 38px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.plist-switch.is-on {
+  background: var(--brand-600, #2e6ef2);
+  border-color: var(--brand-600, #2e6ef2);
+}
+
+.plist-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.plist-switch:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand-600, #2e6ef2) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.plist-switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transform: translate(0, -50%);
+  transition: transform 0.16s ease;
+}
+
+.plist-switch.is-on .plist-switch-knob {
+  transform: translate(16px, -50%);
+}
+
+/* En fila inactiva la fila entera se atenúa; el switch se mantiene legible para poder reactivar. */
+.is-inactive .plist-switch {
+  opacity: 1;
 }

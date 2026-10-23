@@ -1,4 +1,4 @@
-import type { TicketSettings, TicketData } from '@/components/Ticket';
+import { ticketCustomerLabel, type TicketSettings, type TicketData } from '@/components/Ticket';
 import type { VoucherData } from '@/components/Voucher';
 
 const money = (n: number) =>
@@ -33,6 +33,8 @@ export function saleTicketHtml(settings: TicketSettings, d: TicketData): string 
   if (settings.showCashier && d.cashier) {
     h += `<div class="t-meta"><span>Atendió: ${esc(d.cashier)}</span><span>${esc(d.branchName)}</span></div>`;
   }
+  // Cliente: siempre (también público general), fuera de la condición de cajero.
+  h += `<div class="t-meta t-customer"><span>Cliente: ${esc(ticketCustomerLabel(d.customerName))}</span></div>`;
 
   h += '<div class="t-div"></div>';
   for (const l of d.lines) {

@@ -15,6 +15,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JdbcSaleRepository implements SaleRepository {
 
+        /**
+         * Zona horaria de negocio para acotar rangos de fecha (misma constante que
+         * {@code JdbcBakeryRepository}/{@code BiService}). Las columnas
+         * {@code created_at} son {@code timestamptz} (UTC); el filtro de día/rango se
+         * construye en esta zona para cortar el día natural de México, no en UTC.
+         */
+        private static final String TZ = "America/Mexico_City";
+
         private final JdbcClient jdbc;
 
         public JdbcSaleRepository(JdbcClient jdbc) {
@@ -288,6 +296,79 @@ public class JdbcSaleRepository implements SaleRepository {
                                                 rs.getBoolean("fully_returned"), rs.getString("cashier"),
                                                 rs.getString("payment_methods"),
                                                 rs.getString("items_preview")))
+                                .list();
+        }
+
+        @Override
+        public java.util.List<ReprintSale> reprintList(int limit, String q,
+                        java.time.LocalDate from, java.time.LocalDate to, Long branchId,
+                        String method, String saleType, String scope) {
+                // Normaliza el tope (defensa: <=0 -> 300, máximo 500).
+                int lim = (limit <= 0) ? 300 : Math.min(limit, 500);
+                // Scope de modo prueba ya resuelto por el controller (real|test|both). El
+                // fragmento se arma con su PROPIO salto de línea a ambos lados y se interpola
+                // con %s justo tras 'COMPLETED', para que el predicado (o la cadena vacía de
+                // BOTH) nunca quede pegado a la cláusula anterior ni al AND siguiente, sin
+                // depender del whitespace del text block. Prohibido hardcodear is_test.
+                String testFragment = "\n  " + com.mybusinesssilva.sales.application.ReportScope
+                                .resolve(scope == null ? "both" : scope, true)
+                                .sqlPredicate("s.is_test") + "\n";
+                // Aislamiento por tenant: lo aplica RLS sobre `sale` (igual que recentSales).
+                return jdbc.sql(("""
+                                SELECT s.id, s.folio, s.created_at, s.cashier, s.total, s.sale_type,
+                                       b.name AS branch_name,
+                                       c.name AS customer_name,
+                                       (SELECT COUNT(*) FROM sale_line sl WHERE sl.sale_id = s.id)
+                                           AS item_count,
+                                       (SELECT string_agg(d.txt, ' · ')
+                                          FROM (SELECT (sl.description || ' x'
+                                                        || trim(to_char(sl.quantity, 'FM999999990.###'))) AS txt
+                                                  FROM sale_line sl
+                                                 WHERE sl.sale_id = s.id
+                                                 ORDER BY sl.id LIMIT 3) d) AS items_preview,
+                                       (SELECT string_agg(DISTINCT sp.method, ',')
+                                          FROM sale_payment sp WHERE sp.sale_id = s.id)
+                                           AS payment_methods
+                                FROM sale s
+                                LEFT JOIN branch b ON b.id = s.branch_id
+                                LEFT JOIN customer c ON c.id = s.customer_id
+                                WHERE s.status = 'COMPLETED'%s
+                                  AND (CAST(:from AS date) IS NULL
+                                       OR s.created_at >= (CAST(:from AS date)) AT TIME ZONE '%s')
+                                  AND (CAST(:to AS date) IS NULL
+                                       OR s.created_at <  (CAST(:to AS date) + 1) AT TIME ZONE '%s')
+                                  AND (CAST(:branchId AS bigint) IS NULL
+                                       OR s.branch_id = CAST(:branchId AS bigint))
+                                  AND (CAST(:method AS text) IS NULL
+                                       OR EXISTS (SELECT 1 FROM sale_payment sp
+                                                   WHERE sp.sale_id = s.id
+                                                     AND sp.method = CAST(:method AS text)))
+                                  AND (CAST(:saleType AS text) IS NULL
+                                       OR s.sale_type = CAST(:saleType AS text))
+                                  AND (CAST(:q AS text) IS NULL
+                                       OR s.folio   ILIKE '%%' || CAST(:q AS text) || '%%'
+                                       OR s.cashier ILIKE '%%' || CAST(:q AS text) || '%%'
+                                       OR c.name    ILIKE '%%' || CAST(:q AS text) || '%%'
+                                       OR EXISTS (SELECT 1 FROM sale_line sl
+                                                   WHERE sl.sale_id = s.id
+                                                     AND sl.description ILIKE '%%' || CAST(:q AS text) || '%%'))
+                                ORDER BY s.created_at DESC
+                                LIMIT :limit
+                                """).formatted(testFragment, TZ, TZ))
+                                .param("q", q)
+                                .param("from", from)
+                                .param("to", to)
+                                .param("branchId", branchId)
+                                .param("method", method)
+                                .param("saleType", saleType)
+                                .param("limit", lim)
+                                .query((rs, n) -> new ReprintSale(
+                                                rs.getLong("id"), rs.getString("folio"),
+                                                rs.getObject("created_at", java.time.OffsetDateTime.class),
+                                                rs.getString("cashier"), rs.getString("branch_name"),
+                                                rs.getBigDecimal("total"), rs.getString("customer_name"),
+                                                rs.getString("payment_methods"), rs.getString("sale_type"),
+                                                rs.getInt("item_count"), rs.getString("items_preview")))
                                 .list();
         }
 

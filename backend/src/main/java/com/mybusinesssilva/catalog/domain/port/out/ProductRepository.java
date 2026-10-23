@@ -31,4 +31,14 @@ public interface ProductRepository {
     List<Product> search(String text);
 
     List<Product> findAll();
+
+    /**
+     * Suma la existencia normal del producto en TODAS las sucursales del negocio.
+     * Es la barrera de datos que impide desactivar un producto que todavía tiene
+     * stock (ver {@link java.math.BigDecimal}).
+     *
+     * @param productId id del producto
+     * @return suma de {@code inventory_stock.quantity}; 0 si no hay renglones
+     */
+    java.math.BigDecimal totalStockAllBranches(long productId);
 }

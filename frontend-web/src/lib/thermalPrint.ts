@@ -47,6 +47,7 @@ function ticketCss(widthMm: number): string {
     .t-tag { font-size: ${fontSize - 1}px; }
     .t-info { font-size: ${fontSize - 1}px; }
     .t-meta { display: flex; justify-content: space-between; gap: 6px; font-size: ${fontSize - 1}px; }
+    .t-customer { justify-content: flex-start; }
     .t-div { border-top: 1px dashed #000; margin: ${pad}mm 0; }
     .t-line { display: flex; justify-content: space-between; gap: 6px; }
     .t-line .d { flex: 1; }

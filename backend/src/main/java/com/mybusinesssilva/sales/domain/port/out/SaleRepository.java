@@ -102,6 +102,34 @@ public interface SaleRepository {
         List<RecentSale> recentSales(int limit, String q, String scope);
 
         /**
+         * Lista ventas COMPLETED para la pantalla de REIMPRESIÓN de tickets, con
+         * filtros server-side. Reutiliza el mismo patrón de scope de modo prueba que
+         * {@link #recentSales(int, String, String)} (el controller resuelve el default
+         * por {@code test_mode}; aquí {@code is_test} NO se hardcodea, se deriva de
+         * {@code scope} vía {@code ReportScope.sqlPredicate}). Acotada al tenant (RLS).
+         *
+         * @param limit    tope de ventas (se normaliza: &le;0 → 300, tope 500)
+         * @param q        búsqueda inteligente opcional ({@code null} = sin filtro):
+         *                 folio / cajero / cliente / producto (nombre de artículo
+         *                 vendido) por ILIKE. Nullable → se compara con CAST.
+         * @param from     inicio de rango inclusive (día natural en zona de México), o
+         *                 {@code null}. Nullable → CAST.
+         * @param to       fin de rango inclusive (cubre todo el día {@code to} en zona
+         *                 de México), o {@code null}. Un solo día ⇒ {@code from == to}.
+         * @param branchId sucursal, o {@code null} (todas). Nullable → CAST.
+         * @param method   método de pago ({@code CASH|CARD|TRANSFER|VOUCHER}), o
+         *                 {@code null}. Nullable → CAST.
+         * @param saleType tipo de venta ({@code NORMAL|SPECIAL}), o {@code null}.
+         *                 Nullable → CAST.
+         * @param scope    alcance de modo prueba ya resuelto ({@code real|test|both});
+         *                 el controller resuelve el default por {@code test_mode}.
+         *                 {@code null}/desconocido se trata como {@code both}.
+         */
+        List<ReprintSale> reprintList(int limit, String q, java.time.LocalDate from,
+                        java.time.LocalDate to, Long branchId, String method, String saleType,
+                        String scope);
+
+        /**
          * Resumen de una venta reciente para el selector de devoluciones.
          *
          * @param saleId         id de la venta
@@ -129,6 +157,32 @@ public interface SaleRepository {
                         BigDecimal total, String customerName, int itemCount, int returnedCount,
                         boolean fullyReturned, String cashier, String paymentMethods,
                         String itemsPreview) {
+        }
+
+        /**
+         * Resumen de una venta para la pantalla de reimpresión de tickets.
+         *
+         * @param saleId         id de la venta
+         * @param folio          folio (puede ser {@code null}; el front cae a
+         *                       {@code "V-"+saleId})
+         * @param createdAt      fecha/hora de la venta
+         * @param cashier        usuario de caja ({@code null} en datos antiguos)
+         * @param branchName     nombre de la sucursal ({@code null} si la sucursal se
+         *                       borró)
+         * @param total          total de la venta
+         * @param customerName   nombre del cliente ({@code null} ⇒ venta a público
+         *                       general)
+         * @param paymentMethods CSV de métodos distintos de la venta (p.ej.
+         *                       {@code "CASH,CARD"}); {@code null} si no hay pagos
+         * @param saleType       tipo de venta ({@code NORMAL|SPECIAL})
+         * @param itemCount      número de renglones de la venta
+         * @param itemsPreview   descripciones de los primeros renglones con cantidad,
+         *                       unidas con {@code " · "}; {@code null} si no hay
+         *                       renglones
+         */
+        record ReprintSale(long saleId, String folio, java.time.OffsetDateTime createdAt,
+                        String cashier, String branchName, BigDecimal total, String customerName,
+                        String paymentMethods, String saleType, int itemCount, String itemsPreview) {
         }
 
         /**

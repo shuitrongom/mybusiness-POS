@@ -2,8 +2,10 @@ package com.mybusinesssilva.catalog.application;
 
 import com.mybusinesssilva.catalog.domain.model.MasterProduct;
 import com.mybusinesssilva.catalog.domain.model.Product;
+import com.mybusinesssilva.catalog.domain.model.ProductHasStockException;
 import com.mybusinesssilva.catalog.domain.port.out.MasterProductRepository;
 import com.mybusinesssilva.catalog.domain.port.out.ProductRepository;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -46,9 +48,37 @@ public class CatalogService {
     }
 
     @Transactional
-    public Product updateProduct(Product product) {
-        productRepository.update(product);
-        return productRepository.findById(product.id()).orElseThrow();
+    public Product updateProduct(Product incoming) {
+        // Barrera dura: desactivar (active true -> false) un producto que todavía tiene
+        // existencia normal esconde stock vivo. Se bloquea con 409 PRODUCT_HAS_STOCK y
+        // NO se persiste el cambio. Activar siempre pasa.
+        Product current = productRepository.findById(incoming.id()).orElseThrow();
+        boolean desactivando = current.active() && !incoming.active();
+        if (desactivando) {
+            BigDecimal stock = productRepository.totalStockAllBranches(incoming.id());
+            if (stock.signum() > 0) {
+                throw new ProductHasStockException(incoming.id(), incoming.name(), stock);
+            }
+        }
+        productRepository.update(incoming);
+        return findById(incoming.id()).orElseThrow();
+    }
+
+    /**
+     * Activa o desactiva un producto preservando TODOS sus campos (incluidos los
+     * profesionales en {@code extras()}): reconstruye el record con el constructor
+     * canónico de 15 args para no reiniciar {@code extras}. La barrera de stock al
+     * desactivar la impone {@link #updateProduct(Product)}.
+     */
+    @Transactional
+    public Product setActive(long id, boolean active) {
+        Product current = findById(id).orElseThrow();
+        Product next = new Product(
+                current.id(), current.sku(), current.name(), current.categoryId(),
+                current.unit(), current.soldByWeight(), current.satProdServ(), current.satUnit(),
+                current.price(), current.cost(), active,
+                current.barcodes(), current.attributes(), current.imageUrl(), current.extras());
+        return updateProduct(next);
     }
 
     /**
@@ -71,6 +101,10 @@ public class CatalogService {
         }
         Optional<MasterProduct> suggestion = masterProductRepository.findByBarcode(barcode);
         return new BarcodeLookup(null, suggestion.orElse(null));
+    }
+
+    public Optional<Product> findById(long id) {
+        return productRepository.findById(id);
     }
 
     public List<Product> search(String text) {

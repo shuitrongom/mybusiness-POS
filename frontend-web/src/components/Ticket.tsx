@@ -39,7 +39,13 @@ export interface TicketData {
   offline?: boolean;
   /** true si la venta se registró en MODO PRUEBA: el ticket lo marca visiblemente. */
   isTest?: boolean;
+  /** Nombre del cliente de la venta; null/undefined ⇒ ticket muestra "Venta a público general". */
+  customerName?: string | null;
 }
+
+/** Texto de cliente del ticket: nombre si existe, o la leyenda de mostrador. */
+export const ticketCustomerLabel = (name?: string | null): string =>
+  name && name.trim() ? name.trim() : 'Venta a público general';
 
 const money = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
@@ -84,6 +90,10 @@ export function Ticket({ settings, data }: { settings: TicketSettings; data: Tic
       {settings.showCashier && data.cashier && (
         <div className="ticket-meta"><span>Atendió: {data.cashier}</span><span>{data.branchName}</span></div>
       )}
+      {/* Cliente: siempre (también para público general), fuera de la condición de cajero. */}
+      <div className="ticket-meta ticket-customer">
+        <span>Cliente: {ticketCustomerLabel(data.customerName)}</span>
+      </div>
 
       <div className="ticket-divider" />
       <div className="ticket-lines">

@@ -3,6 +3,7 @@ package com.mybusinesssilva.inventory.bakery.adapters.out.persistence;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryEntryStatus;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProduction;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProductionLine;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteSummary;
 import com.mybusinesssilva.inventory.bakery.domain.port.out.BakeryRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -213,6 +214,25 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 .query(BigDecimal.class)
                 .optional()
                 .orElse(BigDecimal.ZERO);
+    }
+
+    @Override
+    public WasteSummary wasteSummary() {
+        // Agregado de SOLO LECTURA de la merma vendible del tenant (todas las
+        // sucursales). Filtra por p.active = TRUE por consistencia con las demás
+        // lecturas de merma (productsWithStock / productsWithNormalStock), de modo que
+        // la cifra reportada cuadre con lo que el dueño ve en Salidas. NO escribe merma.
+        return jdbc.sql("""
+                SELECT COALESCE(SUM(s.quantity), 0)           AS total_pieces,
+                       COUNT(*) FILTER (WHERE s.quantity > 0)  AS product_count
+                FROM bakery_waste_stock s
+                JOIN product p ON p.id = s.product_id
+                WHERE s.quantity > 0 AND p.active = TRUE
+                """)
+                .query((rs, n) -> new WasteSummary(
+                        rs.getBigDecimal("total_pieces"),
+                        rs.getInt("product_count")))
+                .single();
     }
 
     @Override
@@ -604,7 +624,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 merma AS (
                     SELECT product_id, quantity FROM bakery_waste_stock WHERE branch_id = :bid
                 )
-                SELECT p.id, p.name, p.unit, p.price,
+                SELECT p.id, p.name, p.unit, p.price, p.active,
                        COALESCE(prodProd.produced, 0)    AS produced,
                        COALESCE(soldPos.sold, 0)         AS sold_pos,
                        COALESCE(otherOut.other_exits, 0) AS other_exits,
@@ -621,11 +641,13 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 LEFT JOIN wmov     ON wmov.product_id     = p.id
                 LEFT JOIN norm     ON norm.product_id     = p.id
                 LEFT JOIN merma    ON merma.product_id    = p.id
-                WHERE p.active = TRUE
-                  AND (prodProd.produced IS NOT NULL OR soldPos.sold IS NOT NULL
-                       OR otherOut.other_exits IS NOT NULL OR wasteOut.waste_out IS NOT NULL
-                       OR wmov.product_id IS NOT NULL
-                       OR COALESCE(norm.quantity, 0) <> 0 OR COALESCE(merma.quantity, 0) <> 0)
+                WHERE ( p.active = TRUE
+                        AND (prodProd.produced IS NOT NULL OR soldPos.sold IS NOT NULL
+                             OR otherOut.other_exits IS NOT NULL OR wasteOut.waste_out IS NOT NULL
+                             OR wmov.product_id IS NOT NULL
+                             OR COALESCE(norm.quantity, 0) <> 0 OR COALESCE(merma.quantity, 0) <> 0) )
+                   OR ( p.active = FALSE
+                        AND ( COALESCE(norm.quantity, 0) <> 0 OR COALESCE(merma.quantity, 0) > 0 ) )
                 ORDER BY p.name
                 """.formatted(TZ, TZ, TZ, TZ, TZ, TZ, TZ, TZ, TZ, TZ))
                 .param("bid", branchId)
@@ -659,6 +681,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                     m.put("waste", wasteBalance);
                     m.put("wasteBalance", wasteBalance);
                     m.put("currentStock", current);
+                    m.put("active", rs.getBoolean("active"));
                     // Restante del día = EXISTENCIA REAL actual (cuadra con Salidas), no un
                     // cálculo.
                     m.put("remaining", current);

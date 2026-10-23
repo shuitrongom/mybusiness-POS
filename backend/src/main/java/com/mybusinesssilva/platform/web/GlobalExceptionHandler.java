@@ -1,5 +1,6 @@
 package com.mybusinesssilva.platform.web;
 
+import com.mybusinesssilva.catalog.domain.model.ProductHasStockException;
 import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
 import java.time.Instant;
 import java.util.HashMap;
@@ -69,6 +70,23 @@ public class GlobalExceptionHandler {
         problem.setProperty("productName", ex.productName());
         problem.setProperty("available", ex.available());
         problem.setProperty("requested", ex.requested());
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Barrera dura: no se puede desactivar un producto con existencia normal &gt; 0.
+     * Espejo de {@link #handleInsufficientStock}: 409 CONFLICT con el detalle del
+     * producto y su stock. No se loguea (es una regla de negocio esperada).
+     */
+    @ExceptionHandler(ProductHasStockException.class)
+    public ProblemDetail handleProductHasStock(ProductHasStockException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("PRODUCT_HAS_STOCK");
+        problem.setProperty("productId", ex.productId());
+        problem.setProperty("productName", ex.productName());
+        problem.setProperty("stock", ex.stock());
         problem.setProperty("timestamp", Instant.now());
         return problem;
     }

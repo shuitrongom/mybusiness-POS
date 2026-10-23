@@ -3,6 +3,7 @@ package com.mybusinesssilva.inventory.bakery.domain.port.in;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryEntryStatus;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProduction;
 import com.mybusinesssilva.inventory.bakery.domain.model.WasteOrigin;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteSummary;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -137,6 +138,13 @@ public interface BakeryUseCase {
      * registro).
      */
     BigDecimal wasteStock(long productId, long branchId);
+
+    /**
+     * Agregado de SOLO LECTURA de la merma vendible del tenant (todas las
+     * sucursales): total de piezas y número de artículos activos con merma. Lo usa
+     * el corte prueba→real para informar la merma que se conserva, sin tocarla.
+     */
+    WasteSummary wasteSummary();
 
     /**
      * Productos con existencia normal &gt; 0 en una sucursal, como mapas

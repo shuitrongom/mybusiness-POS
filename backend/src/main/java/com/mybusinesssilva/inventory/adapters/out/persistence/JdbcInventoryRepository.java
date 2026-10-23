@@ -144,6 +144,21 @@ public class JdbcInventoryRepository implements InventoryRepository {
                 .list();
     }
 
+    @Override
+    public List<StockLevel> stockWithBalance() {
+        // Lectura pura: existencias con saldo (quantity <> 0) de TODAS las sucursales
+        // del tenant en curso. El corte prueba→real itera estas filas y llama a
+        // InventoryService.adjust(...) por cada una para dejarlas en 0 con kardex.
+        return jdbc.sql("""
+                SELECT product_id, branch_id, quantity, min_quantity
+                FROM inventory_stock
+                WHERE quantity <> 0
+                ORDER BY branch_id, product_id
+                """)
+                .query(this::mapStock)
+                .list();
+    }
+
     private StockLevel mapStock(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         return new StockLevel(
                 rs.getLong("product_id"),

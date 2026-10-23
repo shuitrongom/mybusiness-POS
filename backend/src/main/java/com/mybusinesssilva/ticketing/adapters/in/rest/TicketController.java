@@ -2,8 +2,6 @@ package com.mybusinesssilva.ticketing.adapters.in.rest;
 
 import com.mybusinesssilva.ticketing.application.TicketService;
 import com.mybusinesssilva.ticketing.application.TicketService.TicketSettings;
-import jakarta.validation.constraints.Min;
-import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,7 +9,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -40,13 +37,6 @@ public class TicketController {
     @PreAuthorize("@moduleAccess.canManageSettings()")
     public TicketSettings saveSettings(@RequestBody TicketSettings settings) {
         return ticketService.saveSettings(settings);
-    }
-
-    /** Ventas recientes para buscar y reimprimir. */
-    @GetMapping("/sales")
-    public List<TicketService.SaleSummary> recentSales(
-            @RequestParam(name = "limit", defaultValue = "50") @Min(1) int limit) {
-        return ticketService.recentSales(limit);
     }
 
     /** Detalle de una venta para reimprimir su ticket. */

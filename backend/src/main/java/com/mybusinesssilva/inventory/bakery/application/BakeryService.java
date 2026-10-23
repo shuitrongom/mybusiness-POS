@@ -4,6 +4,7 @@ import com.mybusinesssilva.inventory.bakery.domain.model.BakeryEntryStatus;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProduction;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProductionLine;
 import com.mybusinesssilva.inventory.bakery.domain.model.WasteOrigin;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteSummary;
 import com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase;
 import com.mybusinesssilva.inventory.bakery.domain.port.out.BakeryRepository;
 import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
@@ -28,6 +29,12 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class BakeryService implements BakeryUseCase {
+
+    private static final java.time.ZoneId MX = java.time.ZoneId.of("America/Mexico_City");
+
+    private static LocalDate today() {
+        return LocalDate.now(MX);
+    }
 
     private final BakeryRepository repository;
     private final InventoryPort inventoryPort;
@@ -158,6 +165,13 @@ public class BakeryService implements BakeryUseCase {
     }
 
     @Override
+    public WasteSummary wasteSummary() {
+        // Lectura pura: delega el agregado de merma al repositorio. El corte
+        // prueba→real la invoca para informar la merma conservada, sin escribirla.
+        return repository.wasteSummary();
+    }
+
+    @Override
     public List<Map<String, Object>> productsWithNormalStock(long branchId) {
         return repository.productsWithNormalStock(branchId);
     }
@@ -169,7 +183,7 @@ public class BakeryService implements BakeryUseCase {
 
     @Override
     public List<Map<String, Object>> dailyStockAll(long branchId, LocalDate date) {
-        return repository.dailyStockAll(branchId, date != null ? date : LocalDate.now());
+        return repository.dailyStockAll(branchId, date != null ? date : today());
     }
 
     @Override
@@ -184,7 +198,7 @@ public class BakeryService implements BakeryUseCase {
 
     @Override
     public Map<String, Object> dailyStock(long productId, long branchId, LocalDate date) {
-        LocalDate day = date != null ? date : LocalDate.now();
+        LocalDate day = date != null ? date : today();
         BigDecimal produced = repository.producedBetween(productId, branchId, day, day);
         BigDecimal sold = repository.soldBetween(productId, branchId, day, day);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -192,7 +206,7 @@ public class BakeryService implements BakeryUseCase {
         result.put("producido", produced);
         result.put("vendido", sold);
         result.put("restanteDelDia", produced.subtract(sold));
-        if (!day.isBefore(LocalDate.now())) {
+        if (!day.isBefore(today())) {
             result.put("existenciaActual", repository.currentStock(productId, branchId));
         }
         return result;
@@ -200,8 +214,8 @@ public class BakeryService implements BakeryUseCase {
 
     @Override
     public Map<String, Object> rangeStock(long productId, long branchId, LocalDate from, LocalDate to, String groupBy) {
-        LocalDate f = from != null ? from : LocalDate.now().withDayOfMonth(1);
-        LocalDate t = to != null ? to : LocalDate.now();
+        LocalDate f = from != null ? from : today().withDayOfMonth(1);
+        LocalDate t = to != null ? to : today();
         if (f.isAfter(t)) {
             throw new IllegalArgumentException("El rango de fechas es inválido: 'from' no puede ser mayor que 'to'");
         }
@@ -216,7 +230,7 @@ public class BakeryService implements BakeryUseCase {
         if ("day".equalsIgnoreCase(groupBy)) {
             result.put("serie", repository.dailySeries(productId, branchId, f, t));
         }
-        if (!t.isBefore(LocalDate.now())) {
+        if (!t.isBefore(today())) {
             result.put("existenciaActual", repository.currentStock(productId, branchId));
         }
         return result;

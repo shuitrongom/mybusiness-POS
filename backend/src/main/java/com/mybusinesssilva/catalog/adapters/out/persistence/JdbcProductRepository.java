@@ -296,6 +296,14 @@ public class JdbcProductRepository implements ProductRepository {
                 .list();
     }
 
+    @Override
+    public BigDecimal totalStockAllBranches(long productId) {
+        return jdbc.sql("SELECT COALESCE(SUM(quantity), 0) FROM inventory_stock WHERE product_id = :id")
+                .param("id", productId)
+                .query(BigDecimal.class)
+                .single();
+    }
+
     private void insertBarcodes(long productId, List<String> barcodes) {
         for (String code : barcodes) {
             jdbc.sql("INSERT INTO product_barcode (product_id, barcode) VALUES (:pid, :code)")

@@ -78,37 +78,22 @@ public class TicketService {
         return getSettings();
     }
 
-    /** Lista las ventas recientes (para buscar y reimprimir), más nuevas primero. */
-    public List<SaleSummary> recentSales(int limit) {
-        return jdbc.sql("""
-                SELECT s.id, s.folio, s.total, s.status, s.cashier, s.created_at,
-                       b.name AS branch_name
-                FROM sale s
-                LEFT JOIN branch b ON b.id = s.branch_id
-                WHERE s.status = 'COMPLETED'
-                ORDER BY s.created_at DESC
-                LIMIT :limit
-                """)
-                .param("limit", Math.min(Math.max(limit, 1), 200))
-                .query((rs, n) -> new SaleSummary(
-                        rs.getLong("id"), rs.getString("folio"), rs.getBigDecimal("total"),
-                        rs.getString("cashier"), rs.getString("branch_name"),
-                        rs.getObject("created_at", OffsetDateTime.class)))
-                .list();
-    }
-
     /** Obtiene el detalle completo de una venta (encabezado, renglones y pagos) para el ticket. */
     public SaleTicket getSaleTicket(long saleId) {
         SaleSummary head = jdbc.sql("""
-                SELECT s.id, s.folio, s.total, s.status, s.cashier, s.created_at, b.name AS branch_name
-                FROM sale s LEFT JOIN branch b ON b.id = s.branch_id
+                SELECT s.id, s.folio, s.total, s.status, s.cashier, s.created_at, s.amount_paid,
+                       b.name AS branch_name, c.name AS customer_name
+                FROM sale s
+                LEFT JOIN branch b ON b.id = s.branch_id
+                LEFT JOIN customer c ON c.id = s.customer_id
                 WHERE s.id = :id
                 """)
                 .param("id", saleId)
                 .query((rs, n) -> new SaleSummary(
                         rs.getLong("id"), rs.getString("folio"), rs.getBigDecimal("total"),
                         rs.getString("cashier"), rs.getString("branch_name"),
-                        rs.getObject("created_at", OffsetDateTime.class)))
+                        rs.getObject("created_at", OffsetDateTime.class),
+                        rs.getString("customer_name"), rs.getBigDecimal("amount_paid")))
                 .optional()
                 .orElse(null);
         if (head == null) {
@@ -147,9 +132,18 @@ public class TicketService {
         }
     }
 
-    /** Resumen de una venta para el listado de reimpresión. */
+    /**
+     * Resumen de una venta para el detalle del ticket (reimpresión).
+     *
+     * @param customerName nombre del cliente ({@code null} ⇒ venta a público general)
+     * @param amountPaid   importe pagado ({@code sale.amount_paid}); puede ser
+     *                     {@code null} en históricos. El front deriva recibido/cambio
+     *                     desde aquí para que el ticket reimpreso coincida con el
+     *                     original.
+     */
     public record SaleSummary(long id, String folio, BigDecimal total, String cashier,
-                              String branchName, OffsetDateTime createdAt) {
+                              String branchName, OffsetDateTime createdAt, String customerName,
+                              BigDecimal amountPaid) {
     }
 
     /** Renglón del ticket. */

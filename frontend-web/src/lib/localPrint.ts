@@ -12,7 +12,7 @@
  * Si el agente no responde, el enrutador (printRouter.ts) cae al método por navegador
  * (printTicketHtml). Este módulo nunca lanza: cualquier error de red/timeout -> false.
  */
-import type { TicketSettings, TicketData } from '@/components/Ticket';
+import { ticketCustomerLabel, type TicketSettings, type TicketData } from '@/components/Ticket';
 import type { VoucherData } from '@/components/Voucher';
 
 /** URL del agente local. Se usa 127.0.0.1 (no 'localhost') por consistencia de secure-context. */
@@ -153,6 +153,9 @@ export function mapSaleToAgent(settings: TicketSettings, d: TicketData): AgentTi
       metodoPago: d.methodLabel,
       recibido: d.received ?? d.total,
       cambio: d.change != null && d.change > 0 ? d.change : null,
+      // Cliente PRIMERO en filasExtra: única vía de imprimirlo por el agente sin tocar el
+      // contrato FEAT-001 (el agente imprime filasExtra tal cual, igual que el comprobante).
+      filasExtra: [{ etiqueta: 'Cliente', valor: ticketCustomerLabel(d.customerName) }],
     },
     footer: {
       mensajePie: settings.footerMessage,

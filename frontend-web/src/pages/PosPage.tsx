@@ -45,6 +45,7 @@ interface Product {
   unit: string;
   soldByWeight: boolean;
   imageUrl: string | null;
+  active: boolean;
   extras: ProductExtras;
 }
 
@@ -149,6 +150,9 @@ function priceForList(p: Product, listId: number): number {
 }
 
 const PRICELIST_KEY = 'mbs.priceListId';
+
+/** Umbral de "existencia baja" (giro panadería): el chip de existencia pasa a ámbar en <= 5 pza. */
+const LOW_STOCK = 5;
 
 /**
  * Punto de venta profesional (enterprise): cabecera con sucursal, cliente, vendedor y lista de
@@ -372,9 +376,12 @@ export function PosPage() {
     return products.filter((p) => {
       const matchCat = activeCategory === 'all' || p.categoryId === activeCategory;
       const matchText = q === '' || p.name.toLowerCase().includes(q);
-      // Giro panadería: solo panes CON existencia (> 0). No se vende lo que no hay en inventario.
-      const hasStock = !bakeryEnabled || (stockMap[p.id] ?? 0) > 0;
-      return matchCat && matchText && hasStock;
+      // Giro panadería: un artículo solo se OCULTA cuando está inactivo y además no tiene
+      // existencia. Un activo con 0 se muestra deshabilitado ("Agotado"); un inactivo con
+      // existencia sigue siendo vendible (hasta agotar su stock) y se marca como "Inactivo".
+      const stock = stockMap[p.id] ?? 0;
+      const hidden = bakeryEnabled && !p.active && stock <= 0;
+      return matchCat && matchText && !hidden;
     });
   }, [products, activeCategory, search, bakeryEnabled, stockMap]);
 
@@ -714,6 +721,7 @@ export function PosPage() {
         received: onCredit ? paid : received,
         change,
         isTest: testModeActive,
+        customerName: customer && customer.id > 0 ? customer.name : null,
       };
 
       let ticketData: TicketData;
@@ -938,9 +946,19 @@ export function PosPage() {
           {visibleProducts.map((p) => {
             const shownPrice = effectivePrice(p);
             const esEspecial = specialPrices[p.id] != null;
+            // Existencia (giro panadería): null fuera del giro. Un activo sin existencia queda
+            // DESHABILITADO ("Agotado", no clickable). "Bajo" (ámbar) para piezas <= LOW_STOCK.
+            const stock = bakeryEnabled ? (stockMap[p.id] ?? 0) : null;
+            const agotado = bakeryEnabled && p.active && stock! <= 0;
+            const low = stock != null && stock > 0 && stock <= LOW_STOCK && p.unit === 'pieza';
             return (
-              <motion.button key={p.id} className="pos-tile" onClick={() => setQtyModalProduct(p)} title={p.name}
-                variants={staggerItem} whileHover={{ y: -3 }} whileTap={{ scale: 0.96 }} transition={springSoft}>
+              <motion.button key={p.id} className={`pos-tile${agotado ? ' is-disabled' : ''}`}
+                onClick={() => { if (!agotado) setQtyModalProduct(p); }} title={p.name}
+                disabled={agotado}
+                variants={staggerItem}
+                whileHover={agotado ? undefined : { y: -3 }}
+                whileTap={agotado ? undefined : { scale: 0.96 }}
+                transition={springSoft}>
                 {esEspecial && <span className="pos-tile-special"><Tag size={11} /> Precio cliente</span>}
                 {!esEspecial && p.extras?.onSale && <span className="pos-tile-sale">Oferta</span>}
                 {p.imageUrl ? (
@@ -952,6 +970,14 @@ export function PosPage() {
                 )}
                 <span className="pos-tile-code">#{p.id}</span>
                 <span className="pos-tile-name">{p.name}</span>
+                {!p.active && <span className="pos-tile-inactive">Inactivo</span>}
+                {bakeryEnabled && (stock! > 0 ? (
+                  <span className={`pos-stock-chip ${low ? 'is-low' : 'is-ok'}`}>
+                    {p.unit === 'pieza' ? `${Math.floor(stock!)} pza` : `${stock} ${p.unit}`}
+                  </span>
+                ) : (
+                  <span className="pos-stock-chip is-empty">Agotado</span>
+                ))}
                 <span className="pos-tile-foot">
                   <span className="pos-tile-price">{money(shownPrice)}</span>
                   <span className="pos-tile-unit">{p.unit}</span>

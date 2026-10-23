@@ -1,9 +1,16 @@
 package com.mybusinesssilva.sales.application;
 
+import com.mybusinesssilva.inventory.application.InventoryService;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteSummary;
+import com.mybusinesssilva.inventory.bakery.domain.port.in.BakeryUseCase;
+import com.mybusinesssilva.inventory.domain.model.StockLevel;
+import com.mybusinesssilva.inventory.domain.port.out.InventoryRepository;
 import com.mybusinesssilva.platform.audit.AuditService;
 import com.mybusinesssilva.platform.tenancy.TenantContext;
 import com.mybusinesssilva.platform.util.DeviceDetector;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -25,10 +32,18 @@ public class TestModeService {
 
     private final JdbcClient jdbc;
     private final AuditService auditService;
+    private final InventoryService inventoryService;
+    private final InventoryRepository inventoryRepository;
+    private final BakeryUseCase bakeryUseCase;
 
-    public TestModeService(JdbcClient jdbc, AuditService auditService) {
+    public TestModeService(JdbcClient jdbc, AuditService auditService,
+            InventoryService inventoryService, InventoryRepository inventoryRepository,
+            BakeryUseCase bakeryUseCase) {
         this.jdbc = jdbc;
         this.auditService = auditService;
+        this.inventoryService = inventoryService;
+        this.inventoryRepository = inventoryRepository;
+        this.bakeryUseCase = bakeryUseCase;
     }
 
     /**
@@ -87,6 +102,80 @@ public class TestModeService {
     }
 
     /**
+     * CORTE PRUEBA→REAL: finaliza el modo prueba e inicia la operación real, de
+     * forma atómica, OWNER-only (gate en el controller) e idempotente. En una sola
+     * transacción:
+     * <ol>
+     * <li>Bloquea la fila del negocio ({@code FOR UPDATE}) y lee el estado previo.</li>
+     * <li>Cuenta (informativo) las ventas/cortes de práctica que se conservan
+     * (Opción B: nada se borra).</li>
+     * <li>Lee (sin tocar) el agregado de merma que se arrastra.</li>
+     * <li>GUARDA idempotente: si el modo prueba ya está OFF, no re-ejecuta el ajuste
+     * de inventario ni audita; devuelve un resumen con {@code executed=false}.</li>
+     * <li>Apaga el flag {@code test_mode} del negocio.</li>
+     * <li>Lleva a 0 cada existencia vendible (todas las sucursales) vía
+     * {@link InventoryService#adjust} — DEJANDO kardex por cada ajuste; nunca un
+     * UPDATE silencioso de {@code inventory_stock}.</li>
+     * <li>Audita el corte en {@code admin.audit_log_global} (quién/cuándo/dispositivo
+     * + resumen).</li>
+     * </ol>
+     * Cualquier excepción revierte TODO (flag, ajustes, kardex y auditoría).
+     *
+     * @param actor     quién ejecuta el corte (subject del token)
+     * @param userAgent encabezado {@code User-Agent} de la petición (nullable)
+     * @return el resumen del corte (histórico conservado, stock reiniciado, merma
+     *         arrastrada, bitácora refrescada)
+     */
+    @Transactional
+    public CutoverSummary cutover(String actor, String userAgent) {
+        BusinessRow business = loadBusinessForUpdate();
+        PracticeSummary practice = countPractice();
+        WasteSummary waste = bakeryUseCase.wasteSummary();
+
+        if (!business.testMode()) {
+            // Idempotencia: el modo prueba ya está OFF ⇒ no se re-ejecuta el ajuste a 0 ni
+            // se audita un nuevo corte. Resumen informativo con executed=false.
+            return new CutoverSummary(false, false, business.id(),
+                    practice, StockSummary.empty(), waste, recentChanges(business.id()));
+        }
+
+        // Transición true→false la realiza ESTA ejecución (serializada por FOR UPDATE).
+        jdbc.sql("UPDATE admin.business SET test_mode = false WHERE schema_name = :schema")
+                .param("schema", TenantContext.getTenantId())
+                .update();
+
+        // Lleva a 0 cada existencia vendible dejando kardex (ADJUSTMENT) por fila.
+        List<StockLevel> pending = inventoryRepository.stockWithBalance();
+        List<StockAdjustmentLine> lines = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+        for (StockLevel s : pending) {
+            inventoryService.adjust(s.productId(), s.branchId(), s.quantity().negate(),
+                    "Cierre de modo prueba: ajuste a 0 para iniciar operación real", actor);
+            lines.add(new StockAdjustmentLine(s.productId(), s.branchId(), s.quantity()));
+            total = total.add(s.quantity());
+        }
+        StockSummary stock = new StockSummary(lines.size(), total, lines);
+
+        // Auditoría del corte: 11 pares ⇒ Map.ofEntries (Map.of admite máximo 10).
+        auditService.recordGlobal(actor, "TEST_MODE_CUTOVER", "business",
+                String.valueOf(business.id()),
+                Map.ofEntries(
+                        Map.entry("actor", actor == null ? "" : actor),
+                        Map.entry("device", DeviceDetector.classify(userAgent)),
+                        Map.entry("userAgent", userAgent == null ? "" : userAgent),
+                        Map.entry("at", OffsetDateTime.now().toString()),
+                        Map.entry("salesKept", practice.salesKept()),
+                        Map.entry("cashCutsKept", practice.cashCutsKept()),
+                        Map.entry("stockRowsAdjusted", stock.rowsAdjusted()),
+                        Map.entry("stockUnitsRemoved", stock.totalUnitsRemoved().toPlainString()),
+                        Map.entry("wastePieces", waste.totalPieces().toPlainString()),
+                        Map.entry("wasteProducts", waste.productCount())));
+
+        return new CutoverSummary(true, false, business.id(),
+                practice, stock, waste, recentChanges(business.id()));
+    }
+
+    /**
      * Carga el negocio del tenant en curso ({@code id} + {@code test_mode}). Si no
      * hay tenant o no existe la fila, lanza error explícito (el endpoint es
      * OWNER-only sobre un tenant real).
@@ -109,6 +198,43 @@ public class TestModeService {
     }
 
     /**
+     * Igual que {@link #loadBusiness()} pero con {@code SELECT ... FOR UPDATE}: toma
+     * un lock de fila sobre {@code admin.business} del tenant para serializar cortes
+     * concurrentes (doble clic / doble request). Usado EXCLUSIVAMENTE por
+     * {@link #cutover}. No modifica {@link #loadBusiness()} (que no bloquea fila).
+     */
+    private BusinessRow loadBusinessForUpdate() {
+        String schema = TenantContext.getTenantId();
+        if (schema == null || schema.isBlank()) {
+            throw new IllegalStateException("No hay negocio en contexto para administrar el modo prueba.");
+        }
+        return jdbc.sql("""
+                SELECT id, COALESCE(test_mode, false) AS test_mode
+                FROM admin.business
+                WHERE schema_name = :schema
+                FOR UPDATE
+                """)
+                .param("schema", schema)
+                .query((rs, n) -> new BusinessRow(rs.getLong("id"), rs.getBoolean("test_mode")))
+                .optional()
+                .orElseThrow(() -> new IllegalStateException(
+                        "No se encontró el negocio del tenant en curso."));
+    }
+
+    /**
+     * Conteo informativo (Opción B) de la práctica que se conserva como histórico:
+     * ventas y cortes de caja marcados {@code is_test = true} del tenant en curso.
+     * Lectura pura sobre el schema del tenant; no recalcula inventario.
+     */
+    private PracticeSummary countPractice() {
+        long salesKept = jdbc.sql("SELECT COUNT(*) FROM sale WHERE is_test = true")
+                .query(Long.class).single();
+        long cashCutsKept = jdbc.sql("SELECT COUNT(*) FROM cash_cut WHERE is_test = true")
+                .query(Long.class).single();
+        return new PracticeSummary(salesKept, cashCutsKept);
+    }
+
+    /**
      * Últimos cambios de modo prueba del negocio (bitácora), leídos de
      * {@code admin.audit_log_global}. El dispositivo/UA viven en {@code details}
      * (JSONB); se extraen con el operador {@code ->>}.
@@ -120,7 +246,7 @@ public class TestModeService {
                        COALESCE(details ->> 'userAgent', '')      AS user_agent,
                        created_at
                 FROM admin.audit_log_global
-                WHERE action IN ('ENABLE_TEST_MODE', 'DISABLE_TEST_MODE')
+                WHERE action IN ('ENABLE_TEST_MODE', 'DISABLE_TEST_MODE', 'TEST_MODE_CUTOVER')
                   AND target_type = 'business'
                   AND target_id = :businessId
                 ORDER BY created_at DESC
@@ -161,5 +287,54 @@ public class TestModeService {
      */
     public record AuditEvent(String actor, String action, String device, String userAgent,
             OffsetDateTime at) {
+    }
+
+    /**
+     * Resumen del corte prueba→real devuelto al frontend.
+     *
+     * @param executed      {@code true} si ESTA llamada hizo la transición
+     *                      true→false (false si el modo prueba ya estaba OFF)
+     * @param active        estado final de {@code test_mode} (siempre false tras el
+     *                      corte)
+     * @param businessId    id del negocio
+     * @param practice      histórico de prueba conservado (conteos informativos)
+     * @param stock         stock vendible reiniciado a 0 (con kardex)
+     * @param waste         merma conservada (solo lectura, se arrastra)
+     * @param recentChanges bitácora refrescada (incluye el evento del corte)
+     */
+    public record CutoverSummary(
+            boolean executed,
+            boolean active,
+            long businessId,
+            PracticeSummary practice,
+            StockSummary stock,
+            WasteSummary waste,
+            List<AuditEvent> recentChanges) {
+    }
+
+    /** Histórico de prueba conservado (Opción B): nada se borra. */
+    public record PracticeSummary(long salesKept, long cashCutsKept) {
+    }
+
+    /**
+     * Stock vendible reiniciado por el corte.
+     *
+     * @param rowsAdjusted      número de filas de {@code inventory_stock} llevadas a 0
+     * @param totalUnitsRemoved Σ de las cantidades previas retiradas
+     * @param lines             detalle por artículo/sucursal
+     */
+    public record StockSummary(
+            int rowsAdjusted,
+            BigDecimal totalUnitsRemoved,
+            List<StockAdjustmentLine> lines) {
+
+        /** Resumen vacío (sin ajustes), para la rama idempotente del corte. */
+        public static StockSummary empty() {
+            return new StockSummary(0, BigDecimal.ZERO, List.of());
+        }
+    }
+
+    /** Un ajuste de stock a 0: producto, sucursal y la cantidad previa retirada. */
+    public record StockAdjustmentLine(long productId, long branchId, BigDecimal previousQuantity) {
     }
 }

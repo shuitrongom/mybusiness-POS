@@ -43,4 +43,11 @@ public interface InventoryRepository {
 
     /** Existencias que están en o por debajo de su stock mínimo (alertas). */
     List<StockLevel> findBelowMinimum();
+
+    /**
+     * Existencias con saldo distinto de cero ({@code quantity <> 0}) en TODAS las
+     * sucursales del tenant en curso. Lectura pura usada por el corte prueba→real
+     * para enumerar qué filas hay que llevar a 0 dejando kardex.
+     */
+    List<StockLevel> stockWithBalance();
 }

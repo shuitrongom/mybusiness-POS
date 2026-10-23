@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import {
   FlaskConical, ShieldAlert, Play, Square, Monitor, Smartphone, HelpCircle, History,
+  CheckCircle2, Archive, PackageX, Recycle, X, AlertTriangle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
@@ -26,6 +27,25 @@ interface TestModeStatus {
   recentChanges: AuditEvent[];
 }
 
+interface CutoverSummary {
+  executed: boolean;
+  active: boolean;
+  businessId: number;
+  practice: { salesKept: number; cashCutsKept: number };
+  stock: {
+    rowsAdjusted: number;
+    totalUnitsRemoved: number;
+    lines: { productId: number; branchId: number; previousQuantity: number }[];
+  };
+  waste: { totalPieces: number; productCount: number };
+  recentChanges: AuditEvent[];
+}
+
+const fmtNum = (n: number | null | undefined): string => {
+  if (n == null || Number.isNaN(Number(n))) return '0';
+  return Number(n).toLocaleString('es-MX', { maximumFractionDigits: 2 });
+};
+
 const fmtDateTime = (iso: string | null): string => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -46,6 +66,7 @@ export function TestModeSettingsPage() {
   const owner = isOwner(decodeToken(token));
   const queryClient = useQueryClient();
   const [confirmOff, setConfirmOff] = useState(false);
+  const [summary, setSummary] = useState<CutoverSummary | null>(null);
 
   const status = useQuery({
     queryKey: ['settings', 'test-mode'],
@@ -69,6 +90,26 @@ export function TestModeSettingsPage() {
       setConfirmOff(false);
     },
     onError: () => toast.error('No se pudo cambiar el modo prueba', 'Inténtalo de nuevo.'),
+  });
+
+  // CORTE PRUEBA→REAL: finaliza el modo prueba (acción, sin body). Conserva el
+  // histórico de prueba, reinicia el stock vendible a 0 (con kardex) y arrastra la
+  // merma. Al terminar baja el banner del POS (invalida 'active') y abre el modal.
+  const cutover = useMutation({
+    mutationFn: async () =>
+      (await api.post<CutoverSummary>('/settings/test-mode/cutover')).data,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['settings', 'test-mode'], {
+        active: data.active,
+        businessId: data.businessId,
+        recentChanges: data.recentChanges,
+      });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'test-mode'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'test-mode', 'active'] });
+      setSummary(data);
+      setConfirmOff(false);
+    },
+    onError: () => toast.error('No se pudo finalizar el modo prueba', 'Inténtalo de nuevo.'),
   });
 
   // Gate de render: solo el dueño. El backend lo refuerza con 403.
@@ -123,24 +164,27 @@ export function TestModeSettingsPage() {
         {active ? (
           confirmOff ? (
             <div className="tm-confirm">
-              <strong>¿Finalizar el modo prueba?</strong>
-              <p>
-                A partir de ahora las ventas serán <b>REALES</b>. Las ventas de prueba se conservan
-                como histórico (no se borran). Esta acción queda registrada en la bitácora.
-              </p>
+              <strong>¿Finalizar el modo prueba e iniciar operación real?</strong>
+              <p>Esto hará lo siguiente, y <b>no se puede deshacer</b>:</p>
+              <ul className="tm-confirm-list">
+                <li>Las ventas, cortes y movimientos de práctica <b>se conservan</b> como histórico consultable (no se borran).</li>
+                <li>El <b>inventario vendible se reinicia a 0</b> en <b>todas tus sucursales</b>. Tendrás que registrar tu producción real desde Inventario → Entradas para volver a tener existencia.</li>
+                <li>La <b>merma actual se conserva</b> y seguirá disponible desde Salidas.</li>
+                <li>Queda registrado en la bitácora (quién, cuándo y desde qué dispositivo).</li>
+              </ul>
               <div className="tm-confirm-actions">
-                <button className="btn-ghost" onClick={() => setConfirmOff(false)} disabled={mutate.isPending}>
+                <button className="btn-ghost" onClick={() => setConfirmOff(false)} disabled={cutover.isPending}>
                   Cancelar
                 </button>
-                <motion.button className="btn-accent tm-danger" disabled={mutate.isPending}
-                  onClick={() => mutate.mutate(false)}
+                <motion.button className="btn-accent tm-danger" disabled={cutover.isPending}
+                  onClick={() => cutover.mutate()}
                   whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
-                  <Square size={16} /> {mutate.isPending ? 'Finalizando…' : 'Sí, finalizar modo prueba'}
+                  <Square size={16} /> {cutover.isPending ? 'Finalizando…' : 'Sí, finalizar modo prueba'}
                 </motion.button>
               </div>
             </div>
           ) : (
-            <motion.button className="btn-accent tm-danger" disabled={mutate.isPending}
+            <motion.button className="btn-accent tm-danger" disabled={cutover.isPending}
               onClick={() => setConfirmOff(true)}
               whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
               <Square size={16} /> Finalizar modo prueba
@@ -172,12 +216,18 @@ export function TestModeSettingsPage() {
           <div className="tm-log">
             {changes.map((e, i) => {
               const enabled = e.action === 'ENABLE_TEST_MODE';
+              const isCutover = e.action === 'TEST_MODE_CUTOVER';
               const mobile = e.device === 'mobile';
+              const label = enabled
+                ? 'Inició prueba'
+                : isCutover
+                  ? 'Finalizó modo prueba (corte)'
+                  : 'Finalizó prueba';
               return (
                 <div className="tm-log-row" key={i}>
                   <span className={`tm-log-action ${enabled ? 'is-on' : 'is-off'}`}>
                     {enabled ? <Play size={13} /> : <Square size={13} />}
-                    {enabled ? 'Inició prueba' : 'Finalizó prueba'}
+                    {label}
                   </span>
                   <span className="tm-log-actor">{e.actor || '—'}</span>
                   <span className={`tm-chip-device ${mobile ? 'is-mobile' : 'is-desktop'}`}>
@@ -195,6 +245,101 @@ export function TestModeSettingsPage() {
           <HelpCircle size={13} /> El dispositivo se detecta del navegador que hizo el cambio.
         </p>
       </motion.div>
+
+      {summary && (
+        <div className="tm-modal-overlay" role="dialog" aria-modal="true" onClick={() => setSummary(null)}>
+          <motion.div className="tm-modal" onClick={(ev) => ev.stopPropagation()}
+            variants={fadeInUp} initial="hidden" animate="visible">
+            <button className="tm-modal-x" aria-label="Cerrar" onClick={() => setSummary(null)}>
+              <X size={18} />
+            </button>
+
+            {summary.executed ? (
+              <>
+                <span className="tm-state-chip is-done">
+                  <CheckCircle2 size={15} /> Operación real iniciada
+                </span>
+                <p className="tm-modal-sub">El modo prueba quedó finalizado. Desde ahora las ventas y cortes son reales.</p>
+
+                <div className="tm-summary-cards">
+                  <div className="tm-summary-card">
+                    <div className="tm-summary-head">
+                      <span className="tm-summary-icon violet"><Archive size={16} /></span>
+                      <strong>Histórico de prueba conservado</strong>
+                    </div>
+                    <div className="tm-summary-chips">
+                      <span className="tm-chip violet num">{fmtNum(summary.practice.salesKept)} ventas</span>
+                      <span className="tm-chip violet num">{fmtNum(summary.practice.cashCutsKept)} cortes</span>
+                    </div>
+                    <p className="tm-summary-note">Nada se borró: tu práctica queda consultable como histórico.</p>
+                  </div>
+
+                  <div className="tm-summary-card">
+                    <div className="tm-summary-head">
+                      <span className="tm-summary-icon amber"><PackageX size={16} /></span>
+                      <strong>Inventario reiniciado</strong>
+                    </div>
+                    <div className="tm-summary-chips">
+                      <span className="tm-chip amber num">{fmtNum(summary.stock.rowsAdjusted)} artículos a 0</span>
+                      <span className="tm-chip amber num">{fmtNum(summary.stock.totalUnitsRemoved)} piezas retiradas</span>
+                    </div>
+                    {summary.stock.lines.length > 0 && (
+                      <div className="tm-lines">
+                        <div className="tm-lines-head">
+                          <span>Artículo</span>
+                          <span>Sucursal</span>
+                          <span className="tm-lines-num">Cantidad previa</span>
+                        </div>
+                        {summary.stock.lines.slice(0, 8).map((l) => (
+                          <div className="tm-lines-row" key={`${l.productId}-${l.branchId}`}>
+                            <span className="num">#{l.productId}</span>
+                            <span className="num">#{l.branchId}</span>
+                            <span className="tm-lines-num num">{fmtNum(l.previousQuantity)}</span>
+                          </div>
+                        ))}
+                        {summary.stock.lines.length > 8 && (
+                          <p className="tm-summary-note">y {fmtNum(summary.stock.lines.length - 8)} más…</p>
+                        )}
+                      </div>
+                    )}
+                    <p className="tm-summary-note">Registra tu producción real desde Inventario → Entradas.</p>
+                  </div>
+
+                  <div className="tm-summary-card">
+                    <div className="tm-summary-head">
+                      <span className="tm-summary-icon green"><Recycle size={16} /></span>
+                      <strong>Merma conservada</strong>
+                    </div>
+                    <div className="tm-summary-chips">
+                      <span className="tm-chip green num">{fmtNum(summary.waste.totalPieces)} piezas</span>
+                      <span className="tm-chip green num">{fmtNum(summary.waste.productCount)} artículos</span>
+                    </div>
+                    <p className="tm-summary-note">Tu merma se mantiene; regístrala o repártela desde Salidas.</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="tm-state-chip is-done">
+                  <CheckCircle2 size={15} /> Ya estaba en operación real
+                </span>
+                <div className="tm-modal-empty">
+                  <InfoBanner icon={<AlertTriangle size={18} />} tone="neutral" title="No había corte pendiente">
+                    El modo prueba ya estaba finalizado, así que no se modificó el inventario ni la bitácora.
+                  </InfoBanner>
+                </div>
+              </>
+            )}
+
+            <div className="tm-modal-actions">
+              <motion.button className="btn-accent" onClick={() => setSummary(null)}
+                whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+                Entendido
+              </motion.button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

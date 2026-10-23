@@ -62,6 +62,17 @@ interface Category {
   name: string;
 }
 
+/**
+ * Detalle del ProblemDetail 409 PRODUCT_HAS_STOCK que devuelve el backend al intentar desactivar
+ * un producto que aún tiene existencia (en cualquier sucursal). El front lee title/stock/nombre
+ * para mostrar el modal de bloqueo con el conteo real.
+ */
+interface ProductHasStock {
+  title?: string;
+  stock?: number;
+  productName?: string;
+}
+
 const money = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
 
@@ -208,6 +219,9 @@ export function ProductsPage() {
   const isBakery = hasModule(decodeToken(useSession((s) => s.token)), 'bakery');
   const [query, setQuery] = useState('');
   const [deleting, setDeleting] = useState<Product | null>(null);
+  // Modal de BLOQUEO al intentar desactivar un producto con existencia (409 PRODUCT_HAS_STOCK):
+  // guarda el nombre y el conteo real que reporta el backend. null = cerrado.
+  const [blocked, setBlocked] = useState<{ name: string; stock: number } | null>(null);
 
   // Editor: null = cerrado; { id: null } = alta; { id } = edición.
   const [editorOpen, setEditorOpen] = useState(false);
@@ -252,6 +266,33 @@ export function ProductsPage() {
       else toast.info('Producto desactivado', 'Tiene historial registrado (ventas, movimientos de inventario, conteos o producción), así que se ocultó en vez de borrarse para conservar la trazabilidad.');
     },
     onError: () => toast.error('No se pudo eliminar el producto'),
+  });
+
+  // Activar / desactivar un producto desde el switch de la fila. Activar siempre pasa; desactivar
+  // un producto con existencia lo bloquea el backend con 409 PRODUCT_HAS_STOCK → abrimos un modal
+  // premium con el conteo real. La lista se re-sincroniza por invalidación (revierte el switch
+  // visualmente si el backend no aplicó el cambio).
+  const toggleActive = useMutation({
+    mutationFn: async ({ id, active }: { id: number; active: boolean }) =>
+      (await api.patch<Product>(`/catalog/products/${id}/active`, { active })).data,
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success(variables.active ? 'Producto activado' : 'Producto desactivado');
+    },
+    onError: (err: unknown, variables) => {
+      const detail = (err as { response?: { status?: number; data?: ProductHasStock } }).response;
+      if (detail?.status === 409 && detail.data?.title === 'PRODUCT_HAS_STOCK') {
+        const prod = (products.data ?? []).find((p) => p.id === variables.id);
+        setBlocked({
+          name: detail.data.productName ?? prod?.name ?? 'Este producto',
+          stock: detail.data.stock ?? 0,
+        });
+      } else {
+        toast.error('No se pudo actualizar el producto', 'Inténtalo de nuevo.');
+      }
+      // Re-sincroniza el switch con el estado real del servidor (revierte el cambio visual).
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
   });
 
   function openCreate() {
@@ -329,6 +370,7 @@ export function ProductsPage() {
             <span>Precio</span>
             <span>IVA</span>
             <span>Código</span>
+            <span style={{ textAlign: 'center' }}>Estado</span>
             <span style={{ textAlign: 'right' }}>Acciones</span>
           </div>
           <motion.div className="plist-body" variants={staggerContainer} initial="hidden" animate="visible">
@@ -366,6 +408,17 @@ export function ProductsPage() {
                   {Math.round((p.extras?.taxRate ?? 0) * 100)}%
                 </span>
                 <span className="plist-code">{p.barcodes?.[0] ?? '—'}</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={p.active}
+                  aria-label={p.active ? `Desactivar ${p.name}` : `Activar ${p.name}`}
+                  className={`plist-switch ${p.active ? 'is-on' : ''}`}
+                  disabled={toggleActive.isPending}
+                  onClick={() => toggleActive.mutate({ id: p.id, active: !p.active })}
+                >
+                  <span className="plist-switch-knob" />
+                </button>
                 <div className="plist-actions">
                   <button type="button" className="plist-act" title="Editar" onClick={() => openEdit(p)}>
                     <Pencil size={16} strokeWidth={2.25} />
@@ -664,6 +717,35 @@ export function ProductsPage() {
                   onClick={() => remove.mutate(deleting)}
                   whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
                   {remove.isPending ? 'Eliminando…' : 'Sí, eliminar'}
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Bloqueo al desactivar un producto con existencia (409 PRODUCT_HAS_STOCK). No se opera
+          "en contra" del inventario: primero se agota o se ajusta a 0, luego se desactiva. */}
+      <AnimatePresence>
+        {blocked && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setBlocked(null)}>
+            <motion.div className="modal-card modal-card-sm" onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }} transition={{ duration: 0.18 }}>
+              <div className="modal-head">
+                <h3>No puedes desactivar este producto</h3>
+                <button className="icon-btn" onClick={() => setBlocked(null)}><X size={18} /></button>
+              </div>
+              <p className="modal-text">
+                <strong>{blocked.name}</strong> tiene <strong>{blocked.stock}</strong>{' '}
+                {blocked.stock === 1 ? 'pieza' : 'piezas'} en existencia. Agótalo en el punto de
+                venta o ajústalo a 0 en inventario antes de desactivarlo.
+              </p>
+              <div className="modal-actions">
+                <motion.button className="btn-accent" onClick={() => setBlocked(null)}
+                  whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+                  Entendido
                 </motion.button>
               </div>
             </motion.div>

@@ -4,6 +4,7 @@ import { Boxes, Search, Calendar, DollarSign, Layers, Trash2, ShoppingBag, Packa
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp, staggerContainer, staggerItem } from '@/lib/motion';
+import { useCashierBranch } from '@/lib/cashierBranch';
 import { InfoBanner } from '@/components/InfoBanner';
 import '@/pages/dashboard.css';
 import '@/pages/inventory.css';
@@ -60,6 +61,7 @@ interface DayRow {
   remaining: number;
   value: number;
   initialStock: number | null;
+  active: boolean;
 }
 
 /**
@@ -93,8 +95,12 @@ function todayIso(): string {
  */
 export function BakeryDayStockPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchId, setBranchId] = useState<number>(0);
-  const [date, setDate] = useState<string>(todayIso());
+  // Sucursal del cajero desde la FUENTE ÚNICA (turno abierto > última usada > primera activa),
+  // para que Existencias del día lea el MISMO almacén que el POS y el resto de inventario.
+  const { branchId, setBranchId } = useCashierBranch(branches);
+  // Fecha vacía = "hoy" según el SERVIDOR (zona México). Al estar vacía NO se manda el parámetro
+  // date y el backend resuelve el día con LocalDate.now(México), evitando el desfase del cliente.
+  const [date, setDate] = useState<string>('');
   const [rows, setRows] = useState<DayRow[]>([]);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -105,7 +111,7 @@ export function BakeryDayStockPage() {
       .then((r) => {
         const active = r.data.filter((b) => b.active);
         setBranches(active);
-        setBranchId(active[0]?.id ?? 0);
+        // La sucursal la resuelve useCashierBranch (fuente única) al cambiar esta lista.
       })
       .catch(() => toast.error('No se pudieron cargar las sucursales'));
   }, []);
@@ -114,7 +120,11 @@ export function BakeryDayStockPage() {
     if (!branch) return;
     setBusy(true);
     setExpanded(null);
-    api.get<DayRow[]>('/bakery/stock/day', { params: { branchId: branch, date: day } })
+    // El día "hoy" lo gobierna el SERVIDOR: si no hay fecha elegida, se omite el parámetro date
+    // para que el backend use su propio LocalDate.now(México). Solo se envía al elegir un día.
+    const params: Record<string, string | number> = { branchId: branch };
+    if (day) params.date = day;
+    api.get<DayRow[]>('/bakery/stock/day', { params })
       .then((r) => setRows(r.data))
       .catch(() => { setRows([]); toast.error('No se pudieron cargar las existencias del día'); })
       .finally(() => setBusy(false));
@@ -200,7 +210,7 @@ export function BakeryDayStockPage() {
           </div>
           <label className="field" style={{ margin: 0 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Calendar size={14} /> Día</span>
-            <input type="date" value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} />
+            <input type="date" value={date || todayIso()} max={todayIso()} onChange={(e) => setDate(e.target.value)} />
           </label>
         </div>
 
@@ -259,6 +269,12 @@ export function BakeryDayStockPage() {
                           <div style={{ minWidth: 0 }}>
                             <div className="iday-name">
                               <span>{r.productName}</span>
+                              {!r.active && <span className="iday-badge-off">Inactivo</span>}
+                              {!r.active && r.remaining === 0 && r.wasteBalance > 0 && (
+                                <span className="iday-waste-chip" title="Visible por saldo de merma">
+                                  merma {num(r.wasteBalance)}
+                                </span>
+                              )}
                               <ChevronDown size={14} className={`iday-chevron ${isOpen ? 'is-open' : ''}`} />
                             </div>
                             <div className="iday-unit">{r.unit || 'pieza'}</div>

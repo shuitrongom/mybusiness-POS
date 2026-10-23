@@ -2,6 +2,7 @@ package com.mybusinesssilva.inventory.bakery.domain.port.out;
 
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryEntryStatus;
 import com.mybusinesssilva.inventory.bakery.domain.model.BakeryProduction;
+import com.mybusinesssilva.inventory.bakery.domain.model.WasteSummary;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -75,6 +76,13 @@ public interface BakeryRepository {
 
     /** Historial de movimientos de merma por rango (todos los orígenes). */
     List<Map<String, Object>> listWasteMovements(LocalDate from, LocalDate to, Long productId);
+
+    /**
+     * Agregado de SOLO LECTURA de la merma vendible del tenant (todas las
+     * sucursales): total de piezas y número de artículos ACTIVOS con existencia de
+     * merma &gt; 0. No escribe nada (el corte conserva la merma intacta).
+     */
+    WasteSummary wasteSummary();
 
     /**
      * Historial UNIFICADO de salidas de panadería para "Salidas recientes",
