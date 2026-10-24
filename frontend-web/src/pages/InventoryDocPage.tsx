@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowDownToLine, ArrowUpFromLine, Plus, Minus, Trash2, Check, PackageOpen, TriangleAlert } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Plus, Minus, Trash2, Check, PackageOpen, TriangleAlert, Calendar } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { fadeInUp } from '@/lib/motion';
 import { useSession } from '@/store/session';
 import { decodeToken, hasModule } from '@/lib/jwt';
-import { ProductPicker } from '@/components/ProductPicker';
+import { ProductPicker, type PickerProduct } from '@/components/ProductPicker';
 import { InfoBanner } from '@/components/InfoBanner';
 import { resolveCashierBranchId } from '@/lib/cashierBranch';
 import '@/pages/dashboard.css';
@@ -17,6 +17,23 @@ import '@/pages/purchases.css';
 
 const money = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
+
+// Fecha de HOY como YYYY-MM-DD (día local). Copiado LITERAL de BakeryDayStockPage para que el
+// selector de día del historial se comporte igual que el de Existencias del día; se deja duplicado
+// a propósito (no extraer a util) para no acoplar dos pantallas por un helper trivial.
+function todayIso(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+// Etiqueta legible de un día YYYY-MM-DD (ej. "24/10/2026") para los estados vacíos de días pasados.
+function dayLabel(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
 
 // Fecha + hora local (ej. "16/10/2026 · 09:52 a.m."). Usa createdAt (instante exacto del registro).
 function dateTime(iso: string | null): { date: string; time: string } {
@@ -46,7 +63,10 @@ function avatarInitials(name: string): string {
 interface Concept { id: number; name: string; direction: string; }
 interface Product { id: number; name: string; price: number; cost: number; unit: string; }
 interface Branch { id: number; name: string; active: boolean; }
-interface Line { productId: number; description: string; quantity: number; unitCost: number; entryPrice: number; unit: string; }
+// Origen del renglón: pan del día (stock normal) o merma. Solo el reparto mixto combina ambos; en
+// los demás modos el renglón nace con un source constante ('NORMAL').
+type LineSource = 'NORMAL' | 'WASTE';
+interface Line { productId: number; source: LineSource; description: string; quantity: number; unitCost: number; entryPrice: number; unit: string; }
 interface DocRow {
   id: number; folio: string; conceptName: string | null; branchName: string | null;
   totalQty: number; totalValue: number; createdBy: string | null; createdAt: string;
@@ -184,7 +204,12 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
   // a merma (MANUAL) o sacar merma hacia un repartidor (REPARTO). 'NORMAL' = salida genérica.
   type ExitMode = 'NORMAL' | 'MANUAL' | 'REPARTO';
   const [exitMode, setExitMode] = useState<ExitMode>('NORMAL');
-  const isWasteExit = !isIn && isBakery && (exitMode === 'MANUAL' || exitMode === 'REPARTO');
+  // Solo MANUAL (merma pura) es salida SIN columna de dinero. REPARTO ya NO es isWasteExit: muestra
+  // precio bloqueado por origen y particiona el submit por renglón (Decisión 4-I).
+  const isWasteExit = !isIn && isBakery && exitMode === 'MANUAL';
+  // Precio BLOQUEADO (lo manda la ficha del artículo, no la operación): producción, salida normal
+  // de pan y reparto. Definición única compartida por las Decisiones 2-C y 4-I.
+  const fixedPrice = isProduction || (!isIn && isBakery && (exitMode === 'NORMAL' || exitMode === 'REPARTO'));
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -197,13 +222,17 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
   // Historial UNIFICADO de salidas de panadería (salida normal + merma MANUAL/REPARTO).
   const [exits, setExits] = useState<ExitRow[]>([]);
   const [busy, setBusy] = useState(false);
-  // Existencia EN MERMA por producto (para el modo reparto): clave productId → cantidad disponible.
-  const [wasteStocks, setWasteStocks] = useState<Record<number, number>>({});
-  // Productos CON EXISTENCIA para el selector de Salidas (solo lo que tiene inventario).
-  const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
-  // Existencia disponible por artículo (según el modo: stock normal o merma), para mostrarla y
-  // bloquear que se saque más de lo que hay. Clave productId → cantidad disponible.
-  const [availableQty, setAvailableQty] = useState<Record<number, number>>({});
+  // Día del historial (default HOY). El selector permite ver días anteriores; loadHistory manda
+  // from=to=day a /productions y /exits para que solo se vean los movimientos de ESE día.
+  const [day, setDay] = useState<string>(todayIso());
+  // Productos CON EXISTENCIA para el selector de Salidas (solo lo que tiene inventario). En reparto
+  // mixto, cada entrada lleva su origen (source) y su precio por origen.
+  const [availableProducts, setAvailableProducts] = useState<PickerProduct[]>([]);
+  // Existencia disponible por artículo y ORIGEN, con clave compuesta `${source}:${productId}`
+  // (availByKey["NORMAL:12"] = stock normal; availByKey["WASTE:12"] = merma). Fuente ÚNICA de
+  // disponible en todos los modos (un solo mapa, sin estados por-origen separados ni fetch
+  // redundante por renglón).
+  const [availByKey, setAvailByKey] = useState<Record<string, number>>({});
   // Estado de la carga del selector de Salidas: distingue "no hay existencia" (vacío legítimo)
   // de "la carga falló" (error con reintento). Antes el .catch dejaba la lista vacía y ambos
   // casos se veían igual.
@@ -222,13 +251,13 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
       // Guard igual que Salidas: no llamar hasta resolver branchId; la lista queda vacía
       // (estado-vacío premium) mientras tanto. Homologado con listUnifiedExits (NIT-4).
       if (!branchId) { setProdHistory([]); return; }
-      api.get<ProductionRow[]>('/bakery/productions', { params: { branchId, limit: 15 } })
+      api.get<ProductionRow[]>('/bakery/productions', { params: { branchId, from: day, to: day, limit: 200 } })
         .then((r) => setProdHistory(r.data)).catch(() => setProdHistory([]));
       return;
     }
     if (isBakeryExit) {
       if (!branchId) { setExits([]); return; }
-      api.get<ExitRow[]>('/bakery/exits', { params: { branchId, limit: 15 } })
+      api.get<ExitRow[]>('/bakery/exits', { params: { branchId, from: day, to: day, limit: 200 } })
         .then((r) => setExits(r.data)).catch(() => setExits([]));
       return;
     }
@@ -265,52 +294,63 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
   useEffect(() => {
     if ((isBakeryExit || isProduction) && branchId) loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBakeryExit, isProduction, branchId]);
+  }, [isBakeryExit, isProduction, branchId, day]);
 
-  // En modo REPARTO, carga la existencia de merma de cada producto del carrito para mostrar cuánto
-  // hay disponible y evitar sobre-repartir. Se recalcula al cambiar renglones, sucursal o modo.
+  // SALIDAS en giro panadería: el selector solo muestra panes CON EXISTENCIA. En REPARTO carga
+  // AMBOS inventarios (pan del día + merma) etiquetados por origen; en los demás modos, una sola
+  // lista de stock normal. availByKey es la fuente ÚNICA de disponible por clave compuesta.
   useEffect(() => {
-    if (exitMode !== 'REPARTO' || !branchId || lines.length === 0) { setWasteStocks({}); return; }
+    if (isIn || !isBakery || !branchId) { setAvailableProducts([]); setAvailByKey({}); setAvailableError(false); return; }
     let cancelled = false;
-    Promise.all(lines.map((l) =>
-      api.get<{ quantity: number }>('/bakery/waste/stock', { params: { productId: l.productId, branchId } })
-        .then((r) => [l.productId, r.data.quantity] as const)
-        .catch(() => [l.productId, 0] as const)))
-      .then((pairs) => { if (!cancelled) setWasteStocks(Object.fromEntries(pairs)); });
-    return () => { cancelled = true; };
-  }, [exitMode, branchId, lines]);
-
-  // SALIDAS en giro panadería: el selector solo muestra panes CON EXISTENCIA (reparto = merma;
-  // merma manual / salida normal = stock normal). Así el cajero no elige panes sin inventario.
-  useEffect(() => {
-    if (isIn || !isBakery || !branchId) { setAvailableProducts([]); setAvailableError(false); return; }
-    const kind = exitMode === 'REPARTO' ? 'waste' : 'normal';
-    let cancelled = false;
-    api.get<{ productId: number; productName: string; unit: string | null; quantity: number }[]>(
-      '/bakery/stock/available', { params: { branchId, kind } })
-      .then((r) => {
-        if (cancelled) return;
-        setAvailableProducts(r.data.map((x) => ({
-          id: x.productId, name: x.productName, price: 0, cost: 0, unit: x.unit || 'pz',
-        })));
-        const qty: Record<number, number> = {};
-        for (const x of r.data) qty[x.productId] = Number(x.quantity) || 0;
-        setAvailableQty(qty);
-        setAvailableError(false);
-      })
-      // La carga falló: se marca el error para mostrar un aviso con reintento, en vez de dejar
-      // el selector vacío como si no hubiera existencia.
-      .catch(() => { if (!cancelled) { setAvailableProducts([]); setAvailableQty({}); setAvailableError(true); } });
+    type AvailRow = { productId: number; productName: string; unit: string | null; quantity: number; salePrice: number };
+    if (exitMode === 'REPARTO') {
+      Promise.all([
+        api.get<AvailRow[]>('/bakery/stock/available', { params: { branchId, kind: 'normal' } }),
+        api.get<AvailRow[]>('/bakery/stock/available', { params: { branchId, kind: 'waste' } }),
+      ])
+        .then(([norm, wst]) => {
+          if (cancelled) return;
+          const list: PickerProduct[] = [
+            ...norm.data.map((x) => ({ id: x.productId, name: x.productName, unit: x.unit || 'pz', price: Number(x.salePrice) || 0, cost: 0, source: 'NORMAL' as const })),
+            ...wst.data.map((x) => ({ id: x.productId, name: x.productName, unit: x.unit || 'pz', price: Number(x.salePrice) || 0, cost: 0, source: 'WASTE' as const })),
+          ];
+          setAvailableProducts(list);
+          const avail: Record<string, number> = {};
+          for (const x of norm.data) avail[`NORMAL:${x.productId}`] = Number(x.quantity) || 0;
+          for (const x of wst.data) avail[`WASTE:${x.productId}`] = Number(x.quantity) || 0;
+          setAvailByKey(avail);
+          setAvailableError(false);
+        })
+        .catch(() => { if (!cancelled) { setAvailableProducts([]); setAvailByKey({}); setAvailableError(true); } });
+    } else {
+      api.get<AvailRow[]>('/bakery/stock/available', { params: { branchId, kind: 'normal' } })
+        .then((r) => {
+          if (cancelled) return;
+          setAvailableProducts(r.data.map((x) => ({
+            id: x.productId, name: x.productName, unit: x.unit || 'pz', price: Number(x.salePrice) || 0, cost: 0, source: 'NORMAL' as const,
+          })));
+          const avail: Record<string, number> = {};
+          for (const x of r.data) avail[`NORMAL:${x.productId}`] = Number(x.quantity) || 0;
+          setAvailByKey(avail);
+          setAvailableError(false);
+        })
+        // La carga falló: se marca el error para mostrar un aviso con reintento, en vez de dejar
+        // el selector vacío como si no hubiera existencia.
+        .catch(() => { if (!cancelled) { setAvailableProducts([]); setAvailByKey({}); setAvailableError(true); } });
+    }
     return () => { cancelled = true; };
   }, [isIn, isBakery, branchId, exitMode, availableReload]);
 
-  const selectedIds = useMemo(() => new Set(lines.map((l) => l.productId)), [lines]);
+  // Claves compuestas de los renglones ya agregados (un mismo pan puede estar por cada origen).
+  const selectedIds = useMemo(() => new Set(lines.map((l) => `${l.source}:${l.productId}`)), [lines]);
 
-  const add = (p: { id: number; name: string; unit?: string | null; price?: number | null; cost?: number | null }) => {
-    setLines((prev) => prev.some((l) => l.productId === p.id) ? prev
+  const add = (p: PickerProduct) => {
+    const source: LineSource = p.source ?? 'NORMAL';
+    const key = `${source}:${p.id}`;
+    setLines((prev) => prev.some((l) => `${l.source}:${l.productId}` === key) ? prev
       // Nace sin cantidad (0 = placeholder "1"); el cajero la captura. Precio de venta prellenado
-      // desde el producto; costo unitario desde su costo.
-      : [...prev, { productId: p.id, description: p.name, quantity: 0, unitCost: p.cost || 0, entryPrice: p.price || 0, unit: p.unit || '' }]);
+      // desde el producto (por origen); costo unitario desde su costo.
+      : [...prev, { productId: p.id, source, description: p.name, quantity: 0, unitCost: p.cost || 0, entryPrice: p.price || 0, unit: p.unit || '' }]);
   };
 
   // Lista para el selector: en SALIDAS de panadería, solo panes con existencia; en el resto, catálogo.
@@ -319,7 +359,7 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
   const removeLine = (i: number) => setLines((prev) => prev.filter((_, idx) => idx !== i));
 
   const totalUnits = lines.reduce((s, l) => s + l.quantity, 0);
-  const totalValue = lines.reduce((s, l) => s + l.quantity * (isProduction ? l.entryPrice : l.unitCost), 0);
+  const totalValue = lines.reduce((s, l) => s + l.quantity * (fixedPrice ? l.entryPrice : l.unitCost), 0);
 
   const submit = async () => {
     if (lines.length === 0) { toast.info('Agrega al menos un producto'); return; }
@@ -340,32 +380,51 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
     setBusy(true);
     try {
       // No se saca más de lo disponible (segunda barrera además del backend). Avisa cuál se pasa.
+      // El disponible se lee SIEMPRE por clave compuesta (origen + producto) del mapa único.
       if (!isIn && isBakery) {
         const over = lines.find((l) => {
-          const a = exitMode === 'REPARTO' ? (wasteStocks[l.productId] ?? availableQty[l.productId]) : availableQty[l.productId];
+          const a = availByKey[`${l.source}:${l.productId}`];
           return a != null && l.quantity > a;
         });
         if (over) {
-          const a = exitMode === 'REPARTO' ? (wasteStocks[over.productId] ?? availableQty[over.productId]) : availableQty[over.productId];
+          const a = availByKey[`${over.source}:${over.productId}`];
           toast.error('Cantidad mayor a la disponible',
-            `De «${over.description}» solo hay ${a ?? 0} disponible(s). Ajusta la cantidad.`);
+            `De «${over.description}» solo hay ${a ?? 0} disponible(s) en ${over.source === 'WASTE' ? 'merma' : 'el día'}. Ajusta la cantidad.`);
           setBusy(false);
           return;
         }
       }
       if (isWasteExit) {
-        // Merma manual (del stock normal a merma) o reparto (de la merma hacia el repartidor).
-        // Un renglón por transferencia; el backend valida la no-sobreventa de cada origen.
+        // Merma manual (del stock normal a merma). Un renglón por transferencia; el backend valida
+        // la no-sobreventa del origen.
         for (const l of lines) {
           await api.post('/bakery/waste/transfer', {
-            productId: l.productId, branchId, quantity: l.quantity, origin: exitMode,
+            productId: l.productId, branchId, quantity: l.quantity, origin: 'MANUAL',
           });
         }
-        toast.success(
-          exitMode === 'MANUAL' ? 'Pan pasado a merma' : 'Reparto de merma registrado',
-          exitMode === 'MANUAL'
-            ? 'El pan seleccionado salió del stock normal y entró a merma.'
-            : 'La merma se descontó y quedó registrada como salida a repartidor.');
+        toast.success('Pan pasado a merma', 'El pan seleccionado salió del stock normal y entró a merma.');
+      } else if (!isIn && isBakery && exitMode === 'REPARTO') {
+        // Reparto mixto: se particiona por origen de cada renglón. La pata de pan del día es UN
+        // documento OUT con el concepto "Reparto a repartidor" (valuado a su precio normal); la
+        // pata de merma es un transfer REPARTO por renglón. Cada pata descuenta su propio inventario.
+        const repartoConceptId = concepts.find((c) => c.name === 'Reparto a repartidor')?.id;
+        const normalLines = lines.filter((l) => l.source === 'NORMAL');
+        const wasteLines = lines.filter((l) => l.source === 'WASTE');
+        if (normalLines.length > 0 && !repartoConceptId) {
+          toast.error('Falta el concepto de reparto', 'Se aplicará tras la actualización del sistema. Intenta de nuevo más tarde.');
+          setBusy(false);
+          return;
+        }
+        if (normalLines.length > 0) {
+          await api.post('/inventory/documents', {
+            docType: 'OUT', conceptId: repartoConceptId, branchId, notes: notes || null,
+            lines: normalLines.map((l) => ({ productId: l.productId, description: l.description, quantity: l.quantity, unitCost: l.entryPrice })),
+          });
+        }
+        for (const l of wasteLines) {
+          await api.post('/bakery/waste/transfer', { productId: l.productId, branchId, quantity: l.quantity, origin: 'REPARTO' });
+        }
+        toast.success('Reparto registrado', 'Se descontó el pan del día y/o la merma entregada al repartidor.');
       } else if (isProduction) {
         await api.post('/bakery/productions', {
           branchId, statusCode: 'PRODUCED', notes: notes || null,
@@ -373,15 +432,22 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
         });
         toast.success('Producción registrada', 'Se actualizaron las existencias del día.');
       } else {
+        // Salida NORMAL: para pan se envía unitCost = precio de la ficha (valuación explícita, Hueco
+        // 2); para no-pan se conserva el costo unitario capturado.
         await api.post('/inventory/documents', {
           docType, conceptId: conceptId || null, branchId, notes: notes || null,
-          lines: lines.map((l) => ({ productId: l.productId, description: l.description, quantity: l.quantity, unitCost: l.unitCost })),
+          lines: lines.map((l) => ({ productId: l.productId, description: l.description, quantity: l.quantity, unitCost: (!isIn && isBakery && exitMode === 'NORMAL') ? l.entryPrice : l.unitCost })),
         });
         toast.success(isIn ? 'Entrada registrada' : 'Salida registrada', 'Se actualizó el inventario.');
       }
       setLines([]); setNotes('');
       loadHistory();
-    } catch { toast.error(isProduction ? 'No se pudo registrar la producción' : 'No se pudo registrar el movimiento'); } finally { setBusy(false); }
+    } catch (err) {
+      // Mensaje de negocio del ProblemDetail 422 (p.ej. "Captura primero el precio del artículo…")
+      // cuando exista; si no, el texto genérico de siempre.
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(isProduction ? 'No se pudo registrar la producción' : 'No se pudo registrar el movimiento', detail || undefined);
+    } finally { setBusy(false); }
   };
 
   const Icon = isIn ? ArrowDownToLine : ArrowUpFromLine;
@@ -397,7 +463,7 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
             <label className="field"><span>Tipo de salida</span>
               <select value={exitMode} onChange={(e) => setExitMode(e.target.value as ExitMode)}>
                 <option value="MANUAL">Pasar a merma (manual)</option>
-                <option value="REPARTO">Reparto de merma (a repartidor)</option>
+                <option value="REPARTO">Reparto a repartidor (día y/o merma)</option>
                 <option value="NORMAL">Salida normal (con concepto)</option>
               </select></label>
           )}
@@ -405,7 +471,9 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
             <label className="field"><span>Concepto</span>
               <select value={conceptId} onChange={(e) => setConceptId(Number(e.target.value))}>
                 <option value={0}>Selecciona…</option>
-                {concepts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {/* "Reparto a repartidor" no se ofrece a mano (lo usa el flujo de reparto
+                    automáticamente); el estado 'concepts' se conserva completo para resolverlo. */}
+                {concepts.filter((c) => c.name !== 'Reparto a repartidor').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select></label>
           )}
           <label className="field"><span>Almacén / sucursal</span>
@@ -435,9 +503,9 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
           </InfoBanner>
         )}
         {!isIn && isBakery && exitMode === 'REPARTO' && (
-          <InfoBanner icon={<ArrowUpFromLine size={18} />} tone="sky" title="Reparto de merma a repartidor">
-            Descuenta pan que YA está en merma y lo registra como entregado a un repartidor. Solo
-            aparecen artículos con existencia en merma.
+          <InfoBanner icon={<ArrowUpFromLine size={18} />} tone="sky" title="Reparto a repartidor (pan del día y/o merma)">
+            El repartidor puede llevar pan del día (a precio normal) y pan de merma (a precio de
+            merma). Cada renglón se descuenta de su inventario.
           </InfoBanner>
         )}
         {!isIn && isBakery && exitMode === 'NORMAL' && (
@@ -473,7 +541,7 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
             onPick={add}
             selectedIds={selectedIds}
             placeholder={isProduction ? 'Elegir pan a producir…'
-              : exitMode === 'REPARTO' ? 'Elegir pan en merma…'
+              : exitMode === 'REPARTO' ? 'Elegir pan (día o merma)…'
                 : isWasteExit ? 'Elegir pan a pasar a merma…'
                   : 'Elegir producto…'}
           />
@@ -482,17 +550,19 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
         {/* Grid de columnas compartido por cabecera y filas, armado según el modo para que todo
             quede perfectamente alineado por construcción. */}
         {(() => {
-          // En salidas de panadería, SIEMPRE se muestra el disponible del artículo (stock normal
-          // para MANUAL/NORMAL, merma para REPARTO), para que el cajero sepa qué hay.
+          // En salidas de panadería, SIEMPRE se muestra el disponible del artículo (por origen de
+          // cada renglón), para que el cajero sepa qué hay.
           const showAvail = !isIn && isBakery;
-          const availLabel = exitMode === 'REPARTO' ? 'Disponible (merma)' : 'Existencia';
+          const availLabel = exitMode === 'REPARTO' ? 'Disponible' : 'Existencia';
+          // La columna de dinero (precio fijo bloqueado o costo editable) e importe se muestran
+          // salvo en merma pura (MANUAL): fixedPrice || !isWasteExit los incluye (incl. REPARTO).
+          const showMoney = fixedPrice || !isWasteExit;
           const cols = [
             'minmax(0, 1fr)',                 // Artículo
             '136px',                          // Cantidad (stepper)
-            ...(isProduction ? ['128px'] : []), // Precio de venta
             ...(showAvail ? ['150px'] : []),  // Disponible / Existencia
-            ...(!isWasteExit ? ['128px'] : []), // Costo unitario
-            ...(!isWasteExit ? ['110px'] : []), // Importe
+            ...(showMoney ? ['128px'] : []),  // Precio fijo o Costo unitario
+            ...(showMoney ? ['110px'] : []),  // Importe
             '44px',                           // Acción
           ].join(' ');
           return (
@@ -500,22 +570,18 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
               <div className="idoc-row-head" style={{ gridTemplateColumns: cols }}>
                 <span>Artículo</span>
                 <span className="idoc-h-right">Cantidad</span>
-                {isProduction && <span className="idoc-h-right">Precio de venta</span>}
                 {showAvail && <span className="idoc-h-right">{availLabel}</span>}
-                {!isWasteExit && <span className="idoc-h-right">Costo unitario</span>}
-                {!isWasteExit && <span className="idoc-h-right">Importe</span>}
+                {showMoney && <span className="idoc-h-right">{fixedPrice ? 'Precio' : 'Costo unitario'}</span>}
+                {showMoney && <span className="idoc-h-right">Importe</span>}
                 <span />
               </div>
 
               {lines.map((l, i) => {
-                // Disponible del artículo según el modo: REPARTO usa merma (wasteStocks), MANUAL y
-                // NORMAL usan el stock normal (availableQty). Si pides más de lo que hay, se marca.
-                const avail = exitMode === 'REPARTO'
-                  ? (wasteStocks[l.productId] ?? availableQty[l.productId])
-                  : availableQty[l.productId];
+                // Disponible del artículo por ORIGEN del renglón (clave compuesta), fuente única.
+                const avail = availByKey[`${l.source}:${l.productId}`];
                 const over = showAvail && avail != null && l.quantity > avail;
                 return (
-                  <div className="idoc-row" key={l.productId} style={{ gridTemplateColumns: cols }}>
+                  <div className="idoc-row" key={`${l.source}:${l.productId}`} style={{ gridTemplateColumns: cols }}>
                     <div className="idoc-article">
                       <span className="idoc-article-avatar" style={{ background: avatarColor(l.description) }}>
                         {avatarInitials(l.description)}
@@ -544,20 +610,6 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
                       </button>
                     </div>
 
-                    {isProduction && (
-                      // El precio de venta lo define la ficha del producto; NO se edita aquí.
-                      // Si el artículo no tiene precio, se marca para obligar a capturarlo primero.
-                      l.entryPrice > 0 ? (
-                        <span className="idoc-fixed-price" title="Precio de venta del artículo (no editable aquí)">
-                          {money(l.entryPrice)}
-                        </span>
-                      ) : (
-                        <span className="idoc-fixed-price is-missing" title="Este artículo no tiene precio. Captúralo en su ficha.">
-                          Sin precio
-                        </span>
-                      )
-                    )}
-
                     {showAvail && (
                       <span className={`idoc-availcell ${avail != null && avail > 0 ? (over ? 'is-over' : 'is-ok') : 'is-none'}`}>
                         {avail == null
@@ -568,17 +620,30 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
                       </span>
                     )}
 
-                    {!isWasteExit && (
+                    {fixedPrice ? (
+                      // El precio lo define la ficha del producto (por origen); NO se edita aquí.
+                      // Si el artículo no tiene precio, se marca para obligar a capturarlo primero.
+                      l.entryPrice > 0 ? (
+                        <span className="idoc-fixed-price" title="Precio del artículo (no editable aquí)">
+                          {money(l.entryPrice)}
+                        </span>
+                      ) : (
+                        <span className="idoc-fixed-price is-missing" title="Este artículo no tiene precio. Captúralo en su ficha.">
+                          Sin precio
+                        </span>
+                      )
+                    ) : !isWasteExit ? (
+                      // Salida NORMAL no-pan: costo unitario editable.
                       <label className="idoc-money">
                         <span className="idoc-money-sign">$</span>
                         <input type="number" min={0} step="0.01" placeholder="0.00"
                           value={l.unitCost || ''}
                           onChange={(e) => setLine(i, { unitCost: Number(e.target.value) || 0 })} />
                       </label>
-                    )}
+                    ) : null}
 
-                    {!isWasteExit && (
-                      <span className="idoc-amount">{money(l.quantity * (isProduction ? l.entryPrice : l.unitCost))}</span>
+                    {(fixedPrice || !isWasteExit) && (
+                      <span className="idoc-amount">{money(l.quantity * (fixedPrice ? l.entryPrice : l.unitCost))}</span>
                     )}
 
                     <button type="button" className="idoc-remove" aria-label="Quitar" onClick={() => removeLine(i)}>
@@ -602,12 +667,13 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
           <div />
           <div className="pur-totals">
             <div className="pur-total-row"><span>Unidades</span><span>{totalUnits}</span></div>
-            {!isWasteExit && <div className="pur-total-row pur-total-grand"><span>Valor</span><strong>{money(totalValue)}</strong></div>}
+            {(fixedPrice || !isWasteExit) && <div className="pur-total-row pur-total-grand"><span>Valor</span><strong>{money(totalValue)}</strong></div>}
             <div className="pur-actions">
               <button className="btn-accent" disabled={busy} onClick={submit}>
                 <Check size={16} /> {isWasteExit
-                  ? (exitMode === 'MANUAL' ? 'Pasar a merma' : 'Registrar reparto')
-                  : isProduction ? 'Registrar producción' : isIn ? 'Registrar entrada' : 'Registrar salida'}
+                  ? 'Pasar a merma'
+                  : (!isIn && isBakery && exitMode === 'REPARTO') ? 'Registrar reparto'
+                    : isProduction ? 'Registrar producción' : isIn ? 'Registrar entrada' : 'Registrar salida'}
               </button>
             </div>
           </div>
@@ -615,7 +681,15 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
       </motion.div>
 
       <motion.div className="card" style={{ marginTop: 'var(--space-4)' }} variants={fadeInUp} initial="hidden" animate="visible">
-        <h3 className="sec-title"><Icon size={18} /> {isProduction ? 'Producción' : isIn ? 'Entradas' : 'Salidas'} recientes</h3>
+        <div className="idoc-hist-top">
+          <h3 className="sec-title"><Icon size={18} /> {isProduction ? 'Producción' : isIn ? 'Entradas' : 'Salidas'} del día</h3>
+          {(isProduction || isBakeryExit) && (
+            <label className="field idoc-hist-day" style={{ margin: 0 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Calendar size={14} /> Día</span>
+              <input type="date" value={day} max={todayIso()} onChange={(e) => setDay(e.target.value || todayIso())} />
+            </label>
+          )}
+        </div>
         {isProduction ? (
           // ENTRADAS / Producción reciente homologada a Salidas: MISMO grid (histCols) y las
           // MISMAS 9 columnas. Tipo (chip "Producción") · Folio (PROD-) · Concepto · Artículo
@@ -660,7 +734,11 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
                 );
               })}
               {prodHistory.length === 0 && (
-                <div className="idoc-hist-empty">Aún no hay producción registrada. Registra el pan horneado arriba para que aparezca aquí.</div>
+                <div className="idoc-hist-empty">
+                  {day === todayIso()
+                    ? 'Aún no hay producción hoy. Registra el pan horneado arriba para que aparezca aquí.'
+                    : `No hubo producción el ${dayLabel(day)}.`}
+                </div>
               )}
             </div>
           </div>
@@ -709,7 +787,11 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
                 );
               })}
               {exits.length === 0 && (
-                <div className="idoc-hist-empty">Aún no hay salidas registradas. Registra una salida, un paso a merma o un reparto arriba.</div>
+                <div className="idoc-hist-empty">
+                  {day === todayIso()
+                    ? 'Aún no hay salidas hoy. Registra una salida, un paso a merma o un reparto arriba.'
+                    : `No hubo movimientos el ${dayLabel(day)}.`}
+                </div>
               )}
             </div>
           </div>

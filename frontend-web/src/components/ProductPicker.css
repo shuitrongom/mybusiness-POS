@@ -122,6 +122,28 @@
   text-transform: lowercase;
 }
 
+/* Chip de origen del artículo (reparto mixto): mismo lenguaje visual que .idoc-hist-chip
+   (texto blanco, radio suave, contraste WCAG AA). Verde de marca = pan del día; ámbar = merma. */
+.ppick-item-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.01em;
+}
+
+.ppick-item-tag.is-day {
+  background: #0a7a56;
+}
+
+.ppick-item-tag.is-waste {
+  background: #b45309;
+}
+
 .ppick-item.is-added .ppick-item-name {
   color: var(--text-muted);
 }

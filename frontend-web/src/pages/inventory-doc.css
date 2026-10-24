@@ -5,6 +5,19 @@
    enterprise, limpio y perfectamente cuadrado.
    ========================================================================= */
 
+/* Cabecera del card de historial: título a la izquierda + selector de día a la derecha. */
+.idoc-hist-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.idoc-hist-day {
+  min-width: 170px;
+}
+
 .idoc-lines {
   margin-top: var(--space-4);
   display: flex;

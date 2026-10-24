@@ -8,6 +8,12 @@ export interface PickerProduct {
   name: string;
   unit?: string | null;
   cost?: number | null;
+  // Precio de venta por origen (pan del día = price, merma = waste_price). Alimenta el precio
+  // bloqueado del renglón. Opcional: en modos no-reparto el picker no lo usa.
+  price?: number | null;
+  // Origen del artículo en el reparto mixto: 'NORMAL' (pan del día) o 'WASTE' (merma). Cuando está
+  // presente, el ítem pinta un chip de origen. Ausente en modos no-reparto (sin chip).
+  source?: 'NORMAL' | 'WASTE';
 }
 
 /**
@@ -25,7 +31,9 @@ export function ProductPicker({
 }: {
   products: PickerProduct[];
   onPick: (p: PickerProduct) => void;
-  selectedIds?: Set<number>;
+  // Claves compuestas `${source ?? 'NORMAL'}:${id}` de los renglones ya agregados (un mismo pan
+  // puede estar una vez por origen en el reparto mixto, sin colisión de clave).
+  selectedIds?: Set<string>;
   placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -97,10 +105,11 @@ export function ProductPicker({
             </div>
             <div className="ppick-list" role="listbox">
               {filtered.map((p, i) => {
-                const already = selectedIds?.has(p.id);
+                const key = `${p.source ?? 'NORMAL'}:${p.id}`;
+                const already = selectedIds?.has(key);
                 return (
                   <button
-                    key={p.id}
+                    key={key}
                     type="button"
                     role="option"
                     aria-selected={i === active}
@@ -109,6 +118,12 @@ export function ProductPicker({
                     onClick={() => choose(p)}
                   >
                     <span className="ppick-item-name">{p.name}</span>
+                    {/* Chip de origen solo en reparto mixto (cuando el ítem trae source). */}
+                    {p.source && (
+                      <span className={`ppick-item-tag ${p.source === 'WASTE' ? 'is-waste' : 'is-day'}`}>
+                        {p.source === 'WASTE' ? 'Merma' : 'Día'}
+                      </span>
+                    )}
                     <span className="ppick-item-meta">{p.unit || 'pz'}</span>
                     {already && <Check size={14} className="ppick-item-check" />}
                   </button>

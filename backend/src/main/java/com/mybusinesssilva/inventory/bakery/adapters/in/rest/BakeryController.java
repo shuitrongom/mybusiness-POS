@@ -168,8 +168,10 @@ public class BakeryController {
     @GetMapping("/exits")
     public List<Map<String, Object>> exits(
             @RequestParam(value = "branchId", required = false) Long branchId,
+            @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(value = "limit", required = false, defaultValue = "50") int limit) {
-        return bakery.listUnifiedExits(branchId, limit);
+        return bakery.listUnifiedExits(branchId, from, to, limit);
     }
 
     /**

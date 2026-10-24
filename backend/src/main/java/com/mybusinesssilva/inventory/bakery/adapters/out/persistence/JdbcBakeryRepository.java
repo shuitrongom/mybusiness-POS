@@ -321,7 +321,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
     }
 
     @Override
-    public List<Map<String, Object>> listUnifiedExits(Long branchId, int limit) {
+    public List<Map<String, Object>> listUnifiedExits(Long branchId, LocalDate from, LocalDate to, int limit) {
         // Historial unificado de salidas de panadería (Opción A): salida normal
         // (inventory_document OUT) + merma MANUAL/REPARTO (bakery_waste_movement), en
         // un
@@ -331,11 +331,27 @@ public class JdbcBakeryRepository implements BakeryRepository {
         // totalValue
         // usa `difference` (la pérdida (normal-merma)*cantidad), la cifra de valor con
         // significado en bakery_waste_movement para un historial de salidas.
-        return jdbc.sql("""
+        //
+        // Filtro de día natural MX (Hueco 1, Decisión 1-D): el SQL pasa a
+        // .formatted(TZ, TZ, TZ, TZ) con la constante TZ (homologado con soldBetween /
+        // listWasteMovements; NO literal). Se insertan EXACTAMENTE 4 %s — 2 por rama,
+        // from/to sobre created_at crudo (sargable). Si from/to son NULL no acota
+        // (compat histórica). Único % del SQL = esos 4 %s (no hay LIKE que escapar).
+        //
+        // CONCEPTO descriptivo (Hueco 5, Decisión 5-A): ambas ramas resuelven un
+        // concepto que NUNCA coincide con el chip TIPO del front (KIND_LABEL).
+        return jdbc.sql(("""
                 SELECT ('DOC-' || d.id)                     AS row_key,
                        'NORMAL'                             AS kind,
                        d.folio                              AS folio,
-                       COALESCE(d.concept_name, 'Salida')   AS concept,
+                       CASE
+                           WHEN d.concept_name = 'Salida por consumo interno' THEN 'Consumo interno'
+                           WHEN d.concept_name = 'Salida por caducidad'       THEN 'Caducidad'
+                           WHEN d.concept_name = 'Salida por robo / extravío' THEN 'Robo / extravío'
+                           WHEN d.concept_name = 'Reparto a repartidor'       THEN 'Reparto (pan del día)'
+                           WHEN d.concept_name IS NULL OR d.concept_name = 'Salida' THEN 'Ajuste de inventario'
+                           ELSE d.concept_name
+                       END                                  AS concept,
                        b.name                               AS branch_name,
                        d.total_qty                          AS total_qty,
                        d.total_value                        AS total_value,
@@ -350,17 +366,21 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 LEFT JOIN branch b ON b.id = d.branch_id
                 WHERE d.doc_type = 'OUT'
                   AND (CAST(:branch AS bigint) IS NULL OR d.branch_id = CAST(:branch AS bigint))
+                  AND (CAST(:from AS date) IS NULL OR d.created_at >= (CAST(:from AS date)) AT TIME ZONE '%s')
+                  AND (CAST(:to   AS date) IS NULL OR d.created_at <  (CAST(:to   AS date) + 1) AT TIME ZONE '%s')
 
                 UNION ALL
 
                 SELECT ('WASTE-' || w.id)                   AS row_key,
                        w.origin                             AS kind,
                        w.folio                              AS folio,
-                       CASE w.origin WHEN 'MANUAL'        THEN 'Paso a merma'
-                                     WHEN 'REPARTO'       THEN 'Reparto de merma'
-                                     WHEN 'CIERRE'        THEN 'Sobrante a merma (fin del día)'
-                                     WHEN 'ENVEJECIMIENTO' THEN 'Pan del día anterior a merma'
-                                     ELSE w.origin END       AS concept,
+                       CASE w.origin
+                           WHEN 'MANUAL'         THEN 'Pan pasado a merma'
+                           WHEN 'REPARTO'        THEN 'Reparto (merma)'
+                           WHEN 'CIERRE'         THEN 'Sobrante del día a merma'
+                           WHEN 'ENVEJECIMIENTO' THEN 'Pan del día anterior a merma'
+                           ELSE w.origin
+                       END                                  AS concept,
                        b.name                               AS branch_name,
                        w.quantity                           AS total_qty,
                        w.difference                         AS total_value,
@@ -373,11 +393,15 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 JOIN product pw ON pw.id = w.product_id
                 WHERE w.origin IN ('MANUAL', 'REPARTO', 'CIERRE', 'ENVEJECIMIENTO')
                   AND (CAST(:branch AS bigint) IS NULL OR w.branch_id = CAST(:branch AS bigint))
+                  AND (CAST(:from AS date) IS NULL OR w.created_at >= (CAST(:from AS date)) AT TIME ZONE '%s')
+                  AND (CAST(:to   AS date) IS NULL OR w.created_at <  (CAST(:to   AS date) + 1) AT TIME ZONE '%s')
 
                 ORDER BY created_at DESC
                 LIMIT :limit
-                """)
+                """).formatted(TZ, TZ, TZ, TZ))
                 .param("branch", branchId)
+                .param("from", from)
+                .param("to", to)
                 .param("limit", limit <= 0 ? 50 : limit)
                 .query((rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
@@ -515,20 +539,28 @@ public class JdbcBakeryRepository implements BakeryRepository {
         // selector de Salidas muestre únicamente lo que SÍ tiene inventario (evita
         // confundir al cajero).
         String table = "waste".equalsIgnoreCase(kind) ? "bakery_waste_stock" : "inventory_stock";
+        // Precio por ORIGEN (Hueco 2): merma -> waste_price; normal -> price. El %s
+        // sigue siendo la TABLA (se conserva .formatted(table)); el origen del precio
+        // lo decide el nuevo booleano :kindIsWaste ligado por nombre.
+        boolean kindIsWaste = "waste".equalsIgnoreCase(kind);
         return jdbc.sql(("""
-                SELECT s.product_id, p.name AS product_name, p.unit, s.quantity
+                SELECT s.product_id, p.name AS product_name, p.unit, s.quantity,
+                       CASE WHEN :kindIsWaste THEN COALESCE(p.waste_price, 0)
+                            ELSE COALESCE(p.price, 0) END AS sale_price
                 FROM %s s
                 JOIN product p ON p.id = s.product_id
                 WHERE s.branch_id = :bid AND s.quantity > 0 AND p.active = TRUE
                 ORDER BY p.name
                 """).formatted(table))
                 .param("bid", branchId)
+                .param("kindIsWaste", kindIsWaste)
                 .query((rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("productId", rs.getLong("product_id"));
                     m.put("productName", rs.getString("product_name"));
                     m.put("unit", rs.getString("unit"));
                     m.put("quantity", rs.getBigDecimal("quantity"));
+                    m.put("salePrice", rs.getBigDecimal("sale_price"));
                     return m;
                 })
                 .list();

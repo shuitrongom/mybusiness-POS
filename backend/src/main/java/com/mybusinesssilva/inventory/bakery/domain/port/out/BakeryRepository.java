@@ -122,10 +122,19 @@ public interface BakeryRepository {
      * {@code createdAt} (instante ISO). Filtra por sucursal cuando {@code branchId}
      * no es nulo.
      *
+     * <p>
+     * Acota además al rango del día natural MX {@code [from, to]}
+     * (America/Mexico_City): filtra {@code created_at} crudo sobre ambas ramas del
+     * {@code UNION ALL} con el patrón sargable {@code >= from AT TIME ZONE TZ} y
+     * {@code < (to + 1) AT TIME ZONE TZ}. Si {@code from}/{@code to} son nulos no
+     * acota por día (compat histórica).
+     *
      * @param branchId sucursal a mostrar; {@code null} = todas
+     * @param from     inicio del día natural MX a mostrar; {@code null} = sin cota inferior
+     * @param to       fin del día natural MX a mostrar; {@code null} = sin cota superior
      * @param limit    máximo de filas (si &le; 0 se usa 50)
      */
-    List<Map<String, Object>> listUnifiedExits(Long branchId, int limit);
+    List<Map<String, Object>> listUnifiedExits(Long branchId, LocalDate from, LocalDate to, int limit);
 
     /**
      * Productos de pan con existencia normal &gt; 0 en una sucursal, con su

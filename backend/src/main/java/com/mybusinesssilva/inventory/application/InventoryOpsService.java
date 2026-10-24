@@ -170,9 +170,52 @@ public class InventoryOpsService {
 
         BigDecimal totalQty = lines.stream().map(DocLineInput::quantity)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalValue = lines.stream()
-                .map(l -> l.unitCost().multiply(l.quantity()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        boolean isOut = !"IN".equals(docType);
+
+        // Valor unitario efectivo por renglón (Hueco 2, Decisión 2-A/2-B, SOLO OUT):
+        //  - costo tecleado > 0        -> se respeta tal cual (cualquier giro, igual que hoy)
+        //  - costo <= 0 y PAN          -> fallback a price de ficha; si también 0 se BLOQUEA
+        //  - costo <= 0 y NO PAN       -> se conserva rawUnit (0 permitido, sin revaluar)
+        // El total_value se acumula DENTRO de este cálculo con lineUnit (no con un stream
+        // previo sobre l.unitCost()), para que total_value y cada line_total queden
+        // valuados con lineUnit. La rama IN y la firma de DocLineInput no cambian.
+        BigDecimal[] lineUnits = new BigDecimal[lines.size()];
+        BigDecimal totalValue = BigDecimal.ZERO;
+        for (int i = 0; i < lines.size(); i++) {
+            DocLineInput l = lines.get(i);
+            BigDecimal rawUnit = l.unitCost() != null ? l.unitCost() : BigDecimal.ZERO;
+            BigDecimal lineUnit;
+            if (!isOut) {
+                // Entrada: conserva el costo tal cual (la barrera IN se aplica más abajo).
+                lineUnit = rawUnit;
+            } else if (rawUnit.signum() > 0) {
+                lineUnit = rawUnit;
+            } else {
+                // Costo <= 0 en una salida: decidir por giro del renglón (una sola lectura).
+                Map<String, Object> ficha = jdbc.sql(
+                        "SELECT COALESCE(is_bakery, FALSE) AS is_bakery, COALESCE(price, 0) AS price FROM product WHERE id = :id")
+                        .param("id", l.productId())
+                        .query((rs, n) -> Map.<String, Object>of(
+                                "isBakery", rs.getBoolean("is_bakery"),
+                                "price", rs.getBigDecimal("price")))
+                        .optional().orElse(Map.of("isBakery", Boolean.FALSE, "price", BigDecimal.ZERO));
+                boolean lineIsBakery = Boolean.TRUE.equals(ficha.get("isBakery"));
+                if (lineIsBakery) {
+                    lineUnit = (BigDecimal) ficha.get("price");
+                    // Decisión 2-B: barrera "no se opera en 0" SOLO para pan.
+                    if (lineUnit.signum() <= 0) {
+                        throw new IllegalArgumentException(
+                                "Captura primero el precio del artículo antes de registrar su salida.");
+                    }
+                } else {
+                    // No-pan: 0 permitido, sin revaluar ni bloquear (total_value idéntico al actual).
+                    lineUnit = rawUnit;
+                }
+            }
+            lineUnits[i] = lineUnit;
+            totalValue = totalValue.add(lineUnit.multiply(l.quantity()));
+        }
 
         long docId = jdbc.sql("""
                 INSERT INTO inventory_document
@@ -187,7 +230,9 @@ public class InventoryOpsService {
         jdbc.sql("UPDATE inventory_document SET folio = :f WHERE id = :id")
                 .param("f", ("IN".equals(docType) ? "E-" : "S-") + docId).param("id", docId).update();
 
-        for (DocLineInput l : lines) {
+        for (int i = 0; i < lines.size(); i++) {
+            DocLineInput l = lines.get(i);
+            BigDecimal lineUnit = lineUnits[i];
             if ("IN".equals(docType)) {
                 // Segunda barrera de dominio: no se da entrada con costo 0. Si el renglón no
                 // trae costo, se toma el de la ficha; si la ficha también es 0, se bloquea.
@@ -207,8 +252,8 @@ public class InventoryOpsService {
                     VALUES (:doc, :prod, :desc, :qty, :cost, :total)
                     """)
                     .param("doc", docId).param("prod", l.productId()).param("desc", l.description())
-                    .param("qty", l.quantity()).param("cost", l.unitCost())
-                    .param("total", l.unitCost().multiply(l.quantity()))
+                    .param("qty", l.quantity()).param("cost", lineUnit)
+                    .param("total", lineUnit.multiply(l.quantity()))
                     .update();
             if ("IN".equals(docType)) {
                 // Entrada: suma a la existencia (RETURN), sin tope.

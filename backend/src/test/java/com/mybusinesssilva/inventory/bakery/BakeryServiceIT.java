@@ -155,15 +155,18 @@ class BakeryServiceIT extends AbstractIntegrationTest {
                                                 + "VALUES ('S-1', 'OUT', 'Consumo interno', ?, 3, 24, 'admin')",
                                 branchId);
 
-                List<Map<String, Object>> rows = bakeryService.listUnifiedExits(branchId, 50);
+                // from/to nulos = sin cota de día (compat histórica): la prueba no filtra por día.
+                List<Map<String, Object>> rows = bakeryService.listUnifiedExits(branchId, null, null, 50);
 
                 // Las tres fuentes aparecen con su tipo y concepto resueltos (ninguno en "—").
+                // Concepto descriptivo Hueco 5 (Decisión 5-A): MANUAL -> "Pan pasado a merma",
+                // REPARTO -> "Reparto (merma)" (nunca igual al chip TIPO).
                 assertThat(rows).hasSize(3);
                 assertThat(rows).anyMatch(r -> "MANUAL".equals(r.get("kind"))
-                                && "Paso a merma".equals(r.get("concept"))
+                                && "Pan pasado a merma".equals(r.get("concept"))
                                 && String.valueOf(r.get("id")).startsWith("WASTE-"));
                 assertThat(rows).anyMatch(r -> "REPARTO".equals(r.get("kind"))
-                                && "Reparto de merma".equals(r.get("concept"))
+                                && "Reparto (merma)".equals(r.get("concept"))
                                 && String.valueOf(r.get("id")).startsWith("WASTE-"));
                 assertThat(rows).anyMatch(r -> "NORMAL".equals(r.get("kind"))
                                 && "Consumo interno".equals(r.get("concept"))
@@ -191,7 +194,7 @@ class BakeryServiceIT extends AbstractIntegrationTest {
                 // Tope por limit sobre el conjunto COMBINADO (no por cada fuente): con 3 filas
                 // y limit=2 solo deben volver 2, y por el orden DESC la más antigua (la merma
                 // MANUAL, sembrada primero) queda fuera.
-                List<Map<String, Object>> capped = bakeryService.listUnifiedExits(branchId, 2);
+                List<Map<String, Object>> capped = bakeryService.listUnifiedExits(branchId, null, null, 2);
                 assertThat(capped).hasSize(2);
         }
 
@@ -218,7 +221,7 @@ class BakeryServiceIT extends AbstractIntegrationTest {
                 // Al filtrar por la matriz solo vuelve su merma; el documento OUT de la otra
                 // sucursal queda fuera aunque sea la otra fuente del UNION (filtro en ambas
                 // ramas).
-                List<Map<String, Object>> matriz = bakeryService.listUnifiedExits(matrizId, 50);
+                List<Map<String, Object>> matriz = bakeryService.listUnifiedExits(matrizId, null, null, 50);
                 assertThat(matriz).singleElement()
                                 .satisfies(r -> {
                                         assertThat(r.get("kind")).isEqualTo("MANUAL");
@@ -226,7 +229,7 @@ class BakeryServiceIT extends AbstractIntegrationTest {
                                 });
 
                 // Al filtrar por la otra sucursal solo vuelve su documento OUT.
-                List<Map<String, Object>> otra = bakeryService.listUnifiedExits(otraId, 50);
+                List<Map<String, Object>> otra = bakeryService.listUnifiedExits(otraId, null, null, 50);
                 assertThat(otra).singleElement()
                                 .satisfies(r -> {
                                         assertThat(r.get("kind")).isEqualTo("NORMAL");

@@ -208,10 +208,17 @@ public interface BakeryUseCase {
      * frontend solo
      * renderice (no combina ni ordena en cliente).
      *
+     * <p>
+     * Acota al rango del día natural MX {@code [from, to]} (America/Mexico_City)
+     * sobre {@code created_at}; {@code from}/{@code to} nulos = sin cota (compat
+     * histórica).
+     *
      * @param branchId sucursal a mostrar; {@code null} = todas
+     * @param from     inicio del día natural MX a mostrar; {@code null} = sin cota inferior
+     * @param to       fin del día natural MX a mostrar; {@code null} = sin cota superior
      * @param limit    máximo de filas (si &le; 0 se usa 50)
      */
-    List<Map<String, Object>> listUnifiedExits(Long branchId, int limit);
+    List<Map<String, Object>> listUnifiedExits(Long branchId, LocalDate from, LocalDate to, int limit);
 
     /**
      * Existencia del día para un producto/sucursal: producido, vendido, restante

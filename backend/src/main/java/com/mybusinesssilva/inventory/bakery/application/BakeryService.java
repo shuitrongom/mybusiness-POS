@@ -222,8 +222,8 @@ public class BakeryService implements BakeryUseCase {
     }
 
     @Override
-    public List<Map<String, Object>> listUnifiedExits(Long branchId, int limit) {
-        return repository.listUnifiedExits(branchId, limit);
+    public List<Map<String, Object>> listUnifiedExits(Long branchId, LocalDate from, LocalDate to, int limit) {
+        return repository.listUnifiedExits(branchId, from, to, limit);
     }
 
     @Override
