@@ -96,6 +96,13 @@ api.interceptors.request.use(async (config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Para subidas multipart (FormData) se elimina el Content-Type JSON por defecto de la instancia:
+  // así axios vuelve a detectar el FormData y arma 'multipart/form-data; boundary=...'. Si se dejara
+  // 'application/json' (o se fijara 'multipart/form-data' a mano sin boundary) el backend no podría
+  // parsear las partes. Es la barrera que garantiza que TODA petición con FormData salga correcta.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    config.headers.delete('Content-Type');
+  }
   return config;
 });
 

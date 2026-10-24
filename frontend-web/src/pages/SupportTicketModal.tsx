@@ -30,7 +30,8 @@ interface Preview {
  *
  * El envío va por multipart/form-data construido con FormData SIN fijar Content-Type manual: axios
  * detecta el FormData y arma el boundary (si se fijara 'multipart/form-data' a mano, el boundary se
- * perdería). Se anula el default JSON de la instancia con Content-Type undefined para esta petición.
+ * perdería). El interceptor de request de la instancia (api.ts) elimina el Content-Type JSON por
+ * defecto cuando el cuerpo es FormData, para que axios reponga el multipart con su boundary.
  */
 export function SupportTicketModal({ onClose }: { onClose: () => void }) {
   const location = useLocation();
@@ -106,8 +107,9 @@ export function SupportTicketModal({ onClose }: { onClose: () => void }) {
       const fd = new FormData();
       fd.append('data', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
       previews.forEach((p) => fd.append('images', p.file));
-      // Sin header manual: se anula el default JSON para que axios arme el boundary del multipart.
-      await api.post('/support/tickets', fd, { headers: { 'Content-Type': undefined } });
+      // Sin header manual: el interceptor de request elimina el Content-Type JSON por defecto cuando
+      // el cuerpo es FormData, de modo que axios detecta el multipart y arma el boundary correcto.
+      await api.post('/support/tickets', fd);
       toast.success('Reporte enviado', 'Gracias, lo revisaremos muy pronto.');
       close();
     } catch (err) {
