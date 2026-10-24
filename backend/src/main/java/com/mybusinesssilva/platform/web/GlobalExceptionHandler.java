@@ -3,6 +3,7 @@ package com.mybusinesssilva.platform.web;
 import com.mybusinesssilva.catalog.domain.model.ProductHasStockException;
 import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
 import com.mybusinesssilva.sales.domain.model.ShiftReopenException;
+import com.mybusinesssilva.support.application.SupportTicketService.SupportImageRejectedException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,6 +15,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
  * Manejo global de errores para la API. Traduce las excepciones de negocio y de
@@ -105,6 +107,39 @@ public class GlobalExceptionHandler {
                 HttpStatus.CONFLICT, ex.getMessage());
         problem.setTitle(ex.code());
         ex.props().forEach(problem::setProperty);
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Rechazo de alta de ticket por imagen inválida (Rama A del buzón de soporte, §11.8). Espejo del
+     * 422 de negocio, con {@code title = IMAGE_INVALID} y la propiedad {@code invalidImages} con el
+     * índice y la razón ({@code SIZE|TYPE|COUNT}) de cada imagen descartada. Se declara ANTES del
+     * handler de {@link IllegalArgumentException} (del que hereda) para que gane por especificidad.
+     */
+    @ExceptionHandler(SupportImageRejectedException.class)
+    public ProblemDetail handleSupportImageRejected(SupportImageRejectedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("IMAGE_INVALID");
+        problem.setProperty("invalidImages", ex.invalidImages().stream()
+                .map(r -> Map.of("index", r.index(), "reason", r.reason()))
+                .toList());
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Imagen que supera el tamaño permitido por el contenedor multipart ({@code
+     * spring.servlet.multipart.max-file-size}). Sin este handler caería al fallback 500 opaco; aquí
+     * se traduce a un 422 legible con {@code title = IMAGE_TOO_LARGE}.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ProblemDetail handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "Alguna imagen supera el tamaño permitido (máx. 5 MB por imagen).");
+        problem.setTitle("IMAGE_TOO_LARGE");
         problem.setProperty("timestamp", Instant.now());
         return problem;
     }

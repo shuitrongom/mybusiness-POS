@@ -3,10 +3,11 @@ import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Home, LayoutDashboard, ShoppingCart, ShoppingBag, Boxes,
-  Settings, ChevronDown, Smartphone, FileText,
+  Settings, ChevronDown, Smartphone, FileText, LifeBuoy,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UserMenu } from '@/components/UserMenu';
+import { SupportFab } from '@/components/SupportFab';
 import { useSession } from '@/store/session';
 import { decodeToken, canUseModule, canSell, hasModule, isOwner } from '@/lib/jwt';
 import { api } from '@/lib/api';
@@ -162,8 +163,9 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
       }
       : g)
     .map((g) => g.id === 'admin' && owner
-      // Modo prueba: solo el DUEÑO lo ve, dentro de Administración (junto a la config de ticket).
-      ? { ...g, items: [...g.items, { to: '/test-mode-settings', label: 'Modo prueba' }] }
+      // Modo prueba y Soporte: solo el DUEÑO los ve, dentro de Administración (junto a la config
+      // de ticket). La cajera reporta desde el botón flotante; no necesita item de menú.
+      ? { ...g, items: [...g.items, { to: '/test-mode-settings', label: 'Modo prueba' }, { to: '/support', label: 'Soporte' }] }
       : g);
 
   // El grupo cuya ruta está activa arranca expandido; los demás, contraídos.
@@ -197,6 +199,7 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
             <>
               <NavLink to="/" end className="nav-link"><LayoutDashboard size={17} /> Panel del sistema</NavLink>
               <NavLink to="/admin" className="nav-link"><Settings size={17} /> Negocios y planes</NavLink>
+              <NavLink to="/admin-support" className="nav-link"><LifeBuoy size={17} /> Soporte</NavLink>
             </>
           ) : (
             <>
@@ -242,6 +245,8 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
         <div className="content-body">
           <Outlet />
         </div>
+        {/* Botón flotante de soporte: global para usuarios del negocio, fuera del Outlet. */}
+        {!superAdmin && <SupportFab />}
       </main>
     </div>
   );

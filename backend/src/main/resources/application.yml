@@ -50,7 +50,30 @@ spring:
       # (spring.flyway.placeholders.app_user) desde AbstractIntegrationTest.
       app_user: pos_app
 
+  servlet:
+    multipart:
+      # Límites del buzón de soporte. Deben alinearse con app.support.image.* para que la
+      # validación por magic bytes/tamaño del servicio corra antes de que el contenedor corte.
+      # Cota: max-request-size >= SUPPORT_IMAGE_MAX_COUNT x SUPPORT_IMAGE_MAX_BYTES + overhead.
+      max-file-size:    ${SUPPORT_IMAGE_MAX_BYTES:5242880}       # 5 MB por archivo
+      max-request-size: ${SUPPORT_REQUEST_MAX_BYTES:28311552}    # ~27 MB (5x5MB + holgura del multipart)
+
 app:
+  notifications:
+    # 'logging' (default, degrada con elegancia) o 'resend' (envío real).
+    provider: ${APP_NOTIFICATIONS_PROVIDER:logging}
+    resend:
+      api-key: ${RESEND_API_KEY:}               # vacío => no se envía (degrada a log). SECRETO: solo env var en Railway.
+      from:    ${SUPPORT_RESEND_FROM:}           # vacío => no se envía (degrada a log). PII del dueño: solo env var en Railway.
+    support:
+      inbox:   ${SUPPORT_INBOX_EMAIL:}           # vacío => no se envía (degrada a log). PII del dueño: solo env var en Railway.
+  cloudinary:
+    # URL completa cloudinary://api_key:api_secret@cloud_name. Vacío => adaptador no-op (sin imágenes). SECRETO.
+    url: ${CLOUDINARY_URL:}
+  support:
+    image:
+      max-bytes: ${SUPPORT_IMAGE_MAX_BYTES:5242880}   # 5 MB por imagen
+      max-count: ${SUPPORT_IMAGE_MAX_COUNT:5}
   bakery:
     # Envejecimiento automático de pan (día anterior -> merma). Corre cada noche en la
     # zona del negocio (America/Mexico_City). El BakeryAgingScheduler lee este cron;

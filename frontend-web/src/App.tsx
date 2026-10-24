@@ -65,6 +65,8 @@ import { BranchesPage } from '@/pages/BranchesPage';
 import { BakeryWastePage } from '@/pages/BakeryWastePage';
 import { SuperAdminPage } from '@/pages/SuperAdminPage';
 import { SuperAdminDashboardPage } from '@/pages/SuperAdminDashboardPage';
+import { SupportPage } from '@/pages/SupportPage';
+import { SupportInboxPage } from '@/pages/SupportInboxPage';
 
 /**
  * Componente raíz: define las rutas según el rol del usuario.
@@ -103,6 +105,7 @@ export function App() {
             {/* Super Admin: panel del SaaS + administración */}
             <Route index element={<SuperAdminDashboardPage />} />
             <Route path="admin" element={<SuperAdminPage />} />
+            <Route path="admin-support" element={<SupportInboxPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </>
         ) : (
@@ -175,6 +178,7 @@ export function App() {
             <Route path="ticket-settings" element={<TicketSettingsPage />} />
             <Route path="ticket-reprint" element={<TicketReprintPage />} />
             <Route path="test-mode-settings" element={<TestModeSettingsPage />} />
+            <Route path="support" element={<SupportPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </>
         )}
