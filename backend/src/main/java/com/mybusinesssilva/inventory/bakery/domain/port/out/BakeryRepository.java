@@ -60,17 +60,21 @@ public interface BakeryRepository {
     BigDecimal wasteStock(long productId, long branchId);
 
     /**
-     * Inserta una fila de trazabilidad en {@code bakery_waste_movement}.
+     * Inserta una fila de trazabilidad en {@code bakery_waste_movement}, le asigna
+     * folio de serie {@code 'M-'} ({@code 'M-'||id}) en la MISMA transacción (mismo
+     * patrón que {@code PROD-}/{@code S-}) y devuelve el id. El folio es metadato: no
+     * afecta {@code quantity}/{@code difference} ni los saldos.
      *
-     * @param origin      uno de CIERRE/MANUAL/VENTA/REPARTO
+     * @param origin      uno de CIERRE/MANUAL/VENTA/REPARTO/ENVEJECIMIENTO
      * @param quantity    cantidad del movimiento (positiva)
      * @param normalPrice precio normal de referencia del artículo
      * @param wastePrice  precio de merma aplicado/registrado
      * @param difference  pérdida: {@code (normalPrice - wastePrice) * quantity}
      * @param saleId      venta ligada (solo VENTA; null en otros)
      * @param shiftId     turno ligado (CIERRE/MANUAL; null si no aplica)
+     * @return id (IDENTITY) del movimiento recién insertado
      */
-    void insertWasteMovement(long productId, long branchId, String origin, BigDecimal quantity,
+    long insertWasteMovement(long productId, long branchId, String origin, BigDecimal quantity,
             BigDecimal normalPrice, BigDecimal wastePrice, BigDecimal difference,
             String cashier, Long saleId, Long shiftId);
 
@@ -100,11 +104,19 @@ public interface BakeryRepository {
      * <li>Merma {@code origin='REPARTO'} de {@code bakery_waste_movement} -&gt;
      * concepto
      * "Reparto de merma", {@code kind = "REPARTO"}.</li>
+     * <li>Merma {@code origin='CIERRE'} de {@code bakery_waste_movement} -&gt;
+     * concepto
+     * "Sobrante a merma (fin del día)", {@code kind = "CIERRE"}.</li>
+     * <li>Merma {@code origin='ENVEJECIMIENTO'} de {@code bakery_waste_movement}
+     * -&gt; concepto
+     * "Pan del día anterior a merma", {@code kind = "ENVEJECIMIENTO"}.</li>
      * </ul>
-     * Cada fila expone: {@code id} (clave estable única entre fuentes, con prefijo
-     * {@code DOC-}/{@code WASTE-}), {@code kind}, {@code concept} (ya resuelto),
-     * {@code folio}
-     * (null o {@code sale.folio} para merma), {@code branchName}, {@code totalQty},
+     * (La merma {@code origin='VENTA'} queda EXCLUIDA para no duplicar la venta del
+     * POS.) Cada fila expone: {@code id} (clave estable única entre fuentes, con
+     * prefijo {@code DOC-}/{@code WASTE-}), {@code kind}, {@code concept} (ya
+     * resuelto), {@code folio} ({@code inventory_document.folio} para salida normal,
+     * {@code bakery_waste_movement.folio} = {@code 'M-'||id} para merma),
+     * {@code branchName}, {@code totalQty},
      * {@code totalValue} (para merma la pérdida {@code difference}),
      * {@code cashier} y
      * {@code createdAt} (instante ISO). Filtra por sucursal cuando {@code branchId}

@@ -16,6 +16,7 @@ const int = (n: number) => new Intl.NumberFormat('es-MX').format(n || 0);
 /** Registro de movimiento de merma de GET /bakery/waste (todos los orígenes). */
 interface WasteRow {
   id: number;
+  folio: string | null;
   productId: number | null;
   productName: string | null;
   origin: string | null;
@@ -117,7 +118,7 @@ export function BakeryWastePage() {
         <h3 className="sec-title"><Trash2 size={18} /> Movimientos de merma</h3>
         <table className="ret-table">
           <thead><tr>
-            <th>Fecha</th><th>Origen</th><th>Artículo</th><th className="ta-right">Cantidad</th>
+            <th>Fecha</th><th>Folio</th><th>Origen</th><th>Artículo</th><th className="ta-right">Cantidad</th>
             <th className="ta-right">Precio normal</th><th className="ta-right">Precio merma</th>
             <th className="ta-right">Diferencia</th><th>Referencia</th><th>Cajero</th>
           </tr></thead>
@@ -125,6 +126,7 @@ export function BakeryWastePage() {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.createdAt ? new Date(r.createdAt).toLocaleString('es-MX') : '—'}</td>
+                <td>{r.folio || '—'}</td>
                 <td>
                   <span style={{
                     background: originColor(r.origin), color: '#fff', borderRadius: 999,
@@ -142,7 +144,7 @@ export function BakeryWastePage() {
                 <td>{r.cashier || '—'}</td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={9} className="ret-empty">Sin movimientos de merma en el periodo.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} className="ret-empty">Sin movimientos de merma en el periodo.</td></tr>}
           </tbody>
         </table>
 

@@ -52,14 +52,31 @@ interface DocRow {
   totalQty: number; totalValue: number; createdBy: string | null; createdAt: string;
 }
 /**
- * Fila del historial UNIFICADO de "Salidas recientes" de panadería (GET /bakery/exits):
- * salida normal (su concepto real) + merma MANUAL ("Paso a merma") + merma REPARTO
- * ("Reparto de merma"). El backend ya resuelve el tipo y el orden; el front solo renderiza.
+ * Tipos de movimiento mostrables en el historial unificado.
+ *
+ * FRONTERA DE DOMINIO (MEDIUM-3): los valores NORMAL|MANUAL|CIERRE|ENVEJECIMIENTO|REPARTO
+ * llegan del backend de /exits (= columna `kind` de listUnifiedExits). 'PRODUCCION' es
+ * SINTÉTICO del front: el endpoint /productions NO devuelve `kind`; el front lo fija
+ * literalmente para pintar el chip "Producción" en Entradas. No esperar 'PRODUCCION'
+ * desde /exits ni un `kind` desde /productions.
  */
-type ExitKind = 'NORMAL' | 'MANUAL' | 'REPARTO';
+type MovementKind =
+  | 'NORMAL'          // salida normal de inventario (serie S-)        [de /exits]
+  | 'MANUAL'          // paso a merma manual (serie M-)                [de /exits]
+  | 'CIERRE'          // sobrante a merma al cerrar caja (serie M-)    [de /exits]
+  | 'ENVEJECIMIENTO'  // pan del día anterior a merma (serie M-)       [de /exits]
+  | 'REPARTO'         // merma entregada a repartidor (serie M-)       [de /exits]
+  | 'PRODUCCION';     // entrada / producción de pan (serie PROD-)     [sintético front]
+
+/**
+ * Fila del historial UNIFICADO de "Salidas recientes" de panadería (GET /bakery/exits):
+ * salida normal (su concepto real) + merma MANUAL ("Paso a merma") + REPARTO + CIERRE +
+ * ENVEJECIMIENTO. El backend ya resuelve el tipo, el folio (serie S- / M-) y el orden; el
+ * front solo renderiza.
+ */
 interface ExitRow {
   id: string;            // 'DOC-12' | 'WASTE-7' (clave estable única entre fuentes)
-  kind: ExitKind;
+  kind: MovementKind;
   concept: string;       // 'Salida' | 'Paso a merma' | 'Reparto de merma' | concepto real
   folio: string | null;
   branchName: string | null;
@@ -75,35 +92,81 @@ interface ExitRow {
   itemsLabel: string;
 }
 
-/**
- * Etiqueta + color del chip de tipo de salida. Reutiliza los mismos colores que el
- * "Reporte de merma" (BakeryWastePage): ámbar = paso a merma, sky = reparto, neutro = salida.
- */
-const EXIT_KIND_LABEL: Record<ExitKind, string> = {
+// Etiqueta CORTA del chip (premium, sin saturar la columna). Steering: ámbar = merma.
+const KIND_LABEL: Record<MovementKind, string> = {
   NORMAL: 'Salida',
   MANUAL: 'Paso a merma',
-  REPARTO: 'Reparto de merma',
+  CIERRE: 'Sobrante',
+  ENVEJECIMIENTO: 'Envejecido',
+  REPARTO: 'Reparto',
+  PRODUCCION: 'Producción',
 };
-function exitKindColor(kind: ExitKind): string {
+
+/**
+ * Color estable por tipo, texto BLANCO (ver .idoc-hist-chip). Steering: ámbar = merma.
+ * Paleta corregida por contraste WCAG AA (ratios ≥ 4.5:1 de blanco sobre el fondo):
+ * MANUAL/CIERRE #b45309 (≈5.3:1), ENVEJECIMIENTO #92400e (≈7.0:1), REPARTO #c2410c (≈4.6:1),
+ * PRODUCCION #0a7a56 (≈4.7:1, verde de marca oscurecido, NO colisiona con AVATAR_COLORS),
+ * neutro #64748b (≈4.8:1). Ver design.md §4 (NIT-2/NIT-3).
+ */
+function kindColor(kind: MovementKind): string {
   switch (kind) {
-    case 'MANUAL': return '#d97706';
-    case 'REPARTO': return '#0ea5e9';
-    default: return '#64748b';
+    case 'MANUAL': return '#b45309';         // ámbar oscuro (merma manual)
+    case 'CIERRE': return '#b45309';         // ámbar oscuro (sobrante fin de día)
+    case 'ENVEJECIMIENTO': return '#92400e'; // ámbar más oscuro (envejecido)
+    case 'REPARTO': return '#c2410c';        // naranja oscuro (reparto de merma)
+    case 'PRODUCCION': return '#0a7a56';     // verde de marca oscuro (producción)
+    default: return '#64748b';               // neutro gris (salida normal / desconocido)
   }
 }
 
-/** Fila por renglón de GET /bakery/productions (historial de producción: folio + artículo). */
+/**
+ * Fallback de etiqueta (MEDIUM-3): si llegara un `kind` fuera del dominio conocido (p. ej. un
+ * nuevo origin del CHECK), NO dejar el chip vacío (eso reproduciría el hueco '—'). Mostrar
+ * 'Salida' genérico; el color ya cae a neutro por el default del switch.
+ */
+function kindLabel(kind: string): string {
+  return (KIND_LABEL as Record<string, string>)[kind] ?? 'Salida';
+}
+
+/** Fila por renglón de GET /bakery/productions (historial de producción, homologado a Salidas). */
 interface ProductionRow {
   productionId: number;
-  folio: string | null;
+  folio: string | null;         // PROD-
+  statusCode: string | null;    // para el concepto (hoy siempre PRODUCED)
+  branchName: string | null;    // ALMACÉN (JOIN a branch)
   productName: string | null;
   description: string | null;
   quantity: number | null;
   unit: string | null;
-  entryPrice: number | null;
-  lineTotal: number | null;
+  entryPrice: number | null;    // PRECIO
+  lineTotal: number | null;     // IMPORTE
+  createdBy: string | null;     // REGISTRÓ (ya venía, no se pintaba)
   productionDate: string | null;
-  createdAt: string | null;
+  createdAt: string | null;     // ISO (OffsetDateTime) — igual que Salidas
+}
+
+// Grid ÚNICO compartido por cabecera y filas de AMBAS tablas (Entradas y Salidas), para que las
+// columnas cuadren por construcción (steering). 9 columnas; la última (REGISTRÓ) ≥160px porque
+// aloja usuario + fecha/hora en dos líneas. Ver design.md §5.0.
+const histCols =
+  '132px 96px minmax(130px,1fr) minmax(150px,1.1fr) 110px 84px 96px 110px 160px';
+//  TIPO  FOLIO  CONCEPTO        ARTÍCULO           ALMACÉN CANT.  PRECIO IMPORTE REGISTRÓ
+
+/**
+ * Celda REGISTRÓ de dos líneas (usuario + fecha/hora) compartida por ambas tablas: el nombre con
+ * ellipsis + title (el email largo se ve completo al pasar el mouse) y debajo la fecha/hora tenue.
+ * design.md §5.0 (HIGH-1).
+ */
+function RegisteredCell({ who, createdAt }: { who: string; createdAt: string | null }) {
+  const dt = dateTime(createdAt);
+  return (
+    <span className="idoc-hist-when">
+      <span className="idoc-hist-when-who" title={who}>{who}</span>
+      <span className="idoc-hist-when-date">{dt.date}</span>
+      {dt.time && <span className="idoc-hist-when-time">{dt.time}</span>}
+    </span>
+  );
 }
 
 /**
@@ -156,7 +219,10 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
 
   const loadHistory = () => {
     if (isProduction) {
-      api.get<ProductionRow[]>('/bakery/productions', { params: { limit: 15 } })
+      // Guard igual que Salidas: no llamar hasta resolver branchId; la lista queda vacía
+      // (estado-vacío premium) mientras tanto. Homologado con listUnifiedExits (NIT-4).
+      if (!branchId) { setProdHistory([]); return; }
+      api.get<ProductionRow[]>('/bakery/productions', { params: { branchId, limit: 15 } })
         .then((r) => setProdHistory(r.data)).catch(() => setProdHistory([]));
       return;
     }
@@ -197,9 +263,9 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
   // que se resuelve async al cargar sucursales. Recarga cuando cambie branchId SOLO en este modo
   // (los demás modos no dependen de branchId, así que no se recargan de más).
   useEffect(() => {
-    if (isBakeryExit && branchId) loadHistory();
+    if ((isBakeryExit || isProduction) && branchId) loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBakeryExit, branchId]);
+  }, [isBakeryExit, isProduction, branchId]);
 
   // En modo REPARTO, carga la existencia de merma de cada producto del carrito para mostrar cuánto
   // hay disponible y evitar sobre-repartir. Se recalcula al cambiar renglones, sucursal o modo.
@@ -551,97 +617,101 @@ export function InventoryDocPage({ docType }: { docType: 'IN' | 'OUT' }) {
       <motion.div className="card" style={{ marginTop: 'var(--space-4)' }} variants={fadeInUp} initial="hidden" animate="visible">
         <h3 className="sec-title"><Icon size={18} /> {isProduction ? 'Producción' : isIn ? 'Entradas' : 'Salidas'} recientes</h3>
         {isProduction ? (
+          // ENTRADAS / Producción reciente homologada a Salidas: MISMO grid (histCols) y las
+          // MISMAS 9 columnas. Tipo (chip "Producción") · Folio (PROD-) · Concepto · Artículo
+          // (avatar) · Almacén · Cantidad · Precio · Importe · Registró (usuario + fecha/hora).
           <div className="idoc-hist">
-            {(() => {
-              const cols = '96px minmax(150px, 1fr) 90px 100px 110px 140px';
-              return (
-                <>
-                  <div className="idoc-hist-head" style={{ gridTemplateColumns: cols }}>
-                    <span>Folio</span>
-                    <span>Artículo</span>
-                    <span className="idoc-hist-right">Cantidad</span>
-                    <span className="idoc-hist-right">Precio</span>
-                    <span className="idoc-hist-right">Importe</span>
-                    <span className="idoc-hist-right">Registrado</span>
+            <div className="idoc-hist-head" style={{ gridTemplateColumns: histCols }}>
+              <span>Tipo</span>
+              <span>Folio</span>
+              <span>Concepto</span>
+              <span>Artículo</span>
+              <span>Almacén</span>
+              <span className="idoc-hist-right">Cantidad</span>
+              <span className="idoc-hist-right">Precio</span>
+              <span className="idoc-hist-right">Importe</span>
+              <span>Registró</span>
+            </div>
+            <div className="idoc-hist-body">
+              {prodHistory.map((r, i) => {
+                const name = r.productName || r.description || '';
+                return (
+                  <div className="idoc-hist-row" key={`${r.productionId}-${i}`} style={{ gridTemplateColumns: histCols }}>
+                    <span className="idoc-hist-chip" style={{ background: kindColor('PRODUCCION') }}>
+                      {kindLabel('PRODUCCION')}
+                    </span>
+                    {r.folio
+                      ? <span className="idoc-hist-folio">{r.folio}</span>
+                      : <span className="idoc-hist-muted">—</span>}
+                    <span className="idoc-hist-name">Producción de pan</span>
+                    <span className="idoc-hist-article">
+                      <span className="idoc-hist-article-avatar"
+                        style={{ background: name ? avatarColor(name) : '#64748b' }}>
+                        {name ? avatarInitials(name) : <PackageOpen size={13} />}
+                      </span>
+                      <span className="idoc-hist-article-name">{name || '—'}</span>
+                    </span>
+                    <span>{r.branchName || '—'}</span>
+                    <span className="idoc-hist-num">{r.quantity ?? 0} <span className="idoc-hist-muted" style={{ fontWeight: 400 }}>{r.unit || 'pz'}</span></span>
+                    <span className="idoc-hist-num">{money(r.entryPrice ?? 0)}</span>
+                    <span className="idoc-hist-amount">{money(r.lineTotal ?? 0)}</span>
+                    <RegisteredCell who={r.createdBy || '—'} createdAt={r.createdAt} />
                   </div>
-                  <div className="idoc-hist-body">
-                    {prodHistory.map((r, i) => (
-                      <div className="idoc-hist-row" key={`${r.productionId}-${i}`} style={{ gridTemplateColumns: cols }}>
-                        <span className="idoc-hist-folio">{r.folio || '—'}</span>
-                        <span className="idoc-hist-name">
-                          {r.productName || r.description || <span className="idoc-hist-muted">—</span>}
-                          <span className="idoc-hist-muted" style={{ fontWeight: 400 }}> · {r.quantity ?? 0} {r.unit || 'pz'}</span>
-                        </span>
-                        <span className="idoc-hist-num">{r.quantity ?? 0}</span>
-                        <span className="idoc-hist-num">{money(r.entryPrice || 0)}</span>
-                        <span className="idoc-hist-amount">{money(r.lineTotal || 0)}</span>
-                        {(() => {
-                          const dt = dateTime(r.createdAt);
-                          return (
-                            <span className="idoc-hist-when">
-                              <span className="idoc-hist-when-date">{dt.date}</span>
-                              {dt.time && <span className="idoc-hist-when-time">{dt.time}</span>}
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    ))}
-                    {prodHistory.length === 0 && <div className="idoc-hist-empty">Sin producciones registradas.</div>}
-                  </div>
-                </>
-              );
-            })()}
+                );
+              })}
+              {prodHistory.length === 0 && (
+                <div className="idoc-hist-empty">Aún no hay producción registrada. Registra el pan horneado arriba para que aparezca aquí.</div>
+              )}
+            </div>
           </div>
         ) : isBakeryExit ? (
-          // SALIDAS panadería: lista UNIFICADA con el TIPO visible por fila (chip de color).
-          // El concepto ya viene resuelto ("Paso a merma" / "Reparto de merma" / concepto real),
-          // así ninguna fila queda en "—" como antes. Grid compartido cabecera/filas.
+          // SALIDAS panadería: lista UNIFICADA con el MISMO grid (histCols) y columnas que
+          // Entradas. El concepto y el folio (S- normal / M- merma) vienen resueltos del backend;
+          // ninguna fila nueva queda en "—". La columna PRECIO muestra "—" (una salida de merma se
+          // valora por su pérdida total, no por precio unitario); IMPORTE = pérdida (design.md §5.0).
           <div className="idoc-hist">
-            {(() => {
-              const cols = '140px 100px minmax(140px, 1fr) minmax(160px, 1.2fr) 120px 90px 120px 130px';
-              return (
-                <>
-                  <div className="idoc-hist-head" style={{ gridTemplateColumns: cols }}>
-                    <span>Tipo</span>
-                    <span>Folio</span>
-                    <span>Concepto</span>
-                    <span>Artículo</span>
-                    <span>Almacén</span>
-                    <span className="idoc-hist-right">Unidades</span>
-                    <span className="idoc-hist-right">Valor</span>
-                    <span>Registró</span>
+            <div className="idoc-hist-head" style={{ gridTemplateColumns: histCols }}>
+              <span>Tipo</span>
+              <span>Folio</span>
+              <span>Concepto</span>
+              <span>Artículo</span>
+              <span>Almacén</span>
+              <span className="idoc-hist-right">Cantidad</span>
+              <span className="idoc-hist-right">Precio</span>
+              <span className="idoc-hist-right">Importe</span>
+              <span>Registró</span>
+            </div>
+            <div className="idoc-hist-body">
+              {exits.map((r) => {
+                const single = r.productCount === 1 && !!r.productName;
+                return (
+                  <div className="idoc-hist-row" key={r.id} style={{ gridTemplateColumns: histCols }}>
+                    <span className="idoc-hist-chip" style={{ background: kindColor(r.kind) }}>
+                      {kindLabel(r.kind)}
+                    </span>
+                    {r.folio
+                      ? <span className="idoc-hist-folio">{r.folio}</span>
+                      : <span className="idoc-hist-muted">—</span>}
+                    <span className="idoc-hist-name">{r.concept}</span>
+                    <span className="idoc-hist-article">
+                      <span className="idoc-hist-article-avatar"
+                        style={{ background: single ? avatarColor(r.productName as string) : '#64748b' }}>
+                        {single ? avatarInitials(r.productName as string) : <PackageOpen size={13} />}
+                      </span>
+                      <span className="idoc-hist-article-name">{r.itemsLabel}</span>
+                    </span>
+                    <span>{r.branchName || '—'}</span>
+                    <span className="idoc-hist-num">{r.totalQty}</span>
+                    <span className="idoc-hist-num idoc-hist-muted">—</span>
+                    <span className="idoc-hist-amount">{money(r.totalValue)}</span>
+                    <RegisteredCell who={r.cashier || '—'} createdAt={r.createdAt} />
                   </div>
-                  <div className="idoc-hist-body">
-                    {exits.map((r) => {
-                      const single = r.productCount === 1 && !!r.productName;
-                      return (
-                        <div className="idoc-hist-row" key={r.id} style={{ gridTemplateColumns: cols }}>
-                          <span className="idoc-hist-chip" style={{ background: exitKindColor(r.kind) }}>
-                            {EXIT_KIND_LABEL[r.kind]}
-                          </span>
-                          {r.folio
-                            ? <span className="idoc-hist-folio">{r.folio}</span>
-                            : <span className="idoc-hist-muted">—</span>}
-                          <span className="idoc-hist-name">{r.concept}</span>
-                          <span className="idoc-hist-article">
-                            <span className="idoc-hist-article-avatar"
-                              style={{ background: single ? avatarColor(r.productName as string) : '#64748b' }}>
-                              {single ? avatarInitials(r.productName as string) : <PackageOpen size={13} />}
-                            </span>
-                            <span className="idoc-hist-article-name">{r.itemsLabel}</span>
-                          </span>
-                          <span>{r.branchName || '—'}</span>
-                          <span className="idoc-hist-num">{r.totalQty}</span>
-                          <span className="idoc-hist-amount">{money(r.totalValue)}</span>
-                          <span className="idoc-hist-muted">{r.cashier || '—'}</span>
-                        </div>
-                      );
-                    })}
-                    {exits.length === 0 && <div className="idoc-hist-empty">Sin salidas registradas.</div>}
-                  </div>
-                </>
-              );
-            })()}
+                );
+              })}
+              {exits.length === 0 && (
+                <div className="idoc-hist-empty">Aún no hay salidas registradas. Registra una salida, un paso a merma o un reparto arriba.</div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="idoc-hist">

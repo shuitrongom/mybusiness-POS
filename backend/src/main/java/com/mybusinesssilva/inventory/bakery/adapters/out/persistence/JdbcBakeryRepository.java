@@ -92,13 +92,14 @@ public class JdbcBakeryRepository implements BakeryRepository {
     @Override
     public List<Map<String, Object>> listRecentProductions(Long branchId, LocalDate from, LocalDate to, int limit) {
         return jdbc.sql("""
-                SELECT p.id, p.folio, p.branch_id, p.status_code, p.production_date,
+                SELECT p.id, p.folio, p.branch_id, b.name AS branch_name, p.status_code, p.production_date,
                        p.total_qty, p.total_value, p.notes, p.created_by, p.created_role, p.created_at,
                        l.product_id, pr.name AS product_name, l.description, l.quantity, l.unit,
                        l.entry_price, l.unit_cost, l.line_total
                 FROM bakery_production p
                 JOIN bakery_production_line l ON l.production_id = p.id
                 JOIN product pr ON pr.id = l.product_id
+                LEFT JOIN branch b ON b.id = p.branch_id
                 WHERE (CAST(:branch AS bigint) IS NULL OR p.branch_id = CAST(:branch AS bigint))
                   AND (CAST(:from AS date) IS NULL OR p.production_date >= CAST(:from AS date))
                   AND (CAST(:to   AS date) IS NULL OR p.production_date <= CAST(:to   AS date))
@@ -114,6 +115,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                     m.put("productionId", rs.getLong("id"));
                     m.put("folio", rs.getString("folio"));
                     m.put("branchId", rs.getLong("branch_id"));
+                    m.put("branchName", rs.getString("branch_name"));
                     m.put("statusCode", rs.getString("status_code"));
                     m.put("productionDate", rs.getObject("production_date", LocalDate.class));
                     m.put("totalQty", rs.getBigDecimal("total_qty"));
@@ -121,7 +123,10 @@ public class JdbcBakeryRepository implements BakeryRepository {
                     m.put("notes", rs.getString("notes"));
                     m.put("createdBy", rs.getString("created_by"));
                     m.put("createdRole", rs.getString("created_role"));
-                    m.put("createdAt", rs.getTimestamp("created_at").toInstant());
+                    // Normalizado a OffsetDateTime (ISO con offset), igual que listUnifiedExits,
+                    // para que el front reciba el MISMO formato en ambas tablas y new Date(iso)
+                    // nunca dé Invalid Date (design.md §5.1 / MEDIUM-2).
+                    m.put("createdAt", rs.getObject("created_at", java.time.OffsetDateTime.class));
                     m.put("productId", rs.getLong("product_id"));
                     m.put("productName", rs.getString("product_name"));
                     m.put("description", rs.getString("description"));
@@ -238,14 +243,19 @@ public class JdbcBakeryRepository implements BakeryRepository {
     }
 
     @Override
-    public void insertWasteMovement(long productId, long branchId, String origin, BigDecimal quantity,
+    public long insertWasteMovement(long productId, long branchId, String origin, BigDecimal quantity,
             BigDecimal normalPrice, BigDecimal wastePrice, BigDecimal difference,
             String cashier, Long saleId, Long shiftId) {
-        jdbc.sql("""
+        // Mismo patrón que insertProduction (PROD-): INSERT ... RETURNING id y luego
+        // UPDATE ... SET folio = 'M-'||id en la MISMA transacción del llamador
+        // (transferToWaste/returnWasteOnVoid son @Transactional). El id IDENTITY es
+        // único y atómico; 'M-'||id hereda esa unicidad sin MAX+1 ni tabla contador.
+        long id = jdbc.sql("""
                 INSERT INTO bakery_waste_movement
                     (product_id, branch_id, origin, quantity, normal_price, waste_price,
                      difference, cashier, sale_id, shift_id)
                 VALUES (:pid, :bid, :origin, :qty, :normal, :waste, :diff, :cashier, :sale, :shift)
+                RETURNING id
                 """)
                 .param("pid", productId)
                 .param("bid", branchId)
@@ -257,13 +267,21 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 .param("cashier", cashier)
                 .param("sale", saleId)
                 .param("shift", shiftId)
+                .query(Long.class)
+                .single();
+
+        jdbc.sql("UPDATE bakery_waste_movement SET folio = :folio WHERE id = :id")
+                .param("folio", "M-" + id)
+                .param("id", id)
                 .update();
+
+        return id;
     }
 
     @Override
     public List<Map<String, Object>> listWasteMovements(LocalDate from, LocalDate to, Long productId) {
         return jdbc.sql("""
-                SELECT w.id, w.product_id, pr.name AS product_name, w.origin, w.quantity,
+                SELECT w.id, w.folio, w.product_id, pr.name AS product_name, w.origin, w.quantity,
                        w.normal_price, w.waste_price, w.difference, w.cashier,
                        w.sale_id, s.folio AS sale_folio, w.shift_id, w.created_at
                 FROM bakery_waste_movement w
@@ -282,6 +300,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 .query((rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", rs.getLong("id"));
+                    m.put("folio", rs.getString("folio"));
                     m.put("productId", rs.getLong("product_id"));
                     m.put("productName", rs.getString("product_name"));
                     m.put("origin", rs.getString("origin"));
@@ -336,7 +355,7 @@ public class JdbcBakeryRepository implements BakeryRepository {
 
                 SELECT ('WASTE-' || w.id)                   AS row_key,
                        w.origin                             AS kind,
-                       s.folio                              AS folio,
+                       w.folio                              AS folio,
                        CASE w.origin WHEN 'MANUAL'        THEN 'Paso a merma'
                                      WHEN 'REPARTO'       THEN 'Reparto de merma'
                                      WHEN 'CIERRE'        THEN 'Sobrante a merma (fin del día)'
@@ -352,7 +371,6 @@ public class JdbcBakeryRepository implements BakeryRepository {
                 FROM bakery_waste_movement w
                 JOIN branch b ON b.id = w.branch_id
                 JOIN product pw ON pw.id = w.product_id
-                LEFT JOIN sale s ON s.id = w.sale_id
                 WHERE w.origin IN ('MANUAL', 'REPARTO', 'CIERRE', 'ENVEJECIMIENTO')
                   AND (CAST(:branch AS bigint) IS NULL OR w.branch_id = CAST(:branch AS bigint))
 

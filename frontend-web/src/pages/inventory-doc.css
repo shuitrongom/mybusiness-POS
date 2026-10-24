@@ -487,6 +487,17 @@
   line-height: 1.25;
 }
 
+/* Usuario que registró (línea superior de la celda Registró). Trunca con ellipsis;
+   el valor completo queda en el title. Alineado a la derecha como el resto de la celda. */
+.idoc-hist-when-who {
+  font-weight: 500;
+  color: var(--heading);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .idoc-hist-when-date {
   color: var(--heading);
   font-variant-numeric: tabular-nums;
