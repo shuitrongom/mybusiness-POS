@@ -163,6 +163,33 @@ async function renewAccessToken(): Promise<string | null> {
   }
 }
 
+/**
+ * Señal de "opciones de cierre" de un turno (Opción B flexible). Espeja el record
+ * {@code ShiftService.CloseOptions} del backend (mismo orden/nombres de campos).
+ * {@code allowFinDia} es siempre true (el backend guía, no impide). El front SIEMPRE
+ * interpone la confirmación fuerte ante cualquier FIN_DIA; {@code requireStrongConfirm}
+ * y {@code onlyShiftSoFar} solo seleccionan el copy del modal.
+ */
+export interface CloseOptions {
+  shiftId: number;
+  isFirstOfDay: boolean;
+  onlyShiftSoFar: boolean;
+  totalShiftsToday: number;
+  suggestedMode: 'TURNO' | 'FIN_DIA';
+  allowFinDia: boolean;
+  requireStrongConfirm: boolean;
+  otherOpenInBranch: boolean;
+}
+
+/**
+ * GET /shifts/{id}/close-options. Devuelve la señal de cierre del turno. El llamador
+ * debe aplicar su propio fallback conservador ante cualquier error (404/409/red): este
+ * helper no lo oculta, solo hace la petición.
+ */
+export async function closeOptions(shiftId: number): Promise<CloseOptions> {
+  return (await api.get<CloseOptions>(`/shifts/${shiftId}/close-options`)).data;
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {

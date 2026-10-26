@@ -1,12 +1,29 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Wallet, DoorOpen, BadgeCheck, Moon, Sunrise } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, closeOptions, type CloseOptions } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { InfoBanner } from '@/components/InfoBanner';
+import { ConfirmFinDiaModal } from '@/components/ConfirmFinDiaModal';
 import { DaySummaryModal, type DaySummary } from '@/components/DaySummaryModal';
 import { OpenShiftModal, cachedShift, cacheShift, type ActiveShift } from '@/components/OpenShiftModal';
 import '@/pages/pos.css';
+
+/**
+ * Fallback conservador de las opciones de cierre (§7.2): ante CUALQUIER error ≠ 200
+ * (red/timeout/404/409) el POS trata el turno como primer turno y exige confirmación
+ * fuerte para FIN_DIA, nunca mandando pan a merma sin aviso.
+ */
+const CLOSE_OPTS_FALLBACK: CloseOptions = {
+  shiftId: 0,
+  isFirstOfDay: true,
+  onlyShiftSoFar: false,
+  totalShiftsToday: 1,
+  suggestedMode: 'TURNO',
+  allowFinDia: true,
+  requireStrongConfirm: true,
+  otherOpenInBranch: false,
+};
 
 // Reexporta el turno activo y el lector de caché para los consumidores que ya los importan desde
 // aquí (p. ej. PosPage), sin duplicar su definición (la fuente de verdad vive en OpenShiftModal).
@@ -62,10 +79,17 @@ export function PosShift({ branchId, onShiftChange }: { branchId: number; onShif
   const onOpened = (s: ActiveShift) => {
     setShift(s); cacheShift(s); onShiftChange(s); setOpenModal(false);
   };
-  // Al cerrar la caja, el turno queda TERMINADO por hoy: no se reabre el modal de apertura;
-  // se marca closedToday y el POS queda bloqueado hasta el día siguiente.
-  const onClosed = () => {
-    setShift(null); cacheShift(null); onShiftChange(null); setCloseModal(false); setClosedToday(true);
+  // Al cerrar la caja: el fin de día (FIN_DIA) bloquea el POS hasta mañana; el relevo
+  // (TURNO) deja la caja lista para el siguiente turno (arregla el bug H1), recargando
+  // el estado del día para que se reabra el OpenShiftModal. onClosed recibe el MODO con
+  // que se cerró (capturado por el CloseShiftModal y pasado vía el wrapper de DaySummaryModal).
+  const onClosed = (mode: CloseMode) => {
+    setShift(null); cacheShift(null); onShiftChange(null); setCloseModal(false);
+    if (mode === 'FIN_DIA') {
+      setClosedToday(true);
+    } else {
+      refresh();
+    }
   };
 
   if (loading) return null;
@@ -115,12 +139,30 @@ interface Closure {
  * un resumen premium del día (DaySummaryModal) con la actividad de la jornada de la cajera.
  */
 function CloseShiftModal({ open, shift, onClose, onClosed }:
-  { open: boolean; shift: ActiveShift; onClose: () => void; onClosed: () => void }) {
+  { open: boolean; shift: ActiveShift; onClose: () => void; onClosed: (mode: CloseMode) => void }) {
   const [counted, setCounted] = useState('');
   const [busy, setBusy] = useState(false);
   // Tras el cierre: resumen del día (GET /shifts/my-day) + modo con el que se cerró, para el modal.
   const [summary, setSummary] = useState<DaySummary | null>(null);
   const [closedMode, setClosedMode] = useState<CloseMode>('TURNO');
+  // Señal de opciones de cierre (Opción B): default null hasta que llega la del backend.
+  const [opts, setOpts] = useState<CloseOptions | null>(null);
+  // Confirmación fuerte del fin de día: NUNCA se cierra FIN_DIA sin pasar por aquí.
+  const [confirmFinDia, setConfirmFinDia] = useState(false);
+
+  // Al abrir el modal: consulta las opciones de cierre. Ante CUALQUIER error ≠ 200 usa el
+  // fallback conservador (trata el turno como primero y exige confirmación fuerte para FIN_DIA).
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    closeOptions(shift.shiftId)
+      .then((o) => { if (alive) setOpts(o); })
+      .catch(() => { if (alive) setOpts(CLOSE_OPTS_FALLBACK); });
+    return () => { alive = false; };
+  }, [open, shift.shiftId]);
+
+  const signal = opts ?? CLOSE_OPTS_FALLBACK;
+  const finDiaPrimary = signal.suggestedMode === 'FIN_DIA';
 
   const doClose = async (mode: CloseMode) => {
     setBusy(true);
@@ -161,9 +203,11 @@ function CloseShiftModal({ open, shift, onClose, onClosed }:
     } finally { setBusy(false); }
   };
 
-  // Tras cerrar con éxito: modal premium del día (sin impresión). "Entendido" bloquea el POS.
+  // Tras cerrar con éxito: modal premium del día (sin impresión). "Entendido" aplica el bloqueo
+  // solo si fue FIN_DIA. DaySummaryModal.onDone sigue siendo () => void; el modo se captura en
+  // estado (closedMode) y se envuelve aquí para pasárselo a onClosed(mode).
   if (summary) {
-    return <DaySummaryModal summary={summary} mode={closedMode} onDone={onClosed} />;
+    return <DaySummaryModal summary={summary} mode={closedMode} onDone={() => onClosed(closedMode)} />;
   }
 
   return (
@@ -180,11 +224,16 @@ function CloseShiftModal({ open, shift, onClose, onClosed }:
 
             <div style={{ padding: 'var(--space-4) var(--space-5)', display: 'grid', gap: 'var(--space-3)' }}>
               <label className="field"><span>Efectivo contado en caja (arqueo)</span>
-                <input type="number" step="0.01" min={0} value={counted} onChange={(e) => setCounted(e.target.value)} autoFocus />
+                <div className="money-field">
+                  <span className="money-prefix">$</span>
+                  <input type="text" inputMode="decimal" value={counted}
+                    onChange={(e) => setCounted(e.target.value.replace(/^0+(?=\d)/, ''))}
+                    placeholder="0.00" autoFocus />
+                </div>
               </label>
               <InfoBanner icon={<Sunrise size={18} />} title="Cerrar turno (relevo)" tone="sky">
                 Hace tu corte y cierra tu turno. El pan que quede sigue disponible para la
-                siguiente cajera (no pasa a merma). Hoy ya no podrás vender.
+                siguiente cajera (no pasa a merma).
               </InfoBanner>
               <InfoBanner icon={<Moon size={18} />} title="Cerrar fin del día" tone="amber">
                 Hace tu corte <strong>y manda el pan sobrante a merma automáticamente</strong>.
@@ -193,14 +242,27 @@ function CloseShiftModal({ open, shift, onClose, onClosed }:
             </div>
             <div className="pos-modal-actions pos-close-actions">
               <button className="btn-ghost" onClick={onClose}>Cancelar</button>
-              <button className="pos-confirm pos-confirm-sky" onClick={() => doClose('TURNO')} disabled={busy}>
+              {/* Cerrar turno (relevo): directo, no manda pan a merma. Primario si NO se sugiere FIN_DIA. */}
+              <button className={`pos-confirm pos-confirm-sky${finDiaPrimary ? ' is-secondary' : ''}`}
+                onClick={() => doClose('TURNO')} disabled={busy}>
                 <Sunrise size={15} /> {busy ? 'Cerrando…' : 'Cerrar turno (relevo)'}
               </button>
-              <button className="pos-confirm pos-confirm-amber" onClick={() => doClose('FIN_DIA')} disabled={busy}>
+              {/* Cerrar fin del día: NUNCA directo. Abre la confirmación fuerte en todos los caminos. */}
+              <button className={`pos-confirm pos-confirm-amber${finDiaPrimary ? '' : ' is-secondary'}`}
+                onClick={() => setConfirmFinDia(true)} disabled={busy}>
                 <Moon size={15} /> {busy ? 'Cerrando…' : 'Cerrar fin del día'}
               </button>
             </div>
           </motion.div>
+
+          {/* Confirmación fuerte (regla inviolable §2 punto 7): cualquier FIN_DIA pasa por aquí. */}
+          <ConfirmFinDiaModal
+            open={confirmFinDia}
+            onlyShiftSoFar={signal.onlyShiftSoFar}
+            otherOpenInBranch={signal.otherOpenInBranch}
+            onConfirm={() => { setConfirmFinDia(false); doClose('FIN_DIA'); }}
+            onCancel={() => setConfirmFinDia(false)}
+          />
         </motion.div>
       )}
     </AnimatePresence>

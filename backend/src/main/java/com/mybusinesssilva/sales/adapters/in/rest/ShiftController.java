@@ -179,6 +179,19 @@ public class ShiftController {
         return shiftService.partialCut(id, actor == null ? "unknown" : actor.subject());
     }
 
+    /**
+     * Opciones de cierre para un turno (Opción B): si es el primer turno del día,
+     * qué modo sugerir por default y si exigir confirmación fuerte para FIN_DIA.
+     * 200 con la señal, o 404 (sin body) si el turno no existe. El 404 se construye
+     * aquí porque el proyecto no tiene handler 404 (IllegalStateException daría 409).
+     */
+    @GetMapping("/{id}/close-options")
+    public ResponseEntity<ShiftService.CloseOptions> closeOptions(@PathVariable long id) {
+        return shiftService.closeOptionsFor(id)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     /** Historial de cortes (X y Z) para consulta o reimpresión. */
     @GetMapping("/cuts")
     public java.util.List<Map<String, Object>> cuts(

@@ -139,9 +139,13 @@ public class ShiftService {
          *         cerrada por hoy" y bloquear operación hasta el día siguiente).
          */
         public boolean cashierClosedToday(String cashier) {
+                // Solo un cierre FIN_DIA cierra el día; el relevo (TURNO) deja la caja lista
+                // para el siguiente turno. NULL legado cuenta como FIN_DIA (COALESCE) para no
+                // aflojar la seguridad sobre datos históricos.
                 return jdbc.sql("""
                                 SELECT count(*) FROM shift
                                 WHERE opened_by = :by AND status = 'CLOSED' AND business_date = CURRENT_DATE
+                                  AND COALESCE(close_mode, 'FIN_DIA') = 'FIN_DIA'
                                 """)
                                 .param("by", cashier).query(Long.class).single() > 0;
         }
@@ -181,10 +185,12 @@ public class ShiftService {
          *         vuelva a vender el mismo día tras cerrar su caja).
          */
         public boolean hasClosedTodayOnRegister(String cashier, long cashRegisterId) {
+                // Solo FIN_DIA bloquea la caja; el relevo (TURNO) no. NULL legado = FIN_DIA.
                 return jdbc.sql("""
                                 SELECT count(*) FROM shift
                                 WHERE opened_by = :by AND cash_register_id = :reg
                                   AND status = 'CLOSED' AND business_date = CURRENT_DATE
+                                  AND COALESCE(close_mode, 'FIN_DIA') = 'FIN_DIA'
                                 """)
                                 .param("by", cashier).param("reg", cashRegisterId)
                                 .query(Long.class).single() > 0;
@@ -570,6 +576,104 @@ public class ShiftService {
         }
 
         /**
+         * Señal de "opciones de cierre" para un turno (Opción B flexible): qué modo
+         * sugerir por default y si el copy del modal debe reforzarse. El backend NO
+         * impide ningún modo (guía, no bloquea); la UI interpone la confirmación fuerte.
+         *
+         * <p>
+         * {@code requireStrongConfirm} es un <strong>refuerzo del copy</strong> (true si
+         * es el primer/único turno), NO el interruptor de si se confirma: el front
+         * SIEMPRE confirma cualquier {@code FIN_DIA} (§2 punto 7 del diseño).
+         */
+        public record CloseOptions(
+                        long shiftId,
+                        boolean isFirstOfDay,
+                        boolean onlyShiftSoFar,
+                        int totalShiftsToday,
+                        String suggestedMode, // "TURNO" | "FIN_DIA"
+                        boolean allowFinDia, // siempre true (guía, no impide)
+                        boolean requireStrongConfirm, // refuerzo de copy (true si isFirstOfDay)
+                        boolean otherOpenInBranch) { // hay otra caja OPEN en la sucursal (§5.5)
+        }
+
+        /**
+         * Calcula las {@link CloseOptions} del turno indicado por orden de apertura en
+         * día MX (solo lectura, sin lock, §3.3). Devuelve {@link java.util.Optional}
+         * vacío si el turno no existe (→ 404 en el controller).
+         *
+         * <p>
+         * Paso 0: lee {@code branch_id} (y existencia). Si el turno no existe →
+         * {@code empty}. Si {@code branch_id} es NULL (dato legado) → cortocircuito
+         * conservador (TURNO + confirmación fuerte), SIN ejecutar la consulta de
+         * agrupación (§3.2). Paso 1 (solo con {@code branch_id} no nulo): consulta
+         * determinista por {@code opened_at} MX restringida a {@code branch_id IS NOT
+         * NULL}, con el conteo de otras cajas abiertas en la sucursal.
+         */
+        public java.util.Optional<CloseOptions> closeOptionsFor(long shiftId) {
+                // Paso 0: ¿existe el turno? ¿tiene sucursal?
+                java.util.Optional<Long> branch = jdbc.sql("SELECT branch_id FROM shift WHERE id = :id")
+                                .param("id", shiftId)
+                                .query((rs, i) -> (Long) rs.getObject("branch_id"))
+                                .optional();
+                if (branch.isEmpty()) {
+                        return java.util.Optional.empty(); // turno inexistente => 404
+                }
+                if (branch.get() == null) {
+                        // Degradación segura (§3.2): turno sin sucursal (legado) se trata como
+                        // primer turno, único, con confirmación fuerte para FIN_DIA. No se ejecuta
+                        // la consulta de agrupación (agruparía TODOS los turnos branch NULL del día).
+                        return java.util.Optional.of(new CloseOptions(
+                                        shiftId, true, true, 1,
+                                        "TURNO", true, true, false));
+                }
+                // Paso 1: branch_id presente => consulta de agrupación §3.3 (branch NOT NULL).
+                return jdbc.sql("""
+                                WITH target AS (
+                                    SELECT id, branch_id, cash_register_id,
+                                           (opened_at AT TIME ZONE 'America/Mexico_City')::date AS mx_day
+                                    FROM shift WHERE id = :id
+                                ),
+                                day_shifts AS (
+                                    SELECT s.id,
+                                           ROW_NUMBER() OVER (ORDER BY s.opened_at ASC, s.id ASC) AS seq,
+                                           COUNT(*) OVER () AS total_today
+                                    FROM shift s, target t
+                                    WHERE t.branch_id IS NOT NULL
+                                      AND s.branch_id = t.branch_id
+                                      AND (s.opened_at AT TIME ZONE 'America/Mexico_City')::date = t.mx_day
+                                ),
+                                other_open AS (
+                                    SELECT count(*) AS n
+                                    FROM shift s, target t
+                                    WHERE t.branch_id IS NOT NULL
+                                      AND s.branch_id = t.branch_id
+                                      AND s.status = 'OPEN'
+                                      AND s.id <> t.id
+                                )
+                                SELECT ds.seq, ds.total_today, oo.n AS other_open_in_branch
+                                FROM day_shifts ds
+                                JOIN target t ON ds.id = t.id
+                                CROSS JOIN other_open oo
+                                """)
+                                .param("id", shiftId)
+                                .query((rs, i) -> {
+                                        int seq = rs.getInt("seq");
+                                        int total = rs.getInt("total_today");
+                                        boolean first = seq == 1;
+                                        return new CloseOptions(
+                                                        shiftId,
+                                                        first,
+                                                        total == 1,
+                                                        total,
+                                                        first ? "TURNO" : "FIN_DIA",
+                                                        true,
+                                                        first,
+                                                        rs.getInt("other_open_in_branch") > 0);
+                                })
+                                .optional();
+        }
+
+        /**
          * Compatibilidad: cierre de turno simple (modo {@link CloseMode#TURNO}, sin
          * conversión de sobrante a merma). Delega en la sobrecarga con modo.
          */
@@ -605,12 +709,13 @@ public class ShiftService {
                 // CLOSED.
                 int claimed = jdbc.sql("""
                                 UPDATE shift SET status = 'CLOSED', closed_by = :by, counted_cash = :counted,
-                                    closed_at = now()
+                                    closed_at = now(), close_mode = :mode
                                 WHERE id = :id AND status = 'OPEN'
                                 """)
                                 .param("id", shiftId)
                                 .param("by", closedBy)
                                 .param("counted", countedCash)
+                                .param("mode", effectiveMode.name())
                                 .update();
                 if (claimed == 0) {
                         // Perdió la carrera contra otro cierre concurrente que acaba de cerrar este
@@ -817,6 +922,7 @@ public class ShiftService {
                 int claimed = jdbc.sql("""
                                 UPDATE shift
                                 SET status = 'OPEN', closed_at = NULL, closed_by = NULL, counted_cash = NULL,
+                                    close_mode = NULL,
                                     reopened_at = now(), reopened_by = :actor, reopen_reason = :reason,
                                     reopen_count = COALESCE(reopen_count, 0) + 1
                                 WHERE id = :id AND status = 'CLOSED'

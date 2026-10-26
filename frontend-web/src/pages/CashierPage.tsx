@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { Calculator, Wallet, FileText, Printer, RotateCcw, Receipt } from 'lucide-react';
-import { api } from '@/lib/api';
+import { Calculator, Wallet, FileText, Printer, RotateCcw, Receipt, Sunrise, Moon } from 'lucide-react';
+import { api, closeOptions, type CloseOptions } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { money } from '@/lib/format';
 import { fadeInUp, pressable, staggerContainer, staggerItem } from '@/lib/motion';
@@ -10,6 +10,7 @@ import { PrintableVoucher } from '@/components/PrintableVoucher';
 import { type VoucherData } from '@/components/Voucher';
 import { ScopeSelector, type ReportScope } from '@/components/ScopeSelector';
 import { InfoBanner } from '@/components/InfoBanner';
+import { ConfirmFinDiaModal } from '@/components/ConfirmFinDiaModal';
 import { ReopenShiftModal } from '@/components/ReopenShiftModal';
 import { useTestMode } from '@/lib/testMode';
 import { useSession } from '@/store/session';
@@ -83,6 +84,21 @@ interface ShiftClosure {
   difference: number;
 }
 
+/** Modo de cierre de caja: relevo (no manda sobrante a merma) o fin de jornada (sí). */
+type CloseMode = 'TURNO' | 'FIN_DIA';
+
+/** Fallback conservador de opciones de cierre (§7.2): ante cualquier error ≠ 200. */
+const CLOSE_OPTS_FALLBACK: CloseOptions = {
+  shiftId: 0,
+  isFirstOfDay: true,
+  onlyShiftSoFar: false,
+  totalShiftsToday: 1,
+  suggestedMode: 'TURNO',
+  allowFinDia: true,
+  requireStrongConfirm: true,
+  otherOpenInBranch: false,
+};
+
 /**
  * Cortes de caja / turnos: se elige la sucursal y la caja, se abre turno con fondo, se registran
  * entradas/salidas de efectivo y se cierra con arqueo, mostrando el corte con la diferencia.
@@ -99,6 +115,11 @@ export function CashierPage() {
   const [countedCash, setCountedCash] = useState('');
   const [closure, setClosure] = useState<ShiftClosure | null>(null);
   const [voucher, setVoucher] = useState<VoucherData | null>(null);
+
+  // Cierre inteligente (Opción B, H4): modo elegido + señal del backend + confirmación fuerte.
+  const [closeMode, setCloseMode] = useState<CloseMode>('TURNO');
+  const [opts, setOpts] = useState<CloseOptions | null>(null);
+  const [confirmFinDia, setConfirmFinDia] = useState(false);
 
   // Reapertura de turno (solo el dueño). El objetivo guarda el corte Z a reabrir.
   const token = useSession((s) => s.token);
@@ -182,6 +203,17 @@ export function CashierPage() {
     }
   }, [branchRegisters, cashRegisterId]);
 
+  // Al tener un turno abierto, consulta sus opciones de cierre (Opción B). Ante cualquier
+  // error ≠ 200 usa el fallback conservador (primer turno + confirmación fuerte para FIN_DIA).
+  useEffect(() => {
+    if (openedShiftId == null) { setOpts(null); return; }
+    let alive = true;
+    closeOptions(openedShiftId)
+      .then((o) => { if (alive) setOpts(o); })
+      .catch(() => { if (alive) setOpts(CLOSE_OPTS_FALLBACK); });
+    return () => { alive = false; };
+  }, [openedShiftId]);
+
   const openShift = useMutation({
     mutationFn: async () =>
       (await api.post<{ shiftId: number }>('/shifts/open', {
@@ -232,15 +264,21 @@ export function CashierPage() {
   const closeShift = useMutation({
     mutationFn: async () =>
       (await api.post<ShiftClosure>(`/shifts/${openedShiftId}/close`, {
-        countedCash: Number(countedCash),
+        countedCash: Number(countedCash), mode: closeMode,
       })).data,
     onSuccess: (data) => {
       setClosure(data);
       setOpenedShiftId(null);
       setCountedCash('');
+      setConfirmFinDia(false);
       setVoucher(cutVoucher(data, 'Z'));
       queryClient.invalidateQueries({ queryKey: ['cash-cuts'] });
-      toast.success('Turno cerrado', `Diferencia del arqueo: ${money(data.difference)}.`);
+      toast.success(
+        closeMode === 'FIN_DIA' ? 'Fin del día cerrado' : 'Turno cerrado',
+        closeMode === 'FIN_DIA'
+          ? `Se generó el corte Z y el pan sobrante pasó a merma. Diferencia del arqueo: ${money(data.difference)}.`
+          : `Se generó el corte Z. El pan sobrante queda vendible para la siguiente cajera. Diferencia del arqueo: ${money(data.difference)}.`,
+      );
     },
     onError: () => {
       toast.error('No se pudo cerrar el turno', 'Revisa el efectivo contado e inténtalo de nuevo.');
@@ -286,6 +324,8 @@ export function CashierPage() {
   });
 
   const activeBranches = (branches.data ?? []).filter((b) => b.active);
+  // Señal efectiva de cierre (con fallback conservador si aún no llegó o falló la consulta).
+  const closeOpts = opts ?? CLOSE_OPTS_FALLBACK;
 
   // Comparación de conteos: por (shiftId, isTest) localiza el Z ANULADO (voided=true) más reciente
   // del turno, para emparejarlo con el Z vigente en su propia tarjeta. La guardia de modo prueba
@@ -394,16 +434,36 @@ export function CashierPage() {
                 <FileText size={15} /> {cutX.isPending ? 'Generando…' : 'Corte X (parcial)'}
               </motion.button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-3)', marginTop: 'var(--space-3)', alignItems: 'end', maxWidth: 460 }}>
+            <div style={{ display: 'grid', gap: 'var(--space-3)', marginTop: 'var(--space-3)', maxWidth: 460 }}>
               <label className="field"><span>Efectivo contado</span>
-                <input type="number" step="0.01" value={countedCash}
-                  onChange={(e) => setCountedCash(e.target.value)} placeholder="0.00" /></label>
-              <motion.button className="btn-accent" disabled={closeShift.isPending} onClick={() => closeShift.mutate()}
-                whileHover={closeShift.isPending ? undefined : pressable.whileHover}
-                whileTap={closeShift.isPending ? undefined : pressable.whileTap}
-                transition={pressable.transition}>
-                {closeShift.isPending ? 'Cerrando…' : 'Corte Z (cerrar)'}
-              </motion.button>
+                <div className="money-field">
+                  <span className="money-prefix">$</span>
+                  <input type="text" inputMode="decimal" value={countedCash}
+                    onChange={(e) => setCountedCash(e.target.value.replace(/^0+(?=\d)/, ''))}
+                    placeholder="0.00" />
+                </div>
+              </label>
+              {/* Dos modos (Opción B): relevo directo (no manda pan a merma) o fin de día (confirma). */}
+              <div className="ccut-close-actions">
+                <motion.button
+                  className={`pos-confirm pos-confirm-sky${closeOpts.suggestedMode === 'FIN_DIA' ? ' is-secondary' : ''}`}
+                  disabled={closeShift.isPending}
+                  onClick={() => { setCloseMode('TURNO'); closeShift.mutate(); }}
+                  whileHover={closeShift.isPending ? undefined : pressable.whileHover}
+                  whileTap={closeShift.isPending ? undefined : pressable.whileTap}
+                  transition={pressable.transition}>
+                  <Sunrise size={15} /> {closeShift.isPending && closeMode === 'TURNO' ? 'Cerrando…' : 'Cerrar turno (relevo)'}
+                </motion.button>
+                <motion.button
+                  className={`pos-confirm pos-confirm-amber${closeOpts.suggestedMode === 'FIN_DIA' ? '' : ' is-secondary'}`}
+                  disabled={closeShift.isPending}
+                  onClick={() => { setCloseMode('FIN_DIA'); setConfirmFinDia(true); }}
+                  whileHover={closeShift.isPending ? undefined : pressable.whileHover}
+                  whileTap={closeShift.isPending ? undefined : pressable.whileTap}
+                  transition={pressable.transition}>
+                  <Moon size={15} /> {closeShift.isPending && closeMode === 'FIN_DIA' ? 'Cerrando…' : 'Cerrar fin del día'}
+                </motion.button>
+              </div>
             </div>
           </motion.div>
         </>
@@ -546,6 +606,15 @@ export function CashierPage() {
           </div>
         )}
       </motion.div>
+
+      {/* Confirmación fuerte del fin de día (H4): FIN_DIA en esta pantalla SIEMPRE confirma. */}
+      <ConfirmFinDiaModal
+        open={confirmFinDia}
+        onlyShiftSoFar={closeOpts.onlyShiftSoFar}
+        otherOpenInBranch={closeOpts.otherOpenInBranch}
+        onConfirm={() => closeShift.mutate()}
+        onCancel={() => setConfirmFinDia(false)}
+      />
 
       <ReopenShiftModal
         open={reopenTarget != null}
