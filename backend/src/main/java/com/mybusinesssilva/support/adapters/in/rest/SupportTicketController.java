@@ -7,6 +7,9 @@ import com.mybusinesssilva.support.adapters.in.rest.dto.ChangeStatusRequest;
 import com.mybusinesssilva.support.adapters.in.rest.dto.CreateTicketRequest;
 import com.mybusinesssilva.support.adapters.in.rest.dto.TicketListItem;
 import com.mybusinesssilva.support.adapters.in.rest.dto.TicketView;
+import com.mybusinesssilva.support.adapters.in.rest.dto.MessageView;
+import com.mybusinesssilva.support.adapters.in.rest.dto.PostMessageRequest;
+import com.mybusinesssilva.support.domain.model.AuthorType;
 import com.mybusinesssilva.support.domain.model.TicketContext;
 import com.mybusinesssilva.support.domain.model.TicketStatus;
 import com.mybusinesssilva.support.domain.model.TicketType;
@@ -17,6 +20,8 @@ import com.mybusinesssilva.support.domain.port.in.CreateSupportTicketUseCase.New
 import com.mybusinesssilva.support.domain.port.in.CreateSupportTicketUseCase.UploadedImage;
 import com.mybusinesssilva.support.domain.port.in.GetSupportTicketUseCase;
 import com.mybusinesssilva.support.domain.port.in.ListSupportTicketsUseCase;
+import com.mybusinesssilva.support.domain.port.in.ListThreadUseCase;
+import com.mybusinesssilva.support.domain.port.in.PostMessageUseCase;
 import com.mybusinesssilva.support.domain.exception.SupportValidationException;
 import com.mybusinesssilva.support.domain.port.in.RequesterScope;
 import com.mybusinesssilva.support.domain.port.in.TicketQuery;
@@ -45,16 +50,21 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * API del buzón de soporte para usuarios del negocio (OWNER y CASHIER del tenant).
+ * API del buzón de soporte para usuarios del negocio (OWNER y CASHIER del
+ * tenant).
  *
  * <ul>
- * <li>{@code POST /} — crear ticket (multipart: parte {@code data} JSON + partes {@code images}).</li>
- * <li>{@code GET /} — listar los tickets visibles según el alcance del solicitante.</li>
+ * <li>{@code POST /} — crear ticket (multipart: parte {@code data} JSON +
+ * partes {@code images}).</li>
+ * <li>{@code GET /} — listar los tickets visibles según el alcance del
+ * solicitante.</li>
  * <li>{@code GET /{publicId}} — detalle (404 si no es visible).</li>
  * <li>{@code PATCH /{publicId}/status} — cambiar estado (solo OWNER).</li>
  * </ul>
  *
- * <p>El {@code TicketContext} y el {@code RequesterScope} se derivan en el controller a partir del
+ * <p>
+ * El {@code TicketContext} y el {@code RequesterScope} se derivan en el
+ * controller a partir del
  * {@code AuthenticatedUser} y el request (nunca del cliente).
  */
 @RestController
@@ -66,20 +76,29 @@ public class SupportTicketController {
     private final GetSupportTicketUseCase getUseCase;
     private final ChangeTicketStatusUseCase changeStatusUseCase;
     private final SupportTicketRepository repository;
+    private final ListThreadUseCase listThreadUseCase;
+    private final PostMessageUseCase postMessageUseCase;
 
     public SupportTicketController(CreateSupportTicketUseCase createUseCase,
-                                   ListSupportTicketsUseCase listUseCase,
-                                   GetSupportTicketUseCase getUseCase,
-                                   ChangeTicketStatusUseCase changeStatusUseCase,
-                                   SupportTicketRepository repository) {
+            ListSupportTicketsUseCase listUseCase,
+            GetSupportTicketUseCase getUseCase,
+            ChangeTicketStatusUseCase changeStatusUseCase,
+            SupportTicketRepository repository,
+            ListThreadUseCase listThreadUseCase,
+            PostMessageUseCase postMessageUseCase) {
         this.createUseCase = createUseCase;
         this.listUseCase = listUseCase;
         this.getUseCase = getUseCase;
         this.changeStatusUseCase = changeStatusUseCase;
+        this.listThreadUseCase = listThreadUseCase;
+        this.postMessageUseCase = postMessageUseCase;
         this.repository = repository;
     }
 
-    /** Crea un ticket. OWNER o CASHIER autenticados del tenant (nunca el super-admin). */
+    /**
+     * Crea un ticket. OWNER o CASHIER autenticados del tenant (nunca el
+     * super-admin).
+     */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("isAuthenticated() and !hasRole('SUPER_ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
@@ -108,7 +127,9 @@ public class SupportTicketController {
         return TicketView.from(createUseCase.create(command));
     }
 
-    /** Lista los tickets visibles para el solicitante según su alcance y filtros. */
+    /**
+     * Lista los tickets visibles para el solicitante según su alcance y filtros.
+     */
     @GetMapping
     @PreAuthorize("isAuthenticated() and !hasRole('SUPER_ADMIN')")
     public List<TicketListItem> list(
@@ -125,7 +146,10 @@ public class SupportTicketController {
         return listUseCase.list(query, scope).stream().map(TicketListItem::from).toList();
     }
 
-    /** Detalle de un ticket por {@code publicId} (404 si no es visible para el solicitante). */
+    /**
+     * Detalle de un ticket por {@code publicId} (404 si no es visible para el
+     * solicitante).
+     */
     @GetMapping("/{publicId}")
     @PreAuthorize("isAuthenticated() and !hasRole('SUPER_ADMIN')")
     public TicketView detail(
@@ -151,13 +175,51 @@ public class SupportTicketController {
                 publicId, request.status(), request.note(), actor, tenantScope(user)));
     }
 
+    /**
+     * Lista el hilo de mensajes del ticket visible para el solicitante de tenant.
+     */
+    @GetMapping("/{publicId}/messages")
+    @PreAuthorize("isAuthenticated() and !hasRole('SUPER_ADMIN')")
+    public List<MessageView> listThread(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID publicId) {
+        return listThreadUseCase.listThread(publicId, tenantScope(user))
+                .stream().map(MessageView::from).toList();
+    }
+
+    /**
+     * Publica un mensaje del reportante en el hilo. {@code author_type=REPORTER}
+     * fijo (nunca del cliente).
+     */
+    @PostMapping("/{publicId}/messages")
+    @PreAuthorize("isAuthenticated() and !hasRole('SUPER_ADMIN')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public MessageView postMessage(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID publicId,
+            @Valid @RequestBody PostMessageRequest request) {
+        PostMessageUseCase.Author author = new PostMessageUseCase.Author(
+                AuthorType.REPORTER,
+                primaryRole(user),
+                user == null ? null : user.subject(),
+                user == null ? null : user.subject(),
+                sanitizeAppVersion(request.appVersion()),
+                sanitizeScreenPath(request.screenPath()));
+        return MessageView.from(postMessageUseCase.postMessage(
+                publicId, request.body(), author, tenantScope(user)));
+    }
+
     // ----- Derivación del alcance y utilidades (nunca del cliente) -----
 
     /**
-     * Construye el alcance del solicitante de tenant con precedencia determinista (§3): OWNER o ADMIN
-     * ven todo su negocio; el resto de roles (CASHIER, etc.) solo lo que crearon. Exige tenant
-     * presente y {@code business_id} resuelto (barrera dura): si falta, 422 — nunca se consulta sin
-     * negocio. El {@code businessId}/{@code reporterUserId} salen del token, nunca del cliente.
+     * Construye el alcance del solicitante de tenant con precedencia determinista
+     * (§3): OWNER o ADMIN
+     * ven todo su negocio; el resto de roles (CASHIER, etc.) solo lo que crearon.
+     * Exige tenant
+     * presente y {@code business_id} resuelto (barrera dura): si falta, 422 — nunca
+     * se consulta sin
+     * negocio. El {@code businessId}/{@code reporterUserId} salen del token, nunca
+     * del cliente.
      */
     private RequesterScope tenantScope(AuthenticatedUser user) {
         if (user == null) {
@@ -192,6 +254,36 @@ public class SupportTicketController {
             return Roles.CASHIER;
         }
         return user.roles().stream().findFirst().orElse(null);
+    }
+
+    /**
+     * Trunca la versión del front a 60 (misma lógica del alta). El servicio la
+     * vuelve a aplicar.
+     */
+    private static String sanitizeAppVersion(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.length() <= 60 ? trimmed : trimmed.substring(0, 60);
+    }
+
+    /**
+     * Sanea la ruta del front (misma lógica del alta). El servicio la vuelve a
+     * aplicar.
+     */
+    private static String sanitizeScreenPath(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.length() <= 300 ? trimmed : trimmed.substring(0, 300);
     }
 
     private static List<UploadedImage> toUploadedImages(MultipartFile[] images) {

@@ -1,5 +1,9 @@
 package com.mybusinesssilva.support.application;
 
+import com.mybusinesssilva.notifications.application.NotificationService;
+import com.mybusinesssilva.notifications.domain.model.Notification;
+import com.mybusinesssilva.notifications.domain.model.NotificationType;
+import com.mybusinesssilva.notifications.domain.model.RecipientScope;
 import com.mybusinesssilva.platform.audit.AuditService;
 import com.mybusinesssilva.platform.notifications.NotificationPort;
 import com.mybusinesssilva.support.config.NotificationsProperties;
@@ -11,6 +15,7 @@ import com.mybusinesssilva.support.domain.model.SupportTicketImage;
 import com.mybusinesssilva.support.domain.model.TicketContext;
 import com.mybusinesssilva.support.domain.model.TicketStatus;
 import com.mybusinesssilva.support.domain.model.TicketType;
+import com.mybusinesssilva.support.domain.model.TicketVisibility;
 import com.mybusinesssilva.support.domain.port.in.Actor;
 import com.mybusinesssilva.support.domain.port.in.ChangeTicketStatusUseCase;
 import com.mybusinesssilva.support.domain.port.in.CreateSupportTicketUseCase;
@@ -34,11 +39,16 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.util.HtmlUtils;
 
 /**
- * Orquestador del buzón de soporte: valida, resuelve el negocio (barrera dura), valida imágenes por
- * magic bytes, sube, persiste de forma transaccional, audita y notifica (best-effort, tras el commit).
+ * Orquestador del buzón de soporte: valida, resuelve el negocio (barrera dura),
+ * valida imágenes por
+ * magic bytes, sube, persiste de forma transaccional, audita y notifica
+ * (best-effort, tras el commit).
  *
- * <p>Implementa los cuatro casos de uso del §3 del diseño. No expone el {@code id} secuencial interno
- * (opera por {@code publicId} UUID). La notificación por correo nunca tumba la creación del ticket.
+ * <p>
+ * Implementa los cuatro casos de uso del §3 del diseño. No expone el {@code id}
+ * secuencial interno
+ * (opera por {@code publicId} UUID). La notificación por correo nunca tumba la
+ * creación del ticket.
  */
 @Service
 public class SupportTicketService implements CreateSupportTicketUseCase, ListSupportTicketsUseCase,
@@ -54,22 +64,29 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
     private static final int SCREEN_PATH_MAX = 300;
     private static final int APP_VERSION_MAX = 60;
     private static final int USER_AGENT_MAX = 500;
-    private static final java.util.regex.Pattern SCREEN_PATH_RE =
-            java.util.regex.Pattern.compile("^/[\\w\\-/.%]{0,299}$");
+    private static final java.util.regex.Pattern SCREEN_PATH_RE = java.util.regex.Pattern
+            .compile("^/[\\w\\-/.%]{0,299}$");
 
     // =====================================================================================
-    // POLÍTICA DE IMAGEN INVÁLIDA — §11.8 (DECISIÓN DE NEGOCIO BLOQUEANTE DEL DUEÑO)
+    // POLÍTICA DE IMAGEN INVÁLIDA — §11.8 (DECISIÓN DE NEGOCIO BLOQUEANTE DEL
+    // DUEÑO)
     // -------------------------------------------------------------------------------------
-    // Un ÚNICO punto de decisión con AMBAS ramas codificadas. NO está finalizada: el dueño debe
+    // Un ÚNICO punto de decisión con AMBAS ramas codificadas. NO está finalizada:
+    // el dueño debe
     // confirmar por el canal formal (§11.8) antes de fijar una como definitiva.
-    //   - Rama A (REJECT_ALL): si alguna imagen es inválida (tipo/tamaño/cantidad), se rechaza TODO
-    //     el ticket con 422 IMAGE_INVALID + invalidImages[]. No se crea nada.
-    //   - Rama B (ACCEPT_VALID): se crea el ticket solo con las imágenes válidas y se informan las
-    //     descartadas (rejectedImages[]). No se pierde el texto del usuario.
+    // - Rama A (REJECT_ALL): si alguna imagen es inválida (tipo/tamaño/cantidad),
+    // se rechaza TODO
+    // el ticket con 422 IMAGE_INVALID + invalidImages[]. No se crea nada.
+    // - Rama B (ACCEPT_VALID): se crea el ticket solo con las imágenes válidas y se
+    // informan las
+    // descartadas (rejectedImages[]). No se pierde el texto del usuario.
     //
-    // TODO(dueño §11.8): confirmar la rama definitiva. Hasta la confirmación formal queda Rama B
-    // (recomendación NO vinculante del diseño, alineada con el steering premium "no perder el
-    // trabajo"; coincide con la pista del dueño "la b es la mejor"). Cambiar la política = cambiar
+    // TODO(dueño §11.8): confirmar la rama definitiva. Hasta la confirmación formal
+    // queda Rama B
+    // (recomendación NO vinculante del diseño, alineada con el steering premium "no
+    // perder el
+    // trabajo"; coincide con la pista del dueño "la b es la mejor"). Cambiar la
+    // política = cambiar
     // ESTA sola constante; ambas ramas ya están implementadas abajo.
     static final InvalidImagePolicy IMAGE_POLICY = InvalidImagePolicy.ACCEPT_VALID; // Rama B (provisional)
 
@@ -77,7 +94,10 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
     enum InvalidImagePolicy {
         /** Rama A: rechazar todo el ticket (422 IMAGE_INVALID). */
         REJECT_ALL,
-        /** Rama B: crear con las válidas e informar las descartadas (201 + rejectedImages). */
+        /**
+         * Rama B: crear con las válidas e informar las descartadas (201 +
+         * rejectedImages).
+         */
         ACCEPT_VALID
     }
 
@@ -87,21 +107,24 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
     private final AuditService auditService;
     private final NotificationsProperties notificationsProperties;
     private final SupportImageProperties imageProperties;
+    private final NotificationService notificationService;
     private final TransactionTemplate transactionTemplate;
 
     public SupportTicketService(SupportTicketRepository repo,
-                                ImageStoragePort imageStorage,
-                                NotificationPort notifications,
-                                AuditService auditService,
-                                NotificationsProperties notificationsProperties,
-                                SupportImageProperties imageProperties,
-                                PlatformTransactionManager transactionManager) {
+            ImageStoragePort imageStorage,
+            NotificationPort notifications,
+            AuditService auditService,
+            NotificationsProperties notificationsProperties,
+            SupportImageProperties imageProperties,
+            NotificationService notificationService,
+            PlatformTransactionManager transactionManager) {
         this.repo = repo;
         this.imageStorage = imageStorage;
         this.notifications = notifications;
         this.auditService = auditService;
         this.notificationsProperties = notificationsProperties;
         this.imageProperties = imageProperties;
+        this.notificationService = notificationService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -130,7 +153,8 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
             throw new SupportValidationException("Falta el contexto del reporte.");
         }
 
-        // (2) BARRERA DURA: exigir tenant presente y business_id resuelto (nunca ticket huérfano).
+        // (2) BARRERA DURA: exigir tenant presente y business_id resuelto (nunca ticket
+        // huérfano).
         long businessId = requireResolvedBusiness(ctx.tenantSchema());
 
         // (3) Validar imágenes por magic bytes, tamaño y cantidad.
@@ -141,7 +165,8 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
         if (validation.hasInvalid()) {
             switch (IMAGE_POLICY) {
                 case REJECT_ALL -> {
-                    // Rama A: nada a medias; se rechaza todo con 422 IMAGE_INVALID + invalidImages[].
+                    // Rama A: nada a medias; se rechaza todo con 422 IMAGE_INVALID +
+                    // invalidImages[].
                     throw new SupportImageRejectedException(
                             "Alguna imagen no es válida (tipo/tamaño/cantidad).", validation.rejected());
                 }
@@ -159,7 +184,8 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
             toUpload = validation.valid();
         }
 
-        // (4) Subir las imágenes válidas (no-op si Cloudinary no está; fallos de red se omiten).
+        // (4) Subir las imágenes válidas (no-op si Cloudinary no está; fallos de red se
+        // omiten).
         List<SupportTicketImage> uploaded = imageStorage.upload(toUpload);
 
         // (5) Persistir (ticket + imágenes) en una transacción.
@@ -171,7 +197,8 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
                 command.type(), title, description, screenPath, appVersion, userAgent, device,
                 TicketStatus.NUEVO, null, null, null, null, null, uploaded), uploaded);
 
-        // (6) Auditar el alta (dato de plataforma → recordGlobal) con el detailsMap del §3 paso 5.
+        // (6) Auditar el alta (dato de plataforma → recordGlobal) con el detailsMap del
+        // §3 paso 5.
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("tenant", ctx.tenantSchema());
         details.put("role", ctx.reporterRole());
@@ -184,15 +211,18 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
         auditService.recordGlobal(ctx.reporterUserId(), "SUPPORT_TICKET_CREATED",
                 "support_ticket", persisted.publicId().toString(), details);
 
-        // (7) Notificar DESPUÉS del commit, en try/catch aislado; omitir si el inbox está en blanco.
+        // (7) Notificar DESPUÉS del commit, en try/catch aislado; omitir si el inbox
+        // está en blanco.
         notifyNewTicket(persisted);
 
         return persisted;
     }
 
     /**
-     * Persiste ticket + imágenes en una sola transacción (vía {@link TransactionTemplate}, para que
-     * el commit real ocurra ANTES de la notificación best-effort del §3 paso 7, sin depender del
+     * Persiste ticket + imágenes en una sola transacción (vía
+     * {@link TransactionTemplate}, para que
+     * el commit real ocurra ANTES de la notificación best-effort del §3 paso 7, sin
+     * depender del
      * proxy de {@code @Transactional} en una auto-invocación).
      */
     private SupportTicket persist(SupportTicket ticket, List<SupportTicketImage> images) {
@@ -217,10 +247,27 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
                 images == null ? List.of() : images);
     }
 
-    /** Envío de correo best-effort tras el commit: nunca tumba el ticket ya creado. */
+    /**
+     * Envío de correo best-effort tras el commit: nunca tumba el ticket ya creado.
+     */
     private void notifyNewTicket(SupportTicket ticket) {
+        // 1) Notificación in-app al super-admin — independiente del correo (D13/H-A11).
+        try {
+            Notification draft = new Notification(null, null, null, null,
+                    null, RecipientScope.SUPER_ADMIN, NotificationType.SUPPORT_NEW_TICKET,
+                    "Nuevo reporte: " + ticket.title(),
+                    ticket.type().name() + " · " + ticket.tenantSchema(),
+                    "support_ticket", ticket.publicId().toString(),
+                    Map.of("ticketType", ticket.type().name()), null, null);
+            notificationService.create(draft);
+        } catch (RuntimeException ex) {
+            log.warn("[SUPPORT] Notif in-app de nuevo ticket {} falló (se ignora).", ticket.publicId());
+        }
+
+        // 2) Correo al inbox — conserva la guarda original.
         String inbox = notificationsProperties.support() == null
-                ? null : notificationsProperties.support().inbox();
+                ? null
+                : notificationsProperties.support().inbox();
         if (inbox == null || inbox.isBlank()) {
             log.warn("[SUPPORT] SUPPORT_INBOX_EMAIL en blanco; correo de soporte NO enviado "
                     + "(ticket {} creado igual).", ticket.publicId());
@@ -281,7 +328,8 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
         SupportTicket ticket = repo.findByPublicId(publicId)
                 .orElseThrow(() -> new TicketNotFoundException("Ticket de soporte no encontrado."));
         if (!isVisible(ticket, scope)) {
-            // No se revela la existencia de tickets fuera de alcance: se trata como no encontrado.
+            // No se revela la existencia de tickets fuera de alcance: se trata como no
+            // encontrado.
             throw new TicketNotFoundException("Ticket de soporte no encontrado.");
         }
         return ticket;
@@ -293,7 +341,7 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
 
     @Override
     public SupportTicket changeStatus(UUID publicId, TicketStatus newStatus, String note,
-                                      Actor actor, RequesterScope scope) {
+            Actor actor, RequesterScope scope) {
         if (newStatus == null) {
             throw new SupportValidationException("El estado destino es obligatorio.");
         }
@@ -329,6 +377,21 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
         auditService.recordGlobal(resolvedBy, "SUPPORT_TICKET_STATUS_CHANGED",
                 "support_ticket", publicId.toString(), details);
 
+        // Depuración best-effort del badge super-admin (D17/§5.4): al
+        // resolver/cerrar/descartar, se
+        // marcan leídas las notificaciones del equipo asociadas a este ticket. Fuera de
+        // transacción.
+        if (newStatus == TicketStatus.RESUELTO
+                || newStatus == TicketStatus.CERRADO
+                || newStatus == TicketStatus.DESCARTADO) {
+            try {
+                notificationService.markSupportTicketResolvedForSuperAdmin(publicId.toString());
+            } catch (RuntimeException ex) {
+                log.warn("[SUPPORT] Depuración de notifs super-admin para ticket {} falló (se ignora).",
+                        publicId);
+            }
+        }
+
         return updated;
     }
 
@@ -345,15 +408,8 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
     }
 
     private static boolean isVisible(SupportTicket ticket, RequesterScope scope) {
-        return switch (scope) {
-            case RequesterScope.SuperAdmin ignored -> true;
-            case RequesterScope.BusinessOwner owner ->
-                    ticket.businessId() != null && ticket.businessId() == owner.businessId();
-            case RequesterScope.Reporter reporter ->
-                    ticket.businessId() != null && ticket.businessId() == reporter.businessId()
-                            && reporter.reporterUserId() != null
-                            && reporter.reporterUserId().equals(ticket.reporterUserId());
-        };
+        // Punto único de verdad de visibilidad (H2): se delega en TicketVisibility.
+        return TicketVisibility.isVisible(ticket, scope);
     }
 
     private static String requireTrimmed(String value, String field, int min, int max) {
@@ -374,9 +430,12 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
             return null;
         }
         String truncated = trimmed.length() <= SCREEN_PATH_MAX
-                ? trimmed : trimmed.substring(0, SCREEN_PATH_MAX);
-        // Si no cumple el patrón (§5.4) no se pierde el dato: se guarda truncado tal cual (es texto,
-        // nunca entra a SQL por concatenación y se renderiza escapado en UI/correo). El regex es la
+                ? trimmed
+                : trimmed.substring(0, SCREEN_PATH_MAX);
+        // Si no cumple el patrón (§5.4) no se pierde el dato: se guarda truncado tal
+        // cual (es texto,
+        // nunca entra a SQL por concatenación y se renderiza escapado en UI/correo). El
+        // regex es la
         // referencia de forma válida documentada en el diseño.
         if (!SCREEN_PATH_RE.matcher(truncated).matches()) {
             log.debug("[SUPPORT] screenPath fuera del patrón esperado; se guarda truncado tal cual.");
@@ -419,7 +478,8 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
                 continue;
             }
             if (acceptedCount >= imageProperties.maxCount()) {
-                // Excede la cantidad permitida: se marca como COUNT (en Rama A rechaza todo; en Rama B
+                // Excede la cantidad permitida: se marca como COUNT (en Rama A rechaza todo; en
+                // Rama B
                 // las sobrantes van a rejectedImages).
                 rejected.add(new RejectedImage(i, "COUNT"));
                 continue;
@@ -430,7 +490,10 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
         return new ImageValidationResult(valid, rejected);
     }
 
-    /** Tipo real por magic bytes: solo JPEG, PNG o WEBP (no se confía en el content-type del cliente). */
+    /**
+     * Tipo real por magic bytes: solo JPEG, PNG o WEBP (no se confía en el
+     * content-type del cliente).
+     */
     private static boolean isSupportedImage(byte[] b) {
         return isJpeg(b) || isPng(b) || isWebp(b);
     }
@@ -454,7 +517,10 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
                 && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P';
     }
 
-    /** Resultado de la validación de imágenes: válidas a subir + descartadas con su razón. */
+    /**
+     * Resultado de la validación de imágenes: válidas a subir + descartadas con su
+     * razón.
+     */
     record ImageValidationResult(List<UploadedImage> valid, List<RejectedImage> rejected) {
         boolean hasInvalid() {
             return !rejected.isEmpty();
@@ -466,9 +532,11 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
     }
 
     /**
-     * Rechazo de alta por imagen inválida (Rama A del §11.8): mapea a 422 con {@code title =
+     * Rechazo de alta por imagen inválida (Rama A del §11.8): mapea a 422 con
+     * {@code title =
      * IMAGE_INVALID} y lleva el detalle de las imágenes inválidas. Extiende
-     * {@link SupportValidationException} para reusar el 422 del handler global, y el controller añade
+     * {@link SupportValidationException} para reusar el 422 del handler global, y
+     * el controller añade
      * la propiedad {@code invalidImages} del cuerpo.
      */
     public static final class SupportImageRejectedException extends SupportValidationException {

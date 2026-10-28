@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { LifeBuoy, Bug, Lightbulb, Search, Inbox, Image as ImageIcon } from 'lucide-react';
@@ -32,6 +33,21 @@ export function SupportInboxPage() {
   const [businessId, setBusinessId] = useState('');
   const [q, setQ] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Deep-link: /admin-support?ticket=<publicId> abre el detalle directo (desde la campanita).
+  useEffect(() => {
+    const t = searchParams.get('ticket');
+    if (t) setDetailId(t);
+  }, [searchParams]);
+
+  const closeDetail = () => {
+    setDetailId(null);
+    if (searchParams.has('ticket')) {
+      searchParams.delete('ticket');
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
 
   const businesses = useQuery({
     queryKey: ['admin', 'businesses'],
@@ -171,7 +187,7 @@ export function SupportInboxPage() {
             resourceBase="/admin/support-tickets"
             canChange
             businessName={bizName(detailBiz)}
-            onClose={() => setDetailId(null)}
+            onClose={closeDetail}
           />
         )}
       </AnimatePresence>

@@ -1,16 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  LifeBuoy, Bug, Lightbulb, Search, Inbox, Image as ImageIcon,
+  LifeBuoy, Bug, Lightbulb, Search, Inbox, Image as ImageIcon, Send,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/store/toast';
 import { InfoBanner } from '@/components/InfoBanner';
 import { staggerContainer, staggerItem, popIn, quick, pressable } from '@/lib/motion';
 import {
-  type TicketListItem, type TicketView, type TicketStatus,
-  TYPE_META, STATUS_META, STATUS_FILTERS, OWNER_TRANSITIONS, fmtDateTime, deviceIcon,
+  type TicketListItem, type TicketView, type TicketStatus, type MessageView,
+  TYPE_META, STATUS_META, STATUS_FILTERS, OWNER_TRANSITIONS, AUTHOR_META, fmtDateTime, deviceIcon,
 } from '@/pages/supportShared';
 import './support.css';
 
@@ -26,6 +27,21 @@ export function SupportPage() {
   const [status, setStatus] = useState<string>('');
   const [q, setQ] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Deep-link: /support?ticket=<publicId> abre el detalle directo (desde la campanita).
+  useEffect(() => {
+    const t = searchParams.get('ticket');
+    if (t) setDetailId(t);
+  }, [searchParams]);
+
+  const closeDetail = () => {
+    setDetailId(null);
+    if (searchParams.has('ticket')) {
+      searchParams.delete('ticket');
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
 
   const tickets = useQuery({
     queryKey: ['support', 'tickets', { type, status }],
@@ -113,7 +129,7 @@ export function SupportPage() {
 
       <AnimatePresence>
         {detailId && (
-          <SupportDetailModal publicId={detailId} resourceBase="/support/tickets" canChange onClose={() => setDetailId(null)} />
+          <SupportDetailModal publicId={detailId} resourceBase="/support/tickets" canChange onClose={closeDetail} />
         )}
       </AnimatePresence>
     </div>
@@ -177,6 +193,28 @@ export function SupportDetailModal({ publicId, resourceBase, canChange, business
     onError: () => toast.error('No se pudo cambiar el estado', 'Revisa que la transición sea válida.'),
   });
 
+  // ---- Conversación bidireccional del ticket (Pieza 1) ----
+  const thread = useQuery({
+    queryKey: ['support', 'thread', resourceBase, publicId],
+    queryFn: async () =>
+      (await api.get<MessageView[]>(`${resourceBase}/${publicId}/messages`)).data,
+  });
+
+  const [msgBody, setMsgBody] = useState('');
+  const postMsg = useMutation({
+    mutationFn: async (body: string) =>
+      (await api.post<MessageView>(`${resourceBase}/${publicId}/messages`, { body })).data,
+    onSuccess: () => {
+      setMsgBody('');
+      // Solo el hilo y las notificaciones se invalidan: no refrescamos la lista de tickets
+      // (un mensaje no cambia el estado ni el orden de la tabla).
+      queryClient.invalidateQueries({ queryKey: ['support', 'thread', resourceBase, publicId] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      toast.success('Enviado', 'Tu mensaje fue publicado.');
+    },
+    onError: () => toast.error('Error', 'No se pudo enviar el mensaje.'),
+  });
+
   const t = detail.data;
   const sm = t ? STATUS_META[t.status] : null;
   const tm = t ? TYPE_META[t.type] : null;
@@ -227,6 +265,54 @@ export function SupportDetailModal({ publicId, resourceBase, canChange, business
               {t.resolutionNote && (
                 <div className="sup-resnote"><strong>Nota:</strong> {t.resolutionNote}</div>
               )}
+
+              <div className="sup-thread">
+                <h5 className="sup-thread-title">Conversación</h5>
+                {thread.isLoading ? <p className="admin-plan-hint">Cargando…</p> :
+                  (thread.data ?? []).length === 0 ? (
+                    <div className="sup-thread-empty">
+                      <p>Aún no hay respuestas. Escribe el primer mensaje para continuar la conversación.</p>
+                    </div>
+                  ) : (
+                    <div className="sup-bubbles">
+                      {(thread.data ?? []).map((msg) => {
+                        const meta = AUTHOR_META[msg.authorType];
+                        return (
+                          <div key={msg.publicId} className={`sup-bubble sup-bubble-${meta.side} ${meta.cls}`}>
+                            <span className="sup-bubble-author">{meta.label}
+                              {msg.authorType === 'REPORTER' && msg.authorEmail &&
+                                <small className="sup-bubble-email"> · {msg.authorEmail}</small>}
+                            </span>
+                            <p className="sup-bubble-body">{msg.body}</p>
+                            <span className="sup-bubble-time sup-num">{fmtDateTime(msg.createdAt).full}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                <div className="sup-reply-box">
+                  <textarea
+                    className="sup-reply-input"
+                    placeholder="Escribe tu respuesta…"
+                    value={msgBody}
+                    onChange={(e) => setMsgBody(e.target.value)}
+                    maxLength={4000}
+                    rows={3}
+                  />
+                  <div className="sup-reply-footer">
+                    <small className={msgBody.length >= 3600 ? 'sup-reply-warn' : 'sup-reply-count'}>
+                      {msgBody.length}/4000
+                    </small>
+                    <motion.button
+                      className="sup-reply-send"
+                      disabled={postMsg.isPending || !msgBody.trim()}
+                      onClick={() => postMsg.mutate(msgBody.trim())}
+                      whileHover={pressable.whileHover} whileTap={pressable.whileTap} transition={pressable.transition}>
+                      <Send size={15} /> Enviar
+                    </motion.button>
+                  </div>
+                </div>
+              </div>
 
               {canChange && transitions.length > 0 && (
                 <div className="sup-actions-box">

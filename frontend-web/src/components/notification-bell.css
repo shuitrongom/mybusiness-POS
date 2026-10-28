@@ -1,0 +1,202 @@
+/* =====================================================================
+   Campanita del centro de notificaciones (NotificationBell).
+   Acabado premium: botón compacto con badge, popover con filas-tarjeta
+   (--surface-2, radio 12px, hover borde --brand-600), no-leídas resaltadas,
+   fecha con tabular-nums. Mismo lenguaje visual que support.css / theme-toggle.
+   ===================================================================== */
+
+.notif-bell { position: relative; display: inline-flex; }
+
+/* ---- Botón (misma caja que .theme-toggle) ---- */
+.notif-bell-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, transform 0.05s ease;
+}
+.notif-bell-btn:hover { color: var(--brand-600); border-color: var(--brand-500); }
+.notif-bell-btn:active { transform: scale(0.94); }
+.notif-bell-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(46, 110, 242, 0.28); }
+
+/* ---- Badge de no-leídas ---- */
+.notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e11d48;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* ---- Popover ---- */
+.notif-pop {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+  z-index: 60;
+  overflow: hidden;
+}
+
+.notif-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.notif-pop-head strong { color: var(--heading); font-size: var(--fs-md); }
+
+.notif-markall {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--brand-600);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.notif-markall:hover { background: color-mix(in srgb, var(--brand-600, #2e6ef2) 10%, transparent); }
+.notif-markall:disabled { opacity: 0.6; cursor: default; }
+
+/* ---- Lista en filas-tarjeta ---- */
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.notif-num { font-variant-numeric: tabular-nums; }
+.notif-loading { margin: 0; padding: 18px; text-align: center; color: var(--text-muted); font-size: var(--fs-sm); }
+
+.notif-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 12px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+.notif-item:hover {
+  border-color: color-mix(in srgb, var(--brand-600, #2e6ef2) 42%, var(--border));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+.notif-item:focus-visible { outline: none; border-color: var(--brand-600); }
+/* Sin ref navegable: no es un enlace, cursor por defecto. */
+.notif-item.is-static { cursor: default; }
+.notif-item.is-static:hover { box-shadow: none; }
+
+/* No-leídas: acento brand en el borde izquierdo + punto. */
+.notif-item.is-unread { border-left: 3px solid var(--brand-600); }
+.notif-dot {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--brand-600);
+}
+
+.notif-item-icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+.notif-item.tone-brand  .notif-item-icon { background: color-mix(in srgb, var(--brand-600, #2e6ef2) 14%, transparent); color: var(--brand-600, #2e6ef2); }
+.notif-item.tone-violet .notif-item-icon { background: color-mix(in srgb, #7c5cff 14%, transparent); color: #7c5cff; }
+.notif-item.tone-amber  .notif-item-icon { background: color-mix(in srgb, #d97706 16%, transparent); color: #d97706; }
+.notif-item.tone-green  .notif-item-icon { background: color-mix(in srgb, #12b886 14%, transparent); color: #12b886; }
+
+.notif-item-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.notif-item-title {
+  font-weight: 600;
+  color: var(--heading);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+}
+.notif-item.is-unread .notif-item-title { font-weight: 700; }
+.notif-item-text {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.notif-item-time { font-size: var(--fs-xs); color: var(--text-muted); opacity: 0.8; }
+
+/* ---- Estado vacío premium ---- */
+.notif-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: var(--space-5) var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  color: var(--text-muted);
+}
+.notif-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.notif-empty p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; max-width: 280px; }
+
+@media (max-width: 480px) {
+  .notif-pop { position: fixed; top: 60px; right: 16px; left: 16px; width: auto; }
+}

@@ -5,6 +5,7 @@ import {
   Home, LayoutDashboard, ShoppingCart, ShoppingBag, Boxes,
   Settings, ChevronDown, Smartphone, FileText, LifeBuoy,
 } from 'lucide-react';
+import { NotificationBell } from '@/components/NotificationBell';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UserMenu } from '@/components/UserMenu';
 import { SupportFab } from '@/components/SupportFab';
@@ -238,6 +239,7 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
         <header className="topbar">
           <div className="topbar-spacer" />
           <div className="topbar-actions">
+            <NotificationBell />
             <ThemeToggle />
             <UserMenu />
           </div>

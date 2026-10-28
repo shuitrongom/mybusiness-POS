@@ -110,3 +110,21 @@ export function fmtDateTime(iso: string | null): { date: string; time: string; f
     full: d.toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
   };
 }
+
+// ---- Hilo de mensajes (Pieza 1, §6) ----
+
+export type AuthorType = 'SUPER_ADMIN' | 'REPORTER';
+
+export interface MessageView {
+  publicId: string;
+  authorType: AuthorType;
+  authorEmail: string | null;  // null cuando authorType === 'SUPER_ADMIN' (server-side N-R4-4)
+  body: string;
+  createdAt: string;
+}
+
+/** Metadatos de render por lado del hilo: etiqueta, tono CSS, alineación. */
+export const AUTHOR_META: Record<AuthorType, { label: string; cls: string; side: 'left' | 'right' }> = {
+  SUPER_ADMIN: { label: 'Equipo PuntoNube', cls: 'is-team', side: 'left' },
+  REPORTER: { label: 'El negocio', cls: 'is-reporter', side: 'right' },
+};

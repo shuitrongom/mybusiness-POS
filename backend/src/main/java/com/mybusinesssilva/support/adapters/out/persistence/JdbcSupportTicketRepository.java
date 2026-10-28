@@ -1,5 +1,6 @@
 package com.mybusinesssilva.support.adapters.out.persistence;
 
+import com.mybusinesssilva.platform.tenant.BusinessResolver;
 import com.mybusinesssilva.support.domain.model.SupportTicket;
 import com.mybusinesssilva.support.domain.model.SupportTicketImage;
 import com.mybusinesssilva.support.domain.model.TicketStatus;
@@ -19,18 +20,24 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * Implementación JDBC del repositorio del buzón de soporte sobre el schema {@code admin}.
+ * Implementación JDBC del repositorio del buzón de soporte sobre el schema
+ * {@code admin}.
  *
- * <p>Usa {@link JdbcClient} con parámetros nombrados (anti-inyección). El aislamiento por negocio se
- * aplica traduciendo el {@link RequesterScope} a cláusulas {@code WHERE} (el schema admin no usa RLS).
+ * <p>
+ * Usa {@link JdbcClient} con parámetros nombrados (anti-inyección). El
+ * aislamiento por negocio se
+ * aplica traduciendo el {@link RequesterScope} a cláusulas {@code WHERE} (el
+ * schema admin no usa RLS).
  */
 @Repository
 public class JdbcSupportTicketRepository implements SupportTicketRepository {
 
     private final JdbcClient jdbc;
+    private final BusinessResolver businessResolver;
 
-    public JdbcSupportTicketRepository(JdbcClient jdbc) {
+    public JdbcSupportTicketRepository(JdbcClient jdbc, BusinessResolver businessResolver) {
         this.jdbc = jdbc;
+        this.businessResolver = businessResolver;
     }
 
     @Override
@@ -166,7 +173,7 @@ public class JdbcSupportTicketRepository implements SupportTicketRepository {
 
     @Override
     public SupportTicket updateStatusByPublicId(UUID publicId, TicketStatus status, String note,
-                                                 String resolvedBy, Instant resolvedAt) {
+            String resolvedBy, Instant resolvedAt) {
         jdbc.sql("""
                 UPDATE admin.support_ticket
                 SET status = :status,
@@ -187,10 +194,7 @@ public class JdbcSupportTicketRepository implements SupportTicketRepository {
 
     @Override
     public Optional<Long> resolveBusinessIdBySchema(String tenantSchema) {
-        return jdbc.sql("SELECT id FROM admin.business WHERE schema_name = :schema")
-                .param("schema", tenantSchema)
-                .query(Long.class)
-                .optional();
+        return businessResolver.resolveBusinessIdBySchema(tenantSchema);
     }
 
     private List<SupportTicketImage> findImages(long ticketId) {
