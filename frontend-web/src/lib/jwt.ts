@@ -67,6 +67,19 @@ export function isSupervisor(claims: TokenClaims | null): boolean {
 }
 
 /**
+ * @returns true si el usuario es PANADERO. Modelo de un rol por usuario (app_user.role_id
+ * singular), así que un panadero nunca es a la vez OWNER/ADMIN/SUPERVISOR.
+ */
+export function isBaker(claims: TokenClaims | null): boolean {
+  return !!claims && claims.roles.includes('PANADERO');
+}
+
+/** @returns true si el usuario puede registrar tandas (permiso CREATE sobre bakery_prod). */
+export function canRegisterBatch(claims: TokenClaims | null): boolean {
+  return hasPermission(claims, 'bakery_prod', 'CREATE');
+}
+
+/**
  * @returns true si el usuario puede VENDER / operar caja. Regla de negocio: el Dueño administra,
  * el Administrador administra y el Supervisor supervisa — ninguno vende. Solo el personal
  * operativo de caja (cajeros o roles personalizados que no son de administración/supervisión).
@@ -74,6 +87,7 @@ export function isSupervisor(claims: TokenClaims | null): boolean {
 export function canSell(claims: TokenClaims | null): boolean {
   if (!claims) return false;
   if (isSuperAdmin(claims) || isBusinessAdmin(claims) || isSupervisor(claims)) return false;
+  if (isBaker(claims)) return false; // el panadero NO es personal de venta
   return true;
 }
 

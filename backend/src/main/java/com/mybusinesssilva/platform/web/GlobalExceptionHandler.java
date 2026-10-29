@@ -2,6 +2,7 @@ package com.mybusinesssilva.platform.web;
 
 import com.mybusinesssilva.catalog.domain.model.ProductHasStockException;
 import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
+import com.mybusinesssilva.inventory.rawmaterial.domain.model.InsufficientRawMaterialException;
 import com.mybusinesssilva.sales.domain.model.ShiftReopenException;
 import com.mybusinesssilva.support.application.SupportTicketService.SupportImageRejectedException;
 import java.time.Instant;
@@ -71,6 +72,26 @@ public class GlobalExceptionHandler {
         problem.setTitle("INSUFFICIENT_STOCK");
         problem.setProperty("productId", ex.productId());
         problem.setProperty("productName", ex.productName());
+        problem.setProperty("available", ex.available());
+        problem.setProperty("requested", ex.requested());
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Existencia de materia prima insuficiente al registrar una tanda. Espejo exacto
+     * de {@link #handleInsufficientStock}: 409 CONFLICT con {@code title =
+     * INSUFFICIENT_RAW_MATERIAL} y las propiedades del insumo para que el panadero vea
+     * un modal claro ("no hay suficiente harina: disponible N, pediste M"). Sin este
+     * handler, al heredar de {@code RuntimeException} caería en el fallback 500 opaco.
+     */
+    @ExceptionHandler(InsufficientRawMaterialException.class)
+    public ProblemDetail handleInsufficientRawMaterial(InsufficientRawMaterialException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("INSUFFICIENT_RAW_MATERIAL");
+        problem.setProperty("rawMaterialId", ex.rawMaterialId());
+        problem.setProperty("rawMaterialName", ex.rawMaterialName());
         problem.setProperty("available", ex.available());
         problem.setProperty("requested", ex.requested());
         problem.setProperty("timestamp", Instant.now());

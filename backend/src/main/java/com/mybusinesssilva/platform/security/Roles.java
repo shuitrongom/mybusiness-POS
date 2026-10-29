@@ -1,7 +1,8 @@
 package com.mybusinesssilva.platform.security;
 
 /**
- * Roles predefinidos del sistema. Cada negocio puede además crear roles personalizados.
+ * Roles predefinidos del sistema. Cada negocio puede además crear roles
+ * personalizados.
  */
 public final class Roles {
 
@@ -19,6 +20,9 @@ public final class Roles {
 
     /** Cajero: opera el punto de venta. */
     public static final String CASHIER = "CASHIER";
+
+    /** Panadero: registra tandas (producción de pan) y ve sus tandas del día. */
+    public static final String PANADERO = "PANADERO";
 
     private Roles() {
         // Constantes: no instanciable.

@@ -45,6 +45,25 @@ public class ResendNotificationAdapter implements NotificationPort {
     @Override
     public void sendEmail(String to, String subject, String body,
                           String attachmentName, byte[] attachment) {
+        send(to, subject, body, attachmentName, attachment, null, null);
+    }
+
+    /**
+     * Variante de 7 argumentos (Fase 2): mismo payload que el de 5, añadiendo {@code reply_to} y
+     * {@code headers} cuando se indican (para correlacionar la respuesta inbound con el ticket). El
+     * envío de 5 args queda intacto (billing/licensing sin cambios).
+     */
+    @Override
+    public void sendEmail(String to, String subject, String body,
+                          String attachmentName, byte[] attachment,
+                          String replyTo, Map<String, String> headers) {
+        send(to, subject, body, attachmentName, attachment, replyTo, headers);
+    }
+
+    /** Cuerpo común de ambas variantes. {@code replyTo}/{@code headers} son opcionales (nulos ⇒ se omiten). */
+    private void send(String to, String subject, String body,
+                      String attachmentName, byte[] attachment,
+                      String replyTo, Map<String, String> headers) {
         String apiKey = props.resend() == null ? null : props.resend().apiKey();
         String from = props.resend() == null ? null : props.resend().from();
         if (isBlank(apiKey) || isBlank(from) || isBlank(to)) {
@@ -69,6 +88,13 @@ public class ResendNotificationAdapter implements NotificationPort {
                 payload.put("attachments", List.of(Map.of(
                         "filename", attachmentName,
                         "content", Base64.getEncoder().encodeToString(attachment))));
+            }
+            // Fase 2: Reply-To con token de correlación y/o headers extra (solo si se indicaron).
+            if (!isBlank(replyTo)) {
+                payload.put("reply_to", replyTo);
+            }
+            if (headers != null && !headers.isEmpty()) {
+                payload.put("headers", headers);
             }
             http.post()
                     .uri(RESEND_EMAILS_URL)

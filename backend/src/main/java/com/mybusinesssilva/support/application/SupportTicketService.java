@@ -274,14 +274,34 @@ public class SupportTicketService implements CreateSupportTicketUseCase, ListSup
             return;
         }
         try {
-            String subject = "[Soporte PuntoNube] " + ticket.type() + ": " + ticket.title();
+            // Fase 2: token de correlación [PN-<publicId>] en el asunto (fallback robusto, sobrevive a
+            // Re:/Fwd:) + Reply-To reply+<publicId>@<reply-domain> (primario). Si reply-domain está en
+            // blanco se omite el Reply-To pero el token del asunto sigue vigente.
+            String subject = "[Soporte PuntoNube] [PN-" + ticket.publicId() + "] "
+                    + ticket.type() + ": " + ticket.title();
             String html = buildEmailHtml(ticket);
-            notifications.sendEmail(inbox, subject, html, null, null);
+            String replyTo = buildInboundReplyTo(ticket);
+            notifications.sendEmail(inbox, subject, html, null, null, replyTo, null);
         } catch (RuntimeException ex) {
             // Aislado: un fallo de correo no afecta el resultado del alta.
             log.warn("[SUPPORT] Fallo al notificar el ticket {} (se ignora). Causa: {}",
                     ticket.publicId(), ex.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Construye el {@code Reply-To} de correlación {@code reply+<publicId>@<reply-domain>} (Fase 2).
+     * Si {@code reply-domain} está en blanco (degradación), devuelve {@code null} y el envío omite el
+     * {@code Reply-To}; el token {@code [PN-<publicId>]} del asunto sigue siendo correlacionable.
+     */
+    private String buildInboundReplyTo(SupportTicket ticket) {
+        String replyDomain = notificationsProperties.resend() == null
+                ? null
+                : notificationsProperties.resend().replyDomain();
+        if (replyDomain == null || replyDomain.isBlank()) {
+            return null;
+        }
+        return "reply+" + ticket.publicId() + "@" + replyDomain.trim();
     }
 
     /** Cuerpo HTML del correo, con los campos del ticket escapados (anti-XSS). */

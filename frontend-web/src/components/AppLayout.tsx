@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Home, LayoutDashboard, ShoppingCart, ShoppingBag, Boxes,
-  Settings, ChevronDown, Smartphone, FileText, LifeBuoy,
+  Settings, ChevronDown, Smartphone, FileText, LifeBuoy, Croissant,
 } from 'lucide-react';
 import { NotificationBell } from '@/components/NotificationBell';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -73,6 +73,13 @@ const OWNER_GROUPS: NavGroup[] = [
       { to: '/inventory-labels', label: 'Etiquetas de barras' },
       { to: '/inventory-stockapp', label: 'StockApp' },
       { to: '/inventory-kardex', label: 'Kardex' },
+    ],
+  },
+  {
+    id: 'bakery_prod', label: 'Producción', icon: <Croissant size={17} />, module: 'bakery_prod',
+    items: [
+      { to: '/panadero', label: 'Nueva tanda' },
+      { to: '/panadero/tandas', label: 'Mis tandas de hoy' },
     ],
   },
   {
@@ -159,7 +166,9 @@ export function AppLayout({ superAdmin, cashier = false }: AppLayoutProps) {
         ...g,
         items: [
           ...g.items.filter((it) => !INVENTORY_HIDE_FOR_BAKERY.has(it.to)),
+          { to: '/inventory-raw-materials', label: 'Materia prima' },
           { to: '/inventory-waste', label: 'Reporte de merma' },
+          { to: '/bakery-batches', label: 'Tandas y rendimiento' },
         ],
       }
       : g)

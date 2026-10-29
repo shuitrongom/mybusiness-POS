@@ -20,6 +20,9 @@ import java.util.UUID;
  * @param appVersion   versión del front del autor (nullable, traza interna)
  * @param screenPath   ruta del front del autor (nullable, traza interna)
  * @param createdAt    alta (nullable antes de persistir)
+ * @param source       origen del mensaje: {@code PANEL} (Fase 1) | {@code INBOUND_EMAIL} (Fase 2,
+ *                     respuesta del equipo que llegó por correo). Nullable antes de persistir (la BD
+ *                     aplica el default {@code PANEL}).
  */
 public record SupportTicketMessage(
         Long id,
@@ -32,5 +35,6 @@ public record SupportTicketMessage(
         String body,
         String appVersion,
         String screenPath,
-        Instant createdAt) {
+        Instant createdAt,
+        String source) {
 }

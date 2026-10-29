@@ -14,12 +14,26 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record NotificationsProperties(Resend resend, Support support) {
 
     /**
-     * Configuración del proveedor Resend.
+     * Configuración del proveedor Resend. Fase 1 usa {@code apiKey}/{@code from} (envío saliente).
+     * Fase 2 (email INBOUND → hilo) añade los campos de seguridad/correlación del webhook inbound.
      *
-     * @param apiKey API key (secreto; {@code Authorization: Bearer <key>})
-     * @param from   remitente verificado en Resend (PII)
+     * @param apiKey                      API key (SECRETO; {@code Authorization: Bearer <key>})
+     * @param from                        remitente verificado en Resend (PII)
+     * @param inboundWebhookSecret        SECRETO de firma Svix del webhook inbound (formato
+     *                                    {@code whsec_…}); vacío ⇒ el webhook rechaza TODO (fail-closed)
+     * @param inboundAllowlist            remitentes del equipo autorizados, coma-separado (PII); vacío ⇒
+     *                                    rechaza TODO (fail-closed)
+     * @param replyDomain                 dominio para el {@code Reply-To} {@code reply+<publicId>@…};
+     *                                    vacío ⇒ se omite el {@code Reply-To} (el token de asunto sigue)
+     * @param inboundSignatureHeaderPrefix prefijo de los headers de firma ({@code svix} o alias
+     *                                    {@code webhook}); default {@code svix}
+     * @param inboundMaxBytes             tope duro del cuerpo entrante en bytes (barrera 0)
+     * @param inboundMaxTextChars         tope del {@code text} antes de las regex de limpieza
      */
-    public record Resend(String apiKey, String from) {
+    public record Resend(String apiKey, String from, String inboundWebhookSecret,
+                         String inboundAllowlist, String replyDomain,
+                         String inboundSignatureHeaderPrefix, int inboundMaxBytes,
+                         int inboundMaxTextChars) {
     }
 
     /**

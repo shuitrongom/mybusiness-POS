@@ -28,7 +28,7 @@ public class JdbcSupportMessageRepository implements SupportMessageRepository {
     public List<SupportTicketMessage> findByTicketId(long ticketId) {
         List<MessageRow> rows = jdbc.sql("""
                 SELECT id, public_id, ticket_id, author_type, author_role, author_user_id,
-                       author_email, body, app_version, screen_path, created_at
+                       author_email, body, app_version, screen_path, created_at, source
                 FROM admin.support_ticket_message
                 WHERE ticket_id = :ticketId
                 ORDER BY created_at ASC, id ASC
@@ -49,7 +49,7 @@ public class JdbcSupportMessageRepository implements SupportMessageRepository {
                     :ticketId, :authorType, :authorRole, :authorUserId, :authorEmail,
                     :body, :appVersion, :screenPath)
                 RETURNING id, public_id, ticket_id, author_type, author_role, author_user_id,
-                          author_email, body, app_version, screen_path, created_at
+                          author_email, body, app_version, screen_path, created_at, source
                 """)
                 .param("ticketId", message.ticketId())
                 .param("authorType", message.authorType() == null ? null : message.authorType().name())
@@ -62,6 +62,14 @@ public class JdbcSupportMessageRepository implements SupportMessageRepository {
                 .query(MessageRow.class)
                 .single();
         return toMessage(row);
+    }
+
+    @Override
+    public void markSource(long messageId, String source) {
+        jdbc.sql("UPDATE admin.support_ticket_message SET source = :source WHERE id = :id")
+                .param("source", source)
+                .param("id", messageId)
+                .update();
     }
 
     @Override
@@ -91,7 +99,8 @@ public class JdbcSupportMessageRepository implements SupportMessageRepository {
                 r.body(),
                 r.appVersion(),
                 r.screenPath(),
-                r.createdAt() == null ? null : r.createdAt().toInstant());
+                r.createdAt() == null ? null : r.createdAt().toInstant(),
+                r.source());
     }
 
     /** Proyección de fila de {@code admin.support_ticket_message}. */
@@ -106,6 +115,7 @@ public class JdbcSupportMessageRepository implements SupportMessageRepository {
             String body,
             String appVersion,
             String screenPath,
-            Timestamp createdAt) {
+            Timestamp createdAt,
+            String source) {
     }
 }

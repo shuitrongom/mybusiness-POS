@@ -121,6 +121,7 @@ export interface MessageView {
   authorEmail: string | null;  // null cuando authorType === 'SUPER_ADMIN' (server-side N-R4-4)
   body: string;
   createdAt: string;
+  viaEmail: boolean;  // Fase 2: true si la respuesta del equipo llegó por correo (source=INBOUND_EMAIL)
 }
 
 /** Metadatos de render por lado del hilo: etiqueta, tono CSS, alineación. */

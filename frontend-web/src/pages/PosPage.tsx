@@ -793,6 +793,14 @@ export function PosPage() {
           );
           return; // la venta no se registró; el cajero reintenta con la cantidad topada
         }
+        // 422 regla de negocio (p. ej. "Captura primero el precio de merma del artículo…"): el
+        // backend hizo rollback y rechazará el reintento igual. NO se encola offline (no es falta
+        // de conexión): se muestra el detalle del ProblemDetail para que el admin capture el precio.
+        if (ax.response?.status === 422) {
+          const detail = (ax.response?.data as { detail?: string } | undefined)?.detail;
+          toast.error('No se pudo cobrar', detail || 'Revisa el precio de los artículos de merma.');
+          return;
+        }
         // Cualquier otro error (sin conexión): se encola para sincronizar más tarde.
         queueSale(payload);
         setPending(pendingCount());

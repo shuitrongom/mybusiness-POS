@@ -96,7 +96,7 @@ public class SupportThreadService implements ListThreadUseCase, PostMessageUseCa
         SupportTicketMessage draft = new SupportTicketMessage(
                 null, null, ticket.id(),
                 author.type(), author.role(), author.userId(), author.email(),
-                sanitized, appVersion, screenPath, null);
+                sanitized, appVersion, screenPath, null, null);
 
         // (5) Persistir dentro de la transacción (commit antes de notificar).
         SupportTicketMessage saved = transactionTemplate.execute(status -> messageRepo.insert(draft));

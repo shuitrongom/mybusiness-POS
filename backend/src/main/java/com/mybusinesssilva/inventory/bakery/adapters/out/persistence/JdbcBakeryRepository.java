@@ -592,6 +592,15 @@ public class JdbcBakeryRepository implements BakeryRepository {
     }
 
     @Override
+    public String productName(long productId) {
+        return jdbc.sql("SELECT name FROM product WHERE id = :id")
+                .param("id", productId)
+                .query(String.class)
+                .optional()
+                .orElse(null);
+    }
+
+    @Override
     public BigDecimal producedBetween(long productId, long branchId, LocalDate from, LocalDate to) {
         return jdbc.sql("""
                 SELECT COALESCE(SUM(l.quantity), 0)

@@ -111,6 +111,17 @@ public class BakeryService implements BakeryUseCase {
                     quantity, "WASTE:" + origin.name() + ":" + (shiftId == null ? "-" : shiftId), cashier);
             repository.addWasteStock(productId, branchId, quantity);
         } else {
+            // Barrera de negocio (misma regla del dueño que producción/entradas): la
+            // SALIDA de merma (VENTA/REPARTO) valúa a waste_price; si es 0/null se
+            // registraría en $0 (dinero mal contado). Se bloquea ANTES de descontar para
+            // que el admin capture primero el precio de merma del artículo. GlobalExceptionHandler
+            // mapea IllegalArgumentException a 422 ProblemDetail (misma 2ª barrera que registerProduction).
+            if (wastePrice == null || wastePrice.signum() <= 0) {
+                String name = repository.productName(productId);
+                throw new IllegalArgumentException(
+                        "Captura primero el precio de merma del artículo"
+                                + (name != null ? ": " + name : "") + ".");
+            }
             // Salida de merma (VENTA/REPARTO): baja la existencia de merma, no toca el
             // normal.
             boolean ok = repository.deductWasteStock(productId, branchId, quantity);

@@ -760,6 +760,17 @@
   color: var(--text-muted);
 }
 
+/* Fase 2: chip discreto "📧 por correo" en respuestas del equipo que llegaron por correo.
+   Tono sky, texto tenue, reusa .sup-chip (píldora) sin romper filas-tarjeta ni jerarquía. */
+.sup-chip.sup-via-email {
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, #0ea5e9 14%, transparent);
+  color: #0369a1;
+}
+
 .sup-bubble-body {
   margin: 0;
   color: var(--text);

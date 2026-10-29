@@ -65,6 +65,13 @@ app:
     resend:
       api-key: ${RESEND_API_KEY:}               # vacío => no se envía (degrada a log). SECRETO: solo env var en Railway.
       from:    ${SUPPORT_RESEND_FROM:}           # vacío => no se envía (degrada a log). PII del dueño: solo env var en Railway.
+      # ---- Fase 2: email INBOUND → hilo del ticket. Defaults vacíos = degradación segura (fail-closed). ----
+      inbound-webhook-secret:          ${RESEND_INBOUND_WEBHOOK_SECRET:}       # SECRETO de firma Svix (whsec_…). Vacío => webhook rechaza TODO (401). Solo env var en Railway.
+      inbound-allowlist:               ${SUPPORT_INBOUND_ALLOWLIST:}           # Remitentes del equipo autorizados, coma-separado (PII). Vacío => rechaza TODO. Solo env var en Railway.
+      reply-domain:                    ${SUPPORT_REPLY_DOMAIN:}                # Dominio de reply+<publicId>@… (típico puntonubepos.com). Vacío => se omite Reply-To (el token [PN-…] del asunto sigue activo).
+      inbound-signature-header-prefix: ${RESEND_INBOUND_SIGNATURE_HEADER_PREFIX:svix}  # Prefijo de headers de firma (svix | webhook).
+      inbound-max-bytes:               ${RESEND_INBOUND_MAX_BYTES:1048576}     # 1 MB. Tope duro del cuerpo entrante (barrera 0) antes de HMAC/BD.
+      inbound-max-text-chars:          ${RESEND_INBOUND_MAX_TEXT_CHARS:65536}  # 64 KB. Tope del text antes de las regex de limpieza.
     support:
       inbox:   ${SUPPORT_INBOX_EMAIL:}           # vacío => no se envía (degrada a log). PII del dueño: solo env var en Railway.
   cloudinary:
@@ -109,6 +116,13 @@ server:
     include-message: never
     include-stacktrace: never
   forward-headers-strategy: framework
+  tomcat:
+    # Defensa en profundidad del contenedor para el webhook inbound público (Fase 2 §3.1.1): tope
+    # de bytes que Tomcat "traga" al descartar un cuerpo abusivo. El límite que GOBIERNA la decisión
+    # es el de aplicación (app.notifications.resend.inbound-max-bytes, barrera 0 en el controller);
+    # este es una red adicional a nivel de contenedor. No afecta el multipart del buzón (tiene su
+    # propio límite en spring.servlet.multipart).
+    max-swallow-size: ${TOMCAT_MAX_SWALLOW_SIZE:2097152}   # 2 MB (> inbound-max-bytes 1 MB, holgura)
 
 management:
   endpoints:

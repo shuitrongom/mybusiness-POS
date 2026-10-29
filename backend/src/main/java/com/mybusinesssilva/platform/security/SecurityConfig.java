@@ -55,7 +55,10 @@ public class SecurityConfig {
                                 "/actuator/health/**",
                                 "/actuator/info",
                                 "/api/v1/auth/**",
-                                "/api/v1/self-invoice/**")
+                                "/api/v1/self-invoice/**",
+                                // Webhook inbound de Resend (Fase 2): público a nivel de Spring, pero
+                                // AUTENTICADO por la firma Svix dentro del controller (no por JWT).
+                                "/api/v1/webhooks/resend/**")
                         .permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex

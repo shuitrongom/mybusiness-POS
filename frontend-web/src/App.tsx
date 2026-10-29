@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSession } from '@/store/session';
-import { decodeToken, isSuperAdmin, isCashier, hasModule } from '@/lib/jwt';
+import { decodeToken, isSuperAdmin, isCashier, isBaker, hasModule } from '@/lib/jwt';
 import { LoginPage } from '@/pages/LoginPage';
 import { LandingPage } from '@/pages/LandingPage';
 import { AppLayout } from '@/components/AppLayout';
@@ -63,6 +63,10 @@ import { CashierDashboardPage } from '@/pages/CashierDashboardPage';
 import { DocumentsPage } from '@/pages/DocumentsPage';
 import { BranchesPage } from '@/pages/BranchesPage';
 import { BakeryWastePage } from '@/pages/BakeryWastePage';
+import { BakerBatchPage } from '@/pages/BakerBatchPage';
+import { BakerMyBatchesPage } from '@/pages/BakerMyBatchesPage';
+import { RawMaterialsPage } from '@/pages/RawMaterialsPage';
+import { BakeryBatchesAdminPage } from '@/pages/BakeryBatchesAdminPage';
 import { SuperAdminPage } from '@/pages/SuperAdminPage';
 import { SuperAdminDashboardPage } from '@/pages/SuperAdminDashboardPage';
 import { SupportPage } from '@/pages/SupportPage';
@@ -82,6 +86,7 @@ export function App() {
   const claims = decodeToken(token);
   const superAdmin = isSuperAdmin(claims);
   const cashier = isCashier(claims);
+  const baker = isBaker(claims);
   const bakery = hasModule(claims, 'bakery');
 
   if (!isAuthenticated) {
@@ -112,7 +117,7 @@ export function App() {
           <>
             {/* Usuarios del negocio (Dueño/Admin/Supervisor/Cajero): comparten el set de rutas;
                 el acceso real lo acota el backend por permisos y el menú se filtra por rol. */}
-            <Route index element={<HomePage />} />
+            <Route index element={baker ? <Navigate to="/panadero" replace /> : <HomePage />} />
             <Route path="dashboard" element={cashier ? <CashierDashboardPage /> : <DashboardPage />} />
             <Route path="ventas" element={<SalesModulePage />} />
             <Route path="pos" element={<PosPage />} />
@@ -139,6 +144,16 @@ export function App() {
                 Inventario (ruta inventory-waste), solo cuando el negocio tiene el módulo 'bakery'. */}
             {bakery && (
               <Route path="inventory-waste" element={<BakeryWastePage />} />
+            )}
+            {/* Módulo Panadero: captura de tanda (mobile-first) + sus tandas del día, materia
+                prima (admin) y panel admin de tandas. Solo cuando el negocio tiene 'bakery'. */}
+            {bakery && (
+              <>
+                <Route path="panadero" element={<BakerBatchPage />} />
+                <Route path="panadero/tandas" element={<BakerMyBatchesPage />} />
+                <Route path="inventory-raw-materials" element={<RawMaterialsPage />} />
+                <Route path="bakery-batches" element={<BakeryBatchesAdminPage />} />
+              </>
             )}
             <Route path="compras" element={<PurchasingModulePage />} />
             <Route path="purchases" element={<PurchasesPage />} />

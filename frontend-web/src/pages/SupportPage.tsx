@@ -282,6 +282,8 @@ export function SupportDetailModal({ publicId, resourceBase, canChange, business
                             <span className="sup-bubble-author">{meta.label}
                               {msg.authorType === 'REPORTER' && msg.authorEmail &&
                                 <small className="sup-bubble-email"> · {msg.authorEmail}</small>}
+                              {msg.authorType === 'SUPER_ADMIN' && msg.viaEmail &&
+                                <span className="sup-chip sup-via-email">📧 por correo</span>}
                             </span>
                             <p className="sup-bubble-body">{msg.body}</p>
                             <span className="sup-bubble-time sup-num">{fmtDateTime(msg.createdAt).full}</span>

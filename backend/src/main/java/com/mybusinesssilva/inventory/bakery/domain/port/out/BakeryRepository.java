@@ -207,6 +207,13 @@ public interface BakeryRepository {
      */
     BigDecimal productWastePrice(long productId);
 
+    /**
+     * Nombre del producto en el catálogo ({@code null} si no existe). Usado solo
+     * para mensajes de negocio legibles (p. ej. "Captura primero el precio de merma
+     * del artículo: &lt;nombre&gt;").
+     */
+    String productName(long productId);
+
     // --- Existencia por día/rango ---
 
     /**

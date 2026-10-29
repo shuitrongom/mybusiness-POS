@@ -36,6 +36,14 @@ public class ModuleAccessEvaluator {
     private static final java.util.Set<String> ADMIN_ONLY_MODULES = java.util.Set.of("roles");
 
     /**
+     * Único sub-módulo de permiso del PANADERO: la producción de pan (registro de
+     * tandas y lectura de insumos/panes para la tanda). Barrera dura del fallback
+     * para tokens sin permisos granulares: un PANADERO solo alcanza
+     * {@code bakery_prod}.
+     */
+    private static final java.util.Set<String> PANADERO_MODULES = java.util.Set.of("bakery_prod");
+
+    /**
      * @param moduleKey clave del módulo (por ejemplo {@code sales},
      *                  {@code invoicing})
      * @return true si el usuario autenticado puede usar el módulo
@@ -48,11 +56,16 @@ public class ModuleAccessEvaluator {
         if (user.isSuperAdmin()) {
             return true;
         }
+        // 'bakery_prod' es un SUB-MÓDULO de permiso del panadero: hereda la
+        // habilitación COMERCIAL de 'bakery' (no es un módulo facturable propio, por
+        // eso nunca está en el claim 'modules'). La capa de ROL/permiso sigue
+        // decidiéndose sobre 'bakery_prod' (el moduleKey original).
+        String commercialKey = "bakery_prod".equals(moduleKey) ? "bakery" : moduleKey;
         // Capa comercial: el negocio debe tener el módulo habilitado.
         // Excepción: 'settings' no es un módulo comercial (es configuración interna),
-        // se rige solo
-        // por permisos/rol.
-        if (!"settings".equals(moduleKey) && !user.hasModule(moduleKey)) {
+        // se rige solo por permisos/rol. 'settings' se evalúa sobre moduleKey original
+        // (nunca es 'bakery_prod'); el mapeo comercial solo afecta hasModule.
+        if (!"settings".equals(moduleKey) && !user.hasModule(commercialKey)) {
             return false;
         }
         // Capa de rol: Dueño y Administrador tienen acceso total a lo habilitado
@@ -67,7 +80,12 @@ public class ModuleAccessEvaluator {
             return user.hasAnyPermissionOnModule(moduleKey);
         }
         // Compatibilidad hacia atrás (tokens antiguos sin permisos): comportamiento por
-        // rol.
+        // rol. El PANADERO queda acotado SOLO a 'bakery_prod' aun sin permisos
+        // granulares (barrera dura, independiente del seeding): sin esta rama caería en
+        // el return permisivo y abriría sales/cash/bakery.
+        if (user.hasRole(Roles.PANADERO)) {
+            return PANADERO_MODULES.contains(moduleKey);
+        }
         if (user.hasRole(Roles.CASHIER)) {
             return CASHIER_MODULES.contains(moduleKey);
         }

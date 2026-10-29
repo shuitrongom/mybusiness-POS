@@ -15,6 +15,13 @@ public interface SupportMessageRepository {
     SupportTicketMessage insert(SupportTicketMessage message);
 
     /**
+     * Marca el origen del mensaje ({@code PANEL} | {@code INBOUND_EMAIL}). Lo usa la ingesta inbound
+     * (Fase 2) tras reutilizar {@code postMessage}, para señalar que la respuesta del equipo llegó por
+     * correo, sin alterar la ruta del panel (que deja el default {@code PANEL}).
+     */
+    void markSource(long messageId, String source);
+
+    /**
      * created_at del ÚLTIMO mensaje SUPER_ADMIN del ticket con created_at &lt; before.
      * Vacío si no hay mensaje SUPER_ADMIN previo. Excluye el recién insertado.
      */

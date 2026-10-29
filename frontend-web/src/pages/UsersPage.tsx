@@ -38,6 +38,7 @@ const ROLE_LABEL: Record<string, string> = {
   ADMIN: 'Administrador',
   SUPERVISOR: 'Supervisor',
   CASHIER: 'Cajero',
+  PANADERO: 'Panadero',
 };
 
 /**
