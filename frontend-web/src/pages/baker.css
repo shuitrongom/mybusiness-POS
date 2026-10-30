@@ -109,6 +109,7 @@
 }
 
 .bk-article-text {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -133,6 +134,61 @@
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-weight: 500;
+}
+
+/* Paso "¿Qué salió?" (panes): cabecera y filas comparten el MISMO grid (alineación por
+   construcción). En pantallas anchas: [pan] [precio] [cantidad]. En mobile angosto el pan
+   produce que el nombre comparta fila con DOS columnas fijas (precio 120px + cantidad 170px),
+   por lo que la columna 1fr del nombre se comprimía casi a cero y, con el recorte a 2 líneas,
+   el nombre quedaba CLIPEADO: solo se veía el avatar y el precio. En mobile la fila se APILA
+   para que el nombre ocupe el ancho completo en su propia línea y SIEMPRE sea legible. */
+.bk-pan-head {
+  grid-template-columns: minmax(0, 1fr) 120px 170px;
+}
+
+.bk-pan-row {
+  grid-template-columns: minmax(0, 1fr) 120px 170px;
+}
+
+/* El nombre del pan es el elemento MÁS legible del renglón: el panadero debe LEER
+   "Pan Dulce", "Hojaldra 125gr", no adivinar por las iniciales del avatar. */
+.bk-pan-row .bk-article-name {
+  font-size: var(--fs-lg);
+}
+
+@media (max-width: 560px) {
+
+  /* La cabecera de 3 columnas no aplica cuando la fila se apila: se oculta para no
+     desalinear (el contenido queda autoexplicativo: nombre, chip de precio, stepper). */
+  .bk-pan-head {
+    display: none;
+  }
+
+  .bk-pan-row {
+    grid-template-columns: 1fr;
+    row-gap: 10px;
+  }
+
+  /* El artículo (avatar + nombre) ocupa la primera línea completa: el nombre es lo más
+     legible de la fila (jerarquía: nombre grande arriba, precio/cantidad debajo). */
+  .bk-pan-row>.bk-article {
+    grid-column: 1;
+  }
+
+  /* Precio (chip) y stepper caen en una segunda línea, repartidos a los extremos. */
+  .bk-pan-row> :nth-child(2) {
+    justify-self: start;
+    text-align: left !important;
+  }
+
+  .bk-pan-row> :nth-child(3) {
+    justify-self: stretch;
+  }
+
+  .bk-pan-row> :nth-child(3)>.bk-stepper {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 
 /* Celda de acciones por fila (botones ghost tocables en mobile). Se alinean a la derecha y

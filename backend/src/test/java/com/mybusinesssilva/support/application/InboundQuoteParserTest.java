@@ -64,7 +64,7 @@ class InboundQuoteParserTest {
     void safetyNetDoesNotLoseHumanTextWhenCutWouldEmpty() {
         // Solo cita, sin contenido humano arriba: el corte dejaría vacío ⇒ extractNewText devuelve el
         // original (red de seguridad), nunca vacío si el original tenía contenido.
-        var e = new ResendInboundEvent("a@b.com", List.of("x"), null, "s",
+        var e = new ResendInboundEvent("a@b.com", List.of("x"), null, null, "s", null,
                 "> solo cita\n> más cita", null);
         String out = InboundEmailParser.extractNewText(e, 65_536);
         assertThat(out).isNotBlank();
@@ -73,13 +73,13 @@ class InboundQuoteParserTest {
 
     @Test
     void emptyOriginalYieldsEmpty() {
-        var e = new ResendInboundEvent("a@b.com", List.of("x"), null, "s", "   \n  ", null);
+        var e = new ResendInboundEvent("a@b.com", List.of("x"), null, null, "s", null, "   \n  ", null);
         assertThat(InboundEmailParser.extractNewText(e, 65_536)).isBlank();
     }
 
     @Test
     void prefersTextOverHtml() {
-        var e = new ResendInboundEvent("a@b.com", List.of("x"), null, "s",
+        var e = new ResendInboundEvent("a@b.com", List.of("x"), null, null, "s", null,
                 "respuesta en texto plano", "<p>respuesta en HTML</p>");
         assertThat(InboundEmailParser.extractNewText(e, 65_536))
                 .isEqualTo("respuesta en texto plano");
@@ -87,7 +87,7 @@ class InboundQuoteParserTest {
 
     @Test
     void fallsBackToHtmlWhenNoText() {
-        var e = new ResendInboundEvent("a@b.com", List.of("x"), null, "s", null,
+        var e = new ResendInboundEvent("a@b.com", List.of("x"), null, null, "s", null, null,
                 "<p>Hola equipo</p><br>segunda línea");
         String out = InboundEmailParser.extractNewText(e, 65_536);
         assertThat(out).contains("Hola equipo");

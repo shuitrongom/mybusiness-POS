@@ -18,12 +18,26 @@ class InboundCorrelationTest {
     private static final UUID ID2 = UUID.fromString("99999999-8888-7777-6666-555555555555");
 
     private static ResendInboundEvent event(List<String> to, String recipient, String subject) {
-        return new ResendInboundEvent("equipo@puntonubepos.com", to, recipient, subject, "hola", null);
+        return new ResendInboundEvent(
+                "equipo@puntonubepos.com", to, null, recipient, subject, null, "hola", null);
+    }
+
+    private static ResendInboundEvent eventReceivedFor(List<String> receivedFor, String subject) {
+        return new ResendInboundEvent(
+                "equipo@puntonubepos.com", null, receivedFor, null, subject, null, "hola", null);
     }
 
     @Test
     void resolvesFromToList() {
         var e = event(List.of("reply+" + ID + "@puntonubepos.com"), null, "Re: cualquier cosa");
+        assertThat(InboundEmailParser.resolvePublicId(e)).contains(ID);
+    }
+
+    @Test
+    void resolvesFromReceivedForList() {
+        // Payload real de Resend: el token reply+<uuid>@ viaja en data.received_for (carrier primario).
+        var e = eventReceivedFor(List.of("reply+" + ID + "@puntonubepos.com"),
+                "Re: [Soporte PuntoNube] [PN-" + ID2 + "] Error X");
         assertThat(InboundEmailParser.resolvePublicId(e)).contains(ID);
     }
 

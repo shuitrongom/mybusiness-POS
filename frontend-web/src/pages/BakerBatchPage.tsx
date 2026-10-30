@@ -210,7 +210,7 @@ export function BakerBatchPage() {
         <motion.div className="card" variants={fadeInUp} initial="hidden" animate="visible">
           <h3 className="sec-title"><Croissant size={18} /> Pan que salió</h3>
           <div className="bk-list">
-            <div className="bk-row-head" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px 170px' }}>
+            <div className="bk-row-head bk-pan-head">
               <span>Pan</span>
               <span className="bk-h-right">Precio</span>
               <span className="bk-h-center">Cantidad</span>
@@ -218,8 +218,7 @@ export function BakerBatchPage() {
             {(products.data ?? []).map((p) => {
               const q = outputs[p.productId] ?? 0;
               return (
-                <div className={`bk-row ${!p.priceReady ? 'is-disabled' : ''}`} key={p.productId}
-                  style={{ gridTemplateColumns: 'minmax(0,1fr) 120px 170px' }}>
+                <div className={`bk-row bk-pan-row ${!p.priceReady ? 'is-disabled' : ''}`} key={p.productId}>
                   <div className="bk-article">
                     <span className="bk-avatar" style={{ background: avatarColor(p.name) }}>{avatarInitials(p.name)}</span>
                     <div className="bk-article-text">

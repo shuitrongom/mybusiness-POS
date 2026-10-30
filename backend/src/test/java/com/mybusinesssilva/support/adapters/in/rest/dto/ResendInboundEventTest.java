@@ -44,6 +44,44 @@ class ResendInboundEventTest {
                 .isEqualTo("shuitrongomez05@gmail.com");
         assertThat(InboundEmailParser.isSenderAllowed(event.from(), ALLOW)).isTrue();
         assertThat(event.subject()).contains("[PN-");
+        assertThat(event.emailId()).isEqualTo("e-123");
+    }
+
+    @Test
+    void bindsRealMetadataOnlyPayloadWithoutBody() {
+        // Payload REAL confirmado por el dueño (svix msg_3LP2mn6pMDqUJKuOHoNCLr3zVuB): el evento
+        // email.received trae SOLO metadatos (sin text/html). El cuerpo se pide luego por email_id a la
+        // Receiving API. received_for y to llevan el token reply+<uuid>@; el subject lleva [PN-<uuid>].
+        String json = """
+                {
+                  "created_at": "2026-10-30T06:25:24.000Z",
+                  "data": {
+                    "attachments": [],
+                    "bcc": [], "cc": [],
+                    "created_at": "2026-10-30T06:25:42.420Z",
+                    "email_id": "741c65f7-ca9c-4242-9230-f1ffd6059eb8",
+                    "from": "shuitrongomez05@gmail.com",
+                    "message_id": "<CAMbo39u0qrkiP@mail.gmail.com>",
+                    "received_for": ["reply+bbb61424-1557-4b51-91ff-b7d9a5b7fff7@puntonubepos.com"],
+                    "subject": "Re: [Soporte PuntoNube] [PN-bbb61424-1557-4b51-91ff-b7d9a5b7fff7] ERROR: Teststs",
+                    "to": ["reply+bbb61424-1557-4b51-91ff-b7d9a5b7fff7@puntonubepos.com"]
+                  },
+                  "type": "email.received"
+                }
+                """;
+
+        ResendInboundEvent event = MAPPER.readValue(json, ResendInboundEvent.class);
+
+        // email_id presente (handle para pedir el cuerpo); from en la allowlist; sin cuerpo inline.
+        assertThat(event.emailId()).isEqualTo("741c65f7-ca9c-4242-9230-f1ffd6059eb8");
+        assertThat(InboundEmailParser.isSenderAllowed(event.from(), ALLOW)).isTrue();
+        assertThat(event.text()).isNull();
+        assertThat(event.html()).isNull();
+        // Correlación: received_for (carrier primario) resuelve el publicId del ticket.
+        assertThat(event.receivedFor())
+                .containsExactly("reply+bbb61424-1557-4b51-91ff-b7d9a5b7fff7@puntonubepos.com");
+        assertThat(InboundEmailParser.resolvePublicId(event))
+                .contains(java.util.UUID.fromString("bbb61424-1557-4b51-91ff-b7d9a5b7fff7"));
     }
 
     @Test

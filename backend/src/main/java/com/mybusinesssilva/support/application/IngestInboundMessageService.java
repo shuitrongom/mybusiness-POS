@@ -7,6 +7,7 @@ import com.mybusinesssilva.support.domain.model.SupportTicket;
 import com.mybusinesssilva.support.domain.model.SupportTicketMessage;
 import com.mybusinesssilva.support.domain.port.in.PostMessageUseCase;
 import com.mybusinesssilva.support.domain.port.in.RequesterScope;
+import com.mybusinesssilva.support.domain.port.out.ResendInboundContentPort;
 import com.mybusinesssilva.support.domain.port.out.SupportInboundEventRepository;
 import com.mybusinesssilva.support.domain.port.out.SupportMessageRepository;
 import com.mybusinesssilva.support.domain.port.out.SupportTicketRepository;
@@ -38,6 +39,7 @@ public class IngestInboundMessageService implements IngestInboundMessageUseCase 
     private final SupportTicketRepository ticketRepo;
     private final SupportMessageRepository messageRepo;
     private final PostMessageUseCase postMessageUseCase;
+    private final ResendInboundContentPort inboundContentPort;
     private final NotificationsProperties props;
     private final TransactionTemplate transactionTemplate;
 
@@ -45,12 +47,14 @@ public class IngestInboundMessageService implements IngestInboundMessageUseCase 
                                        SupportTicketRepository ticketRepo,
                                        SupportMessageRepository messageRepo,
                                        PostMessageUseCase postMessageUseCase,
+                                       ResendInboundContentPort inboundContentPort,
                                        NotificationsProperties props,
                                        PlatformTransactionManager transactionManager) {
         this.inboundEventRepo = inboundEventRepo;
         this.ticketRepo = ticketRepo;
         this.messageRepo = messageRepo;
         this.postMessageUseCase = postMessageUseCase;
+        this.inboundContentPort = inboundContentPort;
         this.props = props;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -96,9 +100,25 @@ public class IngestInboundMessageService implements IngestInboundMessageUseCase 
             return InboundResult.discarded(InboundResult.DISCARDED_NO_TICKET);
         }
 
+        // (3.5) Resolución del CUERPO. El webhook email.received de Resend NO trae text/html (solo
+        // metadatos + email_id): hay que pedirlo a la Receiving API. ORDEN DE SEGURIDAD: este fetch
+        // ocurre SOLO tras pasar firma (controller), allowlist y correlación a un ticket existente —
+        // NUNCA antes. Un webhook no verificado, un remitente no autorizado o un inbound no
+        // correlacionado se descartan arriba SIN gastar una llamada a la API.
+        Optional<EventWithBody> withBody = resolveBody(event);
+        if (withBody.isEmpty()) {
+            // Había un email_id pero la API no entregó el cuerpo (fallo HTTP/timeout/respuesta vacía).
+            // Se distingue de "cuerpo realmente vacío" para que en logs quede claro el origen.
+            log.warn("[INBOUND] no se pudo traer el cuerpo del correo (fetch a Resend falló); "
+                    + "descartado.");
+            inboundEventRepo.finalizeEvent(eventId, InboundResult.DISCARDED_CONTENT_FETCH_FAILED,
+                    "fallo al traer el cuerpo de la Receiving API", ticket.get().id(), null);
+            return InboundResult.discarded(InboundResult.DISCARDED_CONTENT_FETCH_FAILED);
+        }
+
         // (4) Barrera 4 — parseo/limpieza. Original vacío ⇒ DISCARDED_EMPTY.
         int maxTextChars = props.resend() == null ? 65_536 : props.resend().inboundMaxTextChars();
-        String cleaned = InboundEmailParser.extractNewText(event, maxTextChars);
+        String cleaned = InboundEmailParser.extractNewText(withBody.get().event(), maxTextChars);
         if (cleaned == null || cleaned.isBlank()) {
             log.warn("[INBOUND] cuerpo inbound vacío; descartado.");
             inboundEventRepo.finalizeEvent(eventId, InboundResult.DISCARDED_EMPTY,
@@ -122,5 +142,53 @@ public class IngestInboundMessageService implements IngestInboundMessageUseCase 
                 ticket.get().id(), saved.id());
         log.info("[INBOUND] mensaje insertado en ticket {} (origen correo).", ticket.get().publicId());
         return new InboundResult(InboundResult.INSERTED, ticket.get().id(), saved.id());
+    }
+
+    /**
+     * Resuelve el cuerpo del correo y devuelve el evento listo para parsear.
+     *
+     * <ul>
+     *   <li>Si el payload ya trae {@code text}/{@code html} (payloads de prueba, planos o formatos
+     *       futuros): se usa tal cual, SIN llamar a la API (optimización + fallback).</li>
+     *   <li>Si NO trae cuerpo pero sí {@code email_id} (caso real de Resend): se pide a la Receiving
+     *       API. Si la API entrega contenido, se reconstruye el evento con ese {@code text}/{@code
+     *       html}. Si la API falla/timeout/responde vacío: {@link Optional#empty()} ⇒ el servicio
+     *       descarta con {@code DISCARDED_CONTENT_FETCH_FAILED} (distinguible de cuerpo vacío).</li>
+     *   <li>Si no hay cuerpo ni {@code email_id}: se deja el evento tal cual (sin cuerpo) ⇒ el parser
+     *       lo verá vacío ⇒ {@code DISCARDED_EMPTY}.</li>
+     * </ul>
+     */
+    private Optional<EventWithBody> resolveBody(ResendInboundEvent event) {
+        if (event == null) {
+            return Optional.of(new EventWithBody(null));
+        }
+        boolean hasInlineBody = notBlank(event.text()) || notBlank(event.html());
+        if (hasInlineBody) {
+            return Optional.of(new EventWithBody(event));
+        }
+        String emailId = event.emailId();
+        if (emailId == null || emailId.isBlank()) {
+            // No hay cuerpo ni handle para pedirlo: déjalo seguir y que el parser lo marque vacío.
+            return Optional.of(new EventWithBody(event));
+        }
+        Optional<ResendInboundContentPort.InboundContent> content =
+                inboundContentPort.fetchContent(emailId);
+        if (content.isEmpty()) {
+            // Había email_id pero la API no entregó el cuerpo: fallo de fetch, distinguible de vacío.
+            return Optional.empty();
+        }
+        ResendInboundContentPort.InboundContent c = content.get();
+        ResendInboundEvent enriched = new ResendInboundEvent(
+                event.from(), event.to(), event.receivedFor(), event.recipient(), event.subject(),
+                event.emailId(), c.text(), c.html());
+        return Optional.of(new EventWithBody(enriched));
+    }
+
+    private static boolean notBlank(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    /** Evento inbound ya con el cuerpo resuelto (del payload o traído de la Receiving API). */
+    private record EventWithBody(ResendInboundEvent event) {
     }
 }

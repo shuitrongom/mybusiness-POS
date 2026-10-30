@@ -44,12 +44,19 @@ public final class InboundEmailParser {
     // =====================================================================================
 
     /**
-     * Resuelve el {@code publicId} del ticket en orden determinista (§2.1.1): lista {@code to} →
-     * {@code recipient} → token del asunto. El primer UUID válido gana.
+     * Resuelve el {@code publicId} del ticket en orden determinista (§2.1.1): lista {@code received_for}
+     * → lista {@code to} → {@code recipient} → token del asunto. El primer UUID válido gana. En el
+     * payload real de Resend ({@code email.received}) el token {@code reply+<uuid>@} viaja en
+     * {@code received_for} (carrier primario) y también en {@code to}; el asunto ({@code [PN-<uuid>]},
+     * con posible prefijo {@code Re:}/{@code Fwd:}) es el fallback.
      */
     public static Optional<UUID> resolvePublicId(ResendInboundEvent event) {
         if (event == null) {
             return Optional.empty();
+        }
+        Optional<UUID> fromReceivedFor = scanReplyPlusList(event.receivedFor());
+        if (fromReceivedFor.isPresent()) {
+            return fromReceivedFor;
         }
         Optional<UUID> fromTo = scanReplyPlusList(event.to());
         if (fromTo.isPresent()) {
