@@ -3,6 +3,7 @@ package com.mybusinesssilva.inventory.bakery.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -22,6 +23,7 @@ import com.mybusinesssilva.inventory.rawmaterial.domain.model.InsufficientRawMat
 import com.mybusinesssilva.inventory.rawmaterial.domain.model.RawMaterial;
 import com.mybusinesssilva.inventory.rawmaterial.domain.model.RawMaterialMovementType;
 import com.mybusinesssilva.inventory.rawmaterial.domain.port.out.RawMaterialRepository;
+import com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +51,7 @@ class BakeryBatchServiceTest {
     private BatchProductQueryPort productQuery;
     private BakeryUseCase bakeryUseCase;
     private YieldAnalyzerPort yieldAnalyzer;
+    private TestModeQueryPort testModeQueryPort;
     private BakeryBatchService service;
 
     @BeforeEach
@@ -58,8 +61,11 @@ class BakeryBatchServiceTest {
         productQuery = mock(BatchProductQueryPort.class);
         bakeryUseCase = mock(BakeryUseCase.class);
         yieldAnalyzer = mock(YieldAnalyzerPort.class);
+        testModeQueryPort = mock(TestModeQueryPort.class);
+        // Por defecto, REAL (OFF): preserva el comportamiento de los tests existentes.
+        when(testModeQueryPort.isTestModeActive()).thenReturn(false);
         service = new BakeryBatchService(batchRepository, rawMaterialRepository,
-                productQuery, bakeryUseCase, yieldAnalyzer);
+                productQuery, bakeryUseCase, yieldAnalyzer, testModeQueryPort);
     }
 
     private BakeryBatch batch(String role) {
@@ -80,7 +86,7 @@ class BakeryBatchServiceTest {
         when(productQuery.productPrice(BOLILLO)).thenReturn(new BigDecimal("10"));
         when(rawMaterialRepository.deductIfEnough(anyLong(), eq(BRANCH), any())).thenReturn(true);
         when(rawMaterialRepository.stock(anyLong(), eq(BRANCH))).thenReturn(new BigDecimal("100"));
-        when(batchRepository.insertHeader(eq(BRANCH), any(), any(), any(), any())).thenReturn(57L);
+        when(batchRepository.insertHeader(eq(BRANCH), any(), any(), any(), any(), anyBoolean())).thenReturn(57L);
         when(bakeryUseCase.registerProduction(any())).thenReturn(300L);
     }
 
@@ -144,7 +150,7 @@ class BakeryBatchServiceTest {
 
         // El precio se valida ANTES de tocar inventario: no se consume MP ni se crea cabecera.
         verify(rawMaterialRepository, never()).deductIfEnough(anyLong(), anyLong(), any());
-        verify(batchRepository, never()).insertHeader(anyLong(), any(), any(), any(), any());
+        verify(batchRepository, never()).insertHeader(anyLong(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -168,6 +174,93 @@ class BakeryBatchServiceTest {
         service.registerBatch(batch("PANADERO"));
         // created_role = 'PANADERO' llega al insert de la cabecera.
         verify(batchRepository).insertHeader(eq(BRANCH), any(), eq("panadero@x.com"),
-                eq("PANADERO"), eq("Hornada matutina"));
+                eq("PANADERO"), eq("Hornada matutina"), eq(false));
+    }
+
+    // =====================================================================
+    // MODO PRUEBA unificado (POS + panadero) — RF-2 / RF-2.4 / RF-4
+    // =====================================================================
+
+    /** ON + sin insumos ⇒ NO lanza; insertHeader recibe isTest=true; NO consume MP; SÍ produce pan. */
+    @Test
+    void testModeOnWithoutInputsMarksTestAndProducesWithoutConsumingRawMaterial() {
+        when(testModeQueryPort.isTestModeActive()).thenReturn(true);
+        when(productQuery.productPrice(CONCHA)).thenReturn(new BigDecimal("15"));
+        when(batchRepository.insertHeader(eq(BRANCH), any(), any(), any(), any(), anyBoolean())).thenReturn(57L);
+        when(bakeryUseCase.registerProduction(any())).thenReturn(300L);
+
+        BakeryBatch noInputs = new BakeryBatch(null, null, BRANCH, null, null,
+                List.of(), List.of(new BatchOutput(CONCHA, new BigDecimal("10"), null, null, null)),
+                null, "panadero@x.com", "PANADERO");
+
+        long id = service.registerBatch(noInputs);
+
+        assertThat(id).isEqualTo(57L);
+        // La tanda nace marcada como prueba.
+        verify(batchRepository).insertHeader(eq(BRANCH), any(), any(), any(), any(), eq(true));
+        // NO toca existencia física de MP ni kardex.
+        verify(rawMaterialRepository, never()).deductIfEnough(anyLong(), anyLong(), any());
+        verify(rawMaterialRepository, never()).recordMovement(anyLong(), anyLong(), any(), any(), any(),
+                any(), any(), any(), any());
+        verify(batchRepository, never()).insertInput(anyLong(), any());
+        // El pan SÍ sube al inventario.
+        verify(bakeryUseCase).registerProduction(any());
+        // Cierre con inputCost=0 y valueOverInputs=outputValue (10·15 = 150).
+        ArgumentCaptor<BigDecimal> inputCost = ArgumentCaptor.forClass(BigDecimal.class);
+        ArgumentCaptor<BigDecimal> outputValue = ArgumentCaptor.forClass(BigDecimal.class);
+        ArgumentCaptor<BigDecimal> voi = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(batchRepository).closeBatch(eq(57L), eq(300L),
+                inputCost.capture(), outputValue.capture(), voi.capture());
+        assertThat(inputCost.getValue()).isEqualByComparingTo("0");
+        assertThat(outputValue.getValue()).isEqualByComparingTo("150");
+        assertThat(voi.getValue()).isEqualByComparingTo("150");
+    }
+
+    /** OFF + sin insumos ⇒ lanza (barrera dura de real). */
+    @Test
+    void testModeOffWithoutInputsRejected() {
+        when(testModeQueryPort.isTestModeActive()).thenReturn(false);
+        BakeryBatch noInputs = new BakeryBatch(null, null, BRANCH, null, null,
+                List.of(), List.of(new BatchOutput(CONCHA, BigDecimal.ONE, null, null, null)),
+                null, "p", "PANADERO");
+        assertThatThrownBy(() -> service.registerBatch(noInputs))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("al menos un insumo");
+    }
+
+    /** OFF + 1 insumo ⇒ isTest=false y SÍ consume MP. */
+    @Test
+    void testModeOffWithInputsConsumesRawMaterialAndMarksReal() {
+        stockDefaults();
+        service.registerBatch(batch("PANADERO"));
+        verify(batchRepository).insertHeader(eq(BRANCH), any(), any(), any(), any(), eq(false));
+        verify(rawMaterialRepository).deductIfEnough(eq(HARINA), eq(BRANCH), any());
+    }
+
+    /** ON + insumos enviados por el cliente ⇒ se IGNORAN: isTest=true, NO consume MP, SÍ produce pan. */
+    @Test
+    void testModeOnWithInputsSentIgnoresThemAndDoesNotConsumeRawMaterial() {
+        when(testModeQueryPort.isTestModeActive()).thenReturn(true);
+        when(productQuery.productPrice(CONCHA)).thenReturn(new BigDecimal("15"));
+        when(productQuery.productPrice(BOLILLO)).thenReturn(new BigDecimal("10"));
+        when(batchRepository.insertHeader(eq(BRANCH), any(), any(), any(), any(), anyBoolean())).thenReturn(57L);
+        when(bakeryUseCase.registerProduction(any())).thenReturn(300L);
+
+        // El cliente manda insumos pese a estar en prueba: deben ignorarse server-side.
+        long id = service.registerBatch(batch("PANADERO"));
+
+        assertThat(id).isEqualTo(57L);
+        verify(batchRepository).insertHeader(eq(BRANCH), any(), any(), any(), any(), eq(true));
+        verify(rawMaterialRepository, never()).find(anyLong());
+        verify(rawMaterialRepository, never()).deductIfEnough(anyLong(), anyLong(), any());
+        verify(rawMaterialRepository, never()).recordMovement(anyLong(), anyLong(), any(), any(), any(),
+                any(), any(), any(), any());
+        verify(batchRepository, never()).insertInput(anyLong(), any());
+        verify(bakeryUseCase).registerProduction(any());
+        // inputCost=0 (ningún insumo consumido).
+        ArgumentCaptor<BigDecimal> inputCost = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(batchRepository).closeBatch(eq(57L), eq(300L),
+                inputCost.capture(), any(), any());
+        assertThat(inputCost.getValue()).isEqualByComparingTo("0");
     }
 }

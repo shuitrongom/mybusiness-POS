@@ -118,7 +118,10 @@ export function App() {
             {/* Usuarios del negocio (Dueño/Admin/Supervisor/Cajero): comparten el set de rutas;
                 el acceso real lo acota el backend por permisos y el menú se filtra por rol. */}
             <Route index element={baker ? <Navigate to="/panadero" replace /> : <HomePage />} />
-            <Route path="dashboard" element={cashier ? <CashierDashboardPage /> : <DashboardPage />} />
+            {/* El PANADERO (y cualquier rol sin BI) no debe aterrizar en el panel de BI ni por URL
+                directa: se redirige a su pantalla de tandas. El gate de DashboardPage ya evita los
+                fetch; este redirect cierra además la navegación directa. */}
+            <Route path="dashboard" element={baker ? <Navigate to="/panadero" replace /> : (cashier ? <CashierDashboardPage /> : <DashboardPage />)} />
             <Route path="ventas" element={<SalesModulePage />} />
             <Route path="pos" element={<PosPage />} />
             <Route path="returns" element={<ReturnsPage />} />

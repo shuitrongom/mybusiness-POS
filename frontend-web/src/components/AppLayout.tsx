@@ -78,7 +78,10 @@ const OWNER_GROUPS: NavGroup[] = [
   {
     id: 'bakery_prod', label: 'Producción', icon: <Croissant size={17} />, module: 'bakery_prod',
     items: [
-      { to: '/panadero', label: 'Nueva tanda' },
+      // `end: true` para coincidencia EXACTA: '/panadero' es prefijo de '/panadero/tandas', así
+      // que sin `end` React Router marcaría "Nueva tanda" como activo también en "Mis tandas de
+      // hoy" (quedaba pegado). Es el único item del menú cuyo `to` es prefijo de segmento de otro.
+      { to: '/panadero', label: 'Nueva tanda', end: true },
       { to: '/panadero/tandas', label: 'Mis tandas de hoy' },
     ],
   },

@@ -29,12 +29,12 @@ public class JdbcBakeryBatchRepository implements BakeryBatchRepository {
 
     @Override
     public long insertHeader(long branchId, LocalDate batchDate, String createdBy,
-                             String createdRole, String notes) {
+                             String createdRole, String notes, boolean isTest) {
         long id = jdbc.sql("""
                 INSERT INTO bakery_batch
                     (branch_id, batch_date, production_id, input_cost, output_value,
-                     value_over_inputs, notes, created_by, created_role)
-                VALUES (:branch, :batchDate, NULL, 0, 0, 0, :notes, :createdBy, :createdRole)
+                     value_over_inputs, notes, created_by, created_role, is_test)
+                VALUES (:branch, :batchDate, NULL, 0, 0, 0, :notes, :createdBy, :createdRole, :isTest)
                 RETURNING id
                 """)
                 .param("branch", branchId)
@@ -42,6 +42,7 @@ public class JdbcBakeryBatchRepository implements BakeryBatchRepository {
                 .param("notes", notes)
                 .param("createdBy", createdBy)
                 .param("createdRole", createdRole)
+                .param("isTest", isTest)
                 .query(Long.class)
                 .single();
         jdbc.sql("UPDATE bakery_batch SET folio = :folio WHERE id = :id")
@@ -132,7 +133,7 @@ public class JdbcBakeryBatchRepository implements BakeryBatchRepository {
         return jdbc.sql("""
                 SELECT b.id, b.folio, b.branch_id, br.name AS branch_name, b.batch_date,
                        b.production_id, b.created_by, b.created_role,
-                       b.input_cost, b.output_value, b.value_over_inputs, b.created_at,
+                       b.input_cost, b.output_value, b.value_over_inputs, b.created_at, b.is_test,
                        COALESCE((SELECT SUM(i.quantity) FROM bakery_batch_input i WHERE i.batch_id = b.id), 0) AS total_input,
                        COALESCE((SELECT SUM(o.quantity) FROM bakery_batch_output o WHERE o.batch_id = b.id), 0) AS total_output,
                        EXISTS (SELECT 1 FROM bakery_batch_input i WHERE i.batch_id = b.id AND i.unit_cost = 0) AS has_zero_cost
@@ -165,6 +166,7 @@ public class JdbcBakeryBatchRepository implements BakeryBatchRepository {
                     row.put("totalInput", rs.getBigDecimal("total_input"));
                     row.put("totalOutput", rs.getBigDecimal("total_output"));
                     row.put("hasZeroCostInput", rs.getBoolean("has_zero_cost"));
+                    row.put("isTest", rs.getBoolean("is_test"));
                     row.put("createdAt", rs.getObject("created_at", OffsetDateTime.class));
                     return row;
                 })
@@ -267,7 +269,8 @@ public class JdbcBakeryBatchRepository implements BakeryBatchRepository {
                 JOIN bakery_batch_input  i ON i.batch_id = b.id
                 JOIN product pr ON pr.id = o.product_id
                 JOIN raw_material m ON m.id = i.raw_material_id
-                WHERE (CAST(:branch AS bigint) IS NULL OR b.branch_id = CAST(:branch AS bigint))
+                WHERE b.is_test = FALSE
+                  AND (CAST(:branch AS bigint) IS NULL OR b.branch_id = CAST(:branch AS bigint))
                   AND (CAST(:from AS date) IS NULL OR b.batch_date >= CAST(:from AS date))
                   AND (CAST(:to   AS date) IS NULL OR b.batch_date <= CAST(:to   AS date))
                 GROUP BY o.product_id, pr.name, i.raw_material_id, m.name, m.unit
@@ -382,7 +385,7 @@ public class JdbcBakeryBatchRepository implements BakeryBatchRepository {
                 JOIN bakery_batch b ON b.id = s.batch_id
                 JOIN LATERAL (SELECT COALESCE(SUM(quantity),0) AS total FROM bakery_batch_output WHERE batch_id = s.batch_id) bo ON TRUE
                 JOIN LATERAL (SELECT COALESCE(SUM(quantity),0) AS total FROM bakery_batch_input  WHERE batch_id = s.batch_id) ti ON TRUE
-                WHERE s.batch_id <> :id AND ti.total > 0
+                WHERE s.batch_id <> :id AND ti.total > 0 AND b.is_test = FALSE
                 ORDER BY b.id DESC
                 LIMIT :n
                 """)

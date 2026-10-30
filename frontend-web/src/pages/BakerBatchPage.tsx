@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import {
-  Minus, Plus, Wheat, Croissant, Check, X, ClipboardList, PackageOpen,
+  Minus, Plus, Wheat, Croissant, Check, X, ClipboardList, PackageOpen, FlaskConical,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { avatarColor, avatarInitials } from '@/lib/saleVisuals';
 import { InfoBanner } from '@/components/InfoBanner';
+import { useTestMode } from '@/lib/testMode';
 import { fadeInUp } from '@/lib/motion';
 import { storedBranchId } from '@/lib/cashierBranch';
 import '@/pages/dashboard.css';
@@ -35,6 +36,7 @@ type Result =
  */
 export function BakerBatchPage() {
   const branchId = storedBranchId() || 1;
+  const { active: testModeActive } = useTestMode();
 
   // Resuelve la sucursal de la sesión (respaldo: primera activa) de forma no bloqueante.
   const branches = useQuery({
@@ -133,6 +135,12 @@ export function BakerBatchPage() {
       <InfoBanner icon={<ClipboardList size={18} />} tone="brand" title="Registra tu tanda">
         Captura lo que tomaste y lo que salió. El sistema baja los insumos, sube el pan y guarda todo de una vez.
       </InfoBanner>
+      {testModeActive && (
+        <InfoBanner icon={<FlaskConical size={18} />} tone="amber" title="Modo prueba / aprendizaje">
+          Por ahora registra solo lo que horneaste; los insumos no se descuentan mientras practicas. Estas
+          tandas no cuentan para tu rendimiento real.
+        </InfoBanner>
+      )}
 
       <div className="bk-steps">
         <div className={`bk-step ${step === 1 ? 'is-active' : step > 1 ? 'is-done' : ''}`}>1. ¿Qué tomaste?</div>
@@ -177,13 +185,22 @@ export function BakerBatchPage() {
             {!rawMaterials.isLoading && (rawMaterials.data ?? []).length === 0 && (
               <div className="bk-empty">
                 <PackageOpen size={28} strokeWidth={1.5} />
-                <strong>No hay insumos con existencia</strong>
-                <span>Pídele al admin que dé de alta y surta los insumos en Inventario → Materia prima.</span>
+                {testModeActive ? (
+                  <>
+                    <strong>En modo prueba puedes seguir sin insumos</strong>
+                    <span>Toca «Siguiente» para registrar solo el pan. Mientras practicas, los insumos no se descuentan.</span>
+                  </>
+                ) : (
+                  <>
+                    <strong>No hay insumos con existencia</strong>
+                    <span>Pídele al admin que dé de alta y surta los insumos en Inventario → Materia prima.</span>
+                  </>
+                )}
               </div>
             )}
           </div>
           <div className="bk-actions">
-            <button className="bk-btn bk-btn-primary" disabled={chosenInputs.length === 0}
+            <button className="bk-btn bk-btn-primary" disabled={!testModeActive && chosenInputs.length === 0}
               onClick={() => setStep(2)}>Siguiente</button>
           </div>
         </motion.div>
@@ -284,7 +301,8 @@ export function BakerBatchPage() {
 
           <div className="bk-actions">
             <button className="bk-btn" onClick={() => setStep(2)} disabled={saving}>Atrás</button>
-            <button className="bk-btn bk-btn-primary" disabled={saving || chosenInputs.length === 0 || chosenOutputs.length === 0}
+            <button className="bk-btn bk-btn-primary"
+              disabled={saving || chosenOutputs.length === 0 || (!testModeActive && chosenInputs.length === 0)}
               onClick={save}>{saving ? 'Guardando…' : 'Guardar tanda'}</button>
           </div>
         </motion.div>

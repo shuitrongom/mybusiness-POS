@@ -1,6 +1,7 @@
 package com.mybusinesssilva.inventory.rawmaterial.application;
 
 import com.mybusinesssilva.inventory.rawmaterial.domain.model.RawMaterial;
+import com.mybusinesssilva.inventory.rawmaterial.domain.model.RawMaterialInUseException;
 import com.mybusinesssilva.inventory.rawmaterial.domain.model.RawMaterialMovementType;
 import com.mybusinesssilva.inventory.rawmaterial.domain.port.in.RawMaterialUseCase;
 import com.mybusinesssilva.inventory.rawmaterial.domain.port.out.RawMaterialRepository;
@@ -60,10 +61,32 @@ public class RawMaterialService implements RawMaterialUseCase {
     @Override
     @Transactional
     public void setActive(long id, boolean active) {
-        if (repository.find(id).isEmpty()) {
-            throw new IllegalArgumentException("El insumo indicado no existe.");
+        RawMaterial material = repository.find(id)
+                .orElseThrow(() -> new IllegalArgumentException("El insumo indicado no existe."));
+        // Al REACTIVAR, revalidar el nombre: el índice parcial uq_raw_material_name solo cubre
+        // activos, así que podría existir otro insumo activo con el mismo nombre creado mientras
+        // este estaba inactivo. Sin esta barrera, el UPDATE active=TRUE violaría el índice y
+        // caería al 500 opaco de DataAccessException. Damos el 422 legible antes.
+        if (active && repository.existsActiveName(material.name(), id)) {
+            throw new IllegalArgumentException(
+                    "Ya existe un insumo activo con ese nombre; renómbralo antes de reactivar.");
         }
         repository.setActive(id, active);
+    }
+
+    @Override
+    @Transactional
+    public void delete(long id) {
+        RawMaterial material = repository.find(id)
+                .orElseThrow(() -> new IllegalArgumentException("El insumo indicado no existe."));
+        boolean hasStock = repository.hasAnyStock(id);
+        boolean hasMovements = repository.hasMovements(id);
+        // Barrera dura en backend: solo se borra un insumo VIRGEN (sin existencia ni movimientos).
+        // Si ya se usó, se conserva su historial: el front debe desactivarlo en su lugar.
+        if (hasStock || hasMovements) {
+            throw new RawMaterialInUseException(id, material.name(), hasStock, hasMovements);
+        }
+        repository.hardDelete(id);
     }
 
     @Override

@@ -19,6 +19,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -82,6 +83,18 @@ public class RawMaterialController {
     @PreAuthorize("@moduleAccess.can('inventory','EDIT')")
     public ResponseEntity<Void> setActive(@PathVariable long id, @Valid @RequestBody ActiveRequest r) {
         rawMaterials.setActive(id, r.active());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Borrado físico de un insumo VIRGEN (creado por error, sin existencia ni movimientos).
+     * Misma acción {@code EDIT} que las demás mutaciones no-CREATE del módulo. Si el insumo ya
+     * se usó, el service responde 409 ({@code RAW_MATERIAL_IN_USE}) y el front ofrece desactivar.
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("@moduleAccess.can('inventory','EDIT')")
+    public ResponseEntity<Void> delete(@PathVariable long id) {
+        rawMaterials.delete(id);
         return ResponseEntity.noContent().build();
     }
 

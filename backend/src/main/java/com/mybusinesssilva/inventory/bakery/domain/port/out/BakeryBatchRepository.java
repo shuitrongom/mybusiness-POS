@@ -17,8 +17,14 @@ public interface BakeryBatchRepository {
      * Inserta la cabecera mínima de la tanda (totales en 0, production_id NULL) y
      * fija el folio 'T-'||id. Devuelve el id generado para el {@code reference} del
      * kardex de MP.
+     *
+     * <p>
+     * {@code isTest} marca la tanda como de PRUEBA (modo aprendizaje): lo decide
+     * server-side el servicio leyendo el mismo flag del negocio que el POS; el
+     * cliente nunca lo manda.
      */
-    long insertHeader(long branchId, LocalDate batchDate, String createdBy, String createdRole, String notes);
+    long insertHeader(long branchId, LocalDate batchDate, String createdBy,
+                      String createdRole, String notes, boolean isTest);
 
     /** Cierra la tanda: fija production_id y los totales (la invariante del CHECK se cumple por cálculo). */
     void closeBatch(long batchId, long productionId, BigDecimal inputCost,

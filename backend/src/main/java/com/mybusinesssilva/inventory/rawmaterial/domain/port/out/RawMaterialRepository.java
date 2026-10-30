@@ -63,4 +63,17 @@ public interface RawMaterialRepository {
 
     /** Kardex de un insumo por rango (mapas). */
     List<Map<String, Object>> movements(long rmId, LocalDate from, LocalDate to);
+
+    /** {@code true} si el insumo tiene al menos un movimiento en el kardex. */
+    boolean hasMovements(long rmId);
+
+    /** {@code true} si el insumo tiene existencia distinta de cero en alguna sucursal. */
+    boolean hasAnyStock(long rmId);
+
+    /**
+     * Borrado físico de un insumo VIRGEN (sin movimientos ni existencia). Borra primero sus
+     * filas de {@code raw_material_stock} (todas en 0) y luego la fila de {@code raw_material}
+     * (orden por FK). No toca el kardex: el service solo lo invoca cuando no hay movimientos.
+     */
+    void hardDelete(long rmId);
 }

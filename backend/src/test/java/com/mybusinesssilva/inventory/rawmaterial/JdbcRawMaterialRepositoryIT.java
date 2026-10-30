@@ -85,6 +85,43 @@ class JdbcRawMaterialRepositoryIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void hasMovementsAndHasAnyStockReflectState() {
+        long rm = setup();
+        // Insumo recién creado: sin existencia ni movimientos (virgen).
+        assertThat(repository.hasAnyStock(rm)).isFalse();
+        assertThat(repository.hasMovements(rm)).isFalse();
+        // Tras surtir, hay existencia y un movimiento.
+        BigDecimal balance = repository.adjustQuantity(rm, branchId, new BigDecimal("30"));
+        repository.recordMovement(rm, branchId, RawMaterialMovementType.PURCHASE_RM,
+                new BigDecimal("30"), balance, new BigDecimal("18"), "Entrada", null, "admin");
+        assertThat(repository.hasAnyStock(rm)).isTrue();
+        assertThat(repository.hasMovements(rm)).isTrue();
+        // Al consumir todo, el stock queda en 0 (hasAnyStock false) pero el historial permanece.
+        assertThat(repository.deductIfEnough(rm, branchId, new BigDecimal("30"))).isTrue();
+        assertThat(repository.hasAnyStock(rm)).isFalse();
+        assertThat(repository.hasMovements(rm)).isTrue();
+    }
+
+    @Test
+    void hardDeleteRemovesVirginAndLeavesUsedUntouched() {
+        long virgin = setup();
+        // Un segundo insumo CON historial, que NO debe tocarse.
+        long used = repository.insert(new RawMaterial(
+                null, null, "Azucar", "kg", new BigDecimal("22"), new BigDecimal("3"), true));
+        BigDecimal balance = repository.adjustQuantity(used, branchId, new BigDecimal("15"));
+        repository.recordMovement(used, branchId, RawMaterialMovementType.PURCHASE_RM,
+                new BigDecimal("15"), balance, new BigDecimal("22"), "Entrada", null, "admin");
+
+        repository.hardDelete(virgin);
+
+        assertThat(repository.find(virgin)).isEmpty();
+        // El insumo con historial sigue intacto (catálogo, existencia y kardex).
+        assertThat(repository.find(used)).isPresent();
+        assertThat(repository.hasAnyStock(used)).isTrue();
+        assertThat(repository.hasMovements(used)).isTrue();
+    }
+
+    @Test
     void everyEnumLiteralIsAcceptedByCheckConstraint() {
         long rm = setup();
         BigDecimal balance = repository.adjustQuantity(rm, branchId, new BigDecimal("100"));

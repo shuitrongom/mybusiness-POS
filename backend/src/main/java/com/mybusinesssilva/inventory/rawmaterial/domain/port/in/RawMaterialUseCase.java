@@ -22,6 +22,13 @@ public interface RawMaterialUseCase {
     /** Activa o desactiva un insumo. */
     void setActive(long id, boolean active);
 
+    /**
+     * Borrado físico de un insumo. Solo procede si el insumo es VIRGEN (sin existencia
+     * ni movimientos); de lo contrario lanza {@code RawMaterialInUseException} (409) y el
+     * admin debe desactivarlo. La barrera dura vive aquí, en el backend.
+     */
+    void delete(long id);
+
     /** Catálogo de insumos + existencia por sucursal (mapas para el panel). */
     List<Map<String, Object>> list(Long branchId);
 

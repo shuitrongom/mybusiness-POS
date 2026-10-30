@@ -3,6 +3,7 @@ package com.mybusinesssilva.platform.web;
 import com.mybusinesssilva.catalog.domain.model.ProductHasStockException;
 import com.mybusinesssilva.inventory.domain.model.InsufficientStockException;
 import com.mybusinesssilva.inventory.rawmaterial.domain.model.InsufficientRawMaterialException;
+import com.mybusinesssilva.inventory.rawmaterial.domain.model.RawMaterialInUseException;
 import com.mybusinesssilva.sales.domain.model.ShiftReopenException;
 import com.mybusinesssilva.support.application.SupportTicketService.SupportImageRejectedException;
 import java.time.Instant;
@@ -13,6 +14,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -116,6 +119,25 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Barrera dura: no se puede BORRAR un insumo que ya tuvo existencia o movimientos.
+     * Espejo de {@link #handleProductHasStock}: 409 CONFLICT con {@code title =
+     * RAW_MATERIAL_IN_USE} y las propiedades del insumo para que el front ofrezca
+     * "Desactivar" en su lugar. No se loguea (es una regla de negocio esperada).
+     */
+    @ExceptionHandler(RawMaterialInUseException.class)
+    public ProblemDetail handleRawMaterialInUse(RawMaterialInUseException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("RAW_MATERIAL_IN_USE");
+        problem.setProperty("rawMaterialId", ex.rawMaterialId());
+        problem.setProperty("rawMaterialName", ex.rawMaterialName());
+        problem.setProperty("hasStock", ex.hasStock());
+        problem.setProperty("hasMovements", ex.hasMovements());
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
      * Reapertura de turno inválida (OWNER-only): turno inexistente, no cerrado, de
      * un día pasado, caja ocupada, o desajuste de modo prueba. Espejo de
      * {@link #handleProductHasStock}: 409 CONFLICT con {@code title = code} estable
@@ -196,6 +218,28 @@ public class GlobalExceptionHandler {
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "Ocurrió un problema al consultar la información. Inténtalo de nuevo en un momento.");
         problem.setTitle("Error de datos");
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Acceso denegado (403) por {@code @PreAuthorize}/{@code @moduleAccess}. Es un
+     * resultado ESPERADO: a veces el front pide algo que el rol no puede (p. ej. un
+     * rol sin BI que aterriza en un panel de BI). Se devuelve un 403 ProblemDetail
+     * LIMPIO y NO se loguea como ERROR; a lo sumo {@code debug} para diagnóstico.
+     *
+     * <p>Al ser un handler dedicado y específico, gana por especificidad sobre el
+     * fallback {@code @ExceptionHandler(Exception.class)}: sin él, el 403 caería en
+     * {@link #handleUnexpected}, que lo loguea como ERROR con stacktrace y lo
+     * reclasifica a 500. Cubre {@link AuthorizationDeniedException} (seguridad por
+     * método, Spring Security 6.3+/7) y la clásica {@link AccessDeniedException}.
+     */
+    @ExceptionHandler({ AuthorizationDeniedException.class, AccessDeniedException.class })
+    public ProblemDetail handleAccessDenied(RuntimeException ex) {
+        log.debug("Acceso denegado: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN, "No tienes permiso para esta operación.");
+        problem.setTitle("Acceso denegado");
         problem.setProperty("timestamp", Instant.now());
         return problem;
     }

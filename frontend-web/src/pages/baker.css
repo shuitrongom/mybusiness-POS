@@ -15,6 +15,7 @@
   gap: 8px;
   margin: var(--space-3) 0 var(--space-4);
 }
+
 .bk-step {
   flex: 1;
   text-align: center;
@@ -26,11 +27,13 @@
   font-weight: 700;
   font-size: var(--fs-sm);
 }
+
 .bk-step.is-active {
   border-color: var(--brand-600);
   color: var(--brand-600);
   background: color-mix(in srgb, var(--brand-600) 12%, transparent);
 }
+
 .bk-step.is-done {
   border-color: var(--success, #12b886);
   color: var(--success, #12b886);
@@ -43,6 +46,7 @@
   gap: 8px;
   margin-top: var(--space-3);
 }
+
 .bk-row-head {
   display: grid;
   align-items: center;
@@ -54,8 +58,14 @@
   letter-spacing: 0.4px;
   color: var(--text-muted);
 }
-.bk-h-center { text-align: center; }
-.bk-h-right { text-align: right; }
+
+.bk-h-center {
+  text-align: center;
+}
+
+.bk-h-right {
+  text-align: right;
+}
 
 .bk-row {
   display: grid;
@@ -68,10 +78,12 @@
   border-radius: 14px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
+
 .bk-row:hover {
   border-color: color-mix(in srgb, var(--brand-600) 38%, var(--border));
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
 }
+
 .bk-row.is-disabled {
   opacity: 0.6;
 }
@@ -83,6 +95,7 @@
   gap: 12px;
   min-width: 0;
 }
+
 .bk-avatar {
   flex: 0 0 auto;
   width: 44px;
@@ -94,18 +107,46 @@
   font-weight: 800;
   font-size: 15px;
 }
-.bk-article-text { min-width: 0; }
+
+.bk-article-text {
+  min-width: 0;
+}
+
+/* Nombre del artículo legible en mobile: tamaño explícito grande (el panadero debe leer
+   "Hojaldra 250gr", "Repostería", etc. junto al avatar, no solo las iniciales). Se permite
+   que el nombre ocupe hasta 2 líneas en pantallas angostas en vez de truncarse de forma
+   agresiva; `overflow-wrap: anywhere` evita que un nombre largo desborde el grid (el
+   contenedor mantiene `min-width: 0`). */
 .bk-article-name {
   font-weight: 700;
+  font-size: var(--fs-md);
+  line-height: 1.25;
   color: var(--heading, var(--text));
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+
 .bk-article-unit {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-weight: 500;
+}
+
+/* Celda de acciones por fila (botones ghost tocables en mobile). Se alinean a la derecha y
+   envuelven si no caben, sin romper el grid (la celda mantiene su ancho del grid compartido). */
+.bk-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.bk-row-actions .btn-ghost {
+  min-height: 38px;
 }
 
 /* Stepper grande (− valor +). */
@@ -118,6 +159,7 @@
   border-radius: 12px;
   padding: 2px;
 }
+
 .bk-stepper button {
   width: 42px;
   height: 42px;
@@ -130,13 +172,16 @@
   cursor: pointer;
   font-size: 20px;
 }
+
 .bk-stepper button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--brand-600) 12%, transparent);
 }
+
 .bk-stepper button:disabled {
   color: var(--text-muted);
   cursor: not-allowed;
 }
+
 .bk-stepper input {
   width: 58px;
   height: 42px;
@@ -148,15 +193,23 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+
 .bk-stepper input::placeholder {
   color: var(--text-muted);
   font-weight: 500;
   opacity: 0.7;
 }
+
 /* Oculta las flechas nativas del input number. */
 .bk-stepper input::-webkit-outer-spin-button,
-.bk-stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.bk-stepper input[type=number] { -moz-appearance: textfield; }
+.bk-stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.bk-stepper input[type=number] {
+  -moz-appearance: textfield;
+}
 
 /* Chips de color. */
 .bk-chip {
@@ -170,13 +223,36 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.bk-chip.is-green  { background: color-mix(in srgb, #12b886 16%, transparent); color: #0b8f6a; }
-.bk-chip.is-amber  { background: color-mix(in srgb, #f59e0b 18%, transparent); color: #b45309; }
-.bk-chip.is-violet { background: color-mix(in srgb, #7c5cff 16%, transparent); color: #6243d6; }
-.bk-chip.is-sky    { background: color-mix(in srgb, #0ea5e9 16%, transparent); color: #0678a8; }
-.bk-chip.is-gray   { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
 
-.bk-num { font-variant-numeric: tabular-nums; }
+.bk-chip.is-green {
+  background: color-mix(in srgb, #12b886 16%, transparent);
+  color: #0b8f6a;
+}
+
+.bk-chip.is-amber {
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #b45309;
+}
+
+.bk-chip.is-violet {
+  background: color-mix(in srgb, #7c5cff 16%, transparent);
+  color: #6243d6;
+}
+
+.bk-chip.is-sky {
+  background: color-mix(in srgb, #0ea5e9 16%, transparent);
+  color: #0678a8;
+}
+
+.bk-chip.is-gray {
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.bk-num {
+  font-variant-numeric: tabular-nums;
+}
 
 /* Campo de dinero con prefijo $. */
 .bk-money {
@@ -188,11 +264,17 @@
   border-radius: 11px;
   padding: 0 10px;
 }
+
 .bk-money:focus-within {
   border-color: var(--brand-600);
   box-shadow: 0 0 0 4px rgba(46, 110, 242, 0.12);
 }
-.bk-money-sign { color: var(--text-muted); font-weight: 700; }
+
+.bk-money-sign {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
 .bk-money input {
   width: 100px;
   height: 42px;
@@ -216,7 +298,11 @@
   border: 1.5px dashed var(--border);
   border-radius: 14px;
 }
-.bk-empty strong { color: var(--text); font-size: var(--fs-md); }
+
+.bk-empty strong {
+  color: var(--text);
+  font-size: var(--fs-md);
+}
 
 /* Barra de acciones del flujo (botones grandes). */
 .bk-actions {
@@ -224,6 +310,7 @@
   gap: 10px;
   margin-top: var(--space-4);
 }
+
 .bk-btn {
   flex: 1;
   min-height: 54px;
@@ -239,12 +326,17 @@
   justify-content: center;
   gap: 8px;
 }
+
 .bk-btn-primary {
   border-color: transparent;
   background: var(--brand-600);
   color: #fff;
 }
-.bk-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.bk-btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
 /* Pie de totales. */
 .bk-foot {
@@ -255,13 +347,17 @@
   flex-direction: column;
   gap: 6px;
 }
+
 .bk-foot-row {
   display: flex;
   justify-content: space-between;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-.bk-foot-row strong { color: var(--heading, var(--text)); }
+
+.bk-foot-row strong {
+  color: var(--heading, var(--text));
+}
 
 /* Mini-barra de progreso (rendimiento). */
 .bk-bar {
@@ -270,7 +366,8 @@
   background: var(--surface);
   overflow: hidden;
 }
-.bk-bar > span {
+
+.bk-bar>span {
   display: block;
   height: 100%;
   border-radius: 999px;
@@ -287,6 +384,7 @@
   z-index: 50;
   padding: var(--space-4);
 }
+
 .bk-modal {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -296,6 +394,7 @@
   width: 100%;
   text-align: center;
 }
+
 .bk-modal-icon {
   width: 64px;
   height: 64px;
@@ -304,7 +403,46 @@
   place-items: center;
   margin: 0 auto var(--space-3);
 }
-.bk-modal-icon.is-ok { background: color-mix(in srgb, #12b886 16%, transparent); color: #0b8f6a; }
-.bk-modal-icon.is-err { background: color-mix(in srgb, #e11d48 16%, transparent); color: #be123c; }
-.bk-modal h3 { margin: 0 0 6px; }
-.bk-modal p { color: var(--text-muted); margin: 0 0 var(--space-4); }
+
+.bk-modal-icon.is-ok {
+  background: color-mix(in srgb, #12b886 16%, transparent);
+  color: #0b8f6a;
+}
+
+.bk-modal-icon.is-err {
+  background: color-mix(in srgb, #e11d48 16%, transparent);
+  color: #be123c;
+}
+
+.bk-modal h3 {
+  margin: 0 0 6px;
+}
+
+.bk-modal p {
+  color: var(--text-muted);
+  margin: 0 0 var(--space-4);
+}
+
+/* Modal ancho para el kardex (lista de movimientos filas-tarjeta). */
+.bk-modal-wide {
+  max-width: 720px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+/* Fila del kardex: cabecera y filas comparten el MISMO grid (alineación por construcción).
+   [fecha] [tipo+actor] [cantidad] [balance] [costo]. En mobile angosto el grid se compacta. */
+.bk-kardex-row {
+  grid-template-columns: 110px minmax(0, 1fr) 92px 84px 84px;
+}
+
+@media (max-width: 560px) {
+  .bk-kardex-row {
+    grid-template-columns: 92px minmax(0, 1fr) 76px 72px;
+  }
+
+  /* En pantallas muy angostas se oculta la columna de costo para no desbordar. */
+  .bk-kardex-row> :nth-child(5) {
+    display: none;
+  }
+}

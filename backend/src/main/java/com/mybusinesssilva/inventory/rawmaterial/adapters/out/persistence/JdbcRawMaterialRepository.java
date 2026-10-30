@@ -235,6 +235,38 @@ public class JdbcRawMaterialRepository implements RawMaterialRepository {
     }
 
     @Override
+    public boolean hasMovements(long rmId) {
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM raw_material_movement WHERE raw_material_id = :rm)")
+                .param("rm", rmId)
+                .query(Boolean.class)
+                .single();
+    }
+
+    @Override
+    public boolean hasAnyStock(long rmId) {
+        return jdbc.sql("""
+                SELECT EXISTS(
+                    SELECT 1 FROM raw_material_stock
+                     WHERE raw_material_id = :rm AND quantity <> 0)
+                """)
+                .param("rm", rmId)
+                .query(Boolean.class)
+                .single();
+    }
+
+    @Override
+    public void hardDelete(long rmId) {
+        // Orden por FK: primero las filas de existencia (todas en 0 por invariante del service),
+        // luego la fila del catálogo. No se toca raw_material_movement (no hay, por invariante).
+        jdbc.sql("DELETE FROM raw_material_stock WHERE raw_material_id = :rm")
+                .param("rm", rmId)
+                .update();
+        jdbc.sql("DELETE FROM raw_material WHERE id = :id")
+                .param("id", rmId)
+                .update();
+    }
+
+    @Override
     public List<Map<String, Object>> movements(long rmId, LocalDate from, LocalDate to) {
         return jdbc.sql("""
                 SELECT id, movement_type, quantity, balance_after, unit_cost,

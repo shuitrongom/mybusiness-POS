@@ -46,12 +46,14 @@ public class TestModeController {
     }
 
     /**
-     * Estado ligero (solo el flag), para el banner del POS. Lo puede leer cualquier
-     * usuario del tenant que opere ventas (incluida la cajera), que DEBE ver el
-     * banner aunque no administre el modo.
+     * Estado ligero (solo el flag), para el banner de "modo prueba". Lo puede leer
+     * cualquier usuario del tenant que opere ventas (incluida la cajera) O el
+     * PANADERO (módulo {@code bakery_prod}), que DEBE ver el banner de prueba en la
+     * tanda aunque no administre el modo ni tenga el módulo {@code sales}. Solo
+     * revela un booleano; ni la bitácora ni el cambio del flag (OWNER-only).
      */
     @GetMapping("/active")
-    @PreAuthorize("@moduleAccess.canUse('sales')")
+    @PreAuthorize("@moduleAccess.canUse('sales') or @moduleAccess.canUse('bakery_prod')")
     public Map<String, Boolean> active() {
         return Map.of("active", testModeService.isActive());
     }

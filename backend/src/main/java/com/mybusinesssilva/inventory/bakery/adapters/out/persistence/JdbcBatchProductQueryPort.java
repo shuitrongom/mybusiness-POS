@@ -13,11 +13,12 @@ import org.springframework.stereotype.Repository;
  * en el repo real, así que se normaliza a 0 en el borde con {@code COALESCE(price,0)}:
  * el puerto NUNCA devuelve null (evita NPE → 500 y hace cierto el 422 del precio 0).
  *
- * <p>La lógica de "es pan" es la MISMA que el motor en runtime
- * ({@code searchBakeryItems}/{@code listBakeryItems}): {@code WHERE active = TRUE}, SIN
- * {@code is_bakery} (que tiene default FALSE y no está garantizado poblado). El
- * aislamiento de la MP no depende de este flag sino de que los insumos viven en
- * {@code raw_material}, nunca en {@code product}.
+ * <p>El paso 2 "¿Qué salió?" lista SOLO panes: {@code WHERE active = TRUE AND
+ * is_bakery = TRUE}. El flag {@code is_bakery} (columna desde V34, índice parcial
+ * {@code idx_product_is_bakery}) ya quedó poblado por el data-fix en tenant_9, así que
+ * el empaque (BO=Bolsa, Bolsa/25, Bolsa/50, PO=Polipapel) queda fuera: el panadero solo
+ * ve panes. La materia prima vive aparte en {@code raw_material}, nunca en
+ * {@code product}, así que su aislamiento no depende de este flag.
  */
 @Repository
 public class JdbcBatchProductQueryPort implements BatchProductQueryPort {
@@ -42,7 +43,7 @@ public class JdbcBatchProductQueryPort implements BatchProductQueryPort {
         return jdbc.sql("""
                 SELECT id, name, unit, COALESCE(price, 0) AS entry_price
                 FROM product
-                WHERE active = TRUE
+                WHERE active = TRUE AND is_bakery = TRUE
                 ORDER BY name
                 """)
                 .query((rs, n) -> {

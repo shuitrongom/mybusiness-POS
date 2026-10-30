@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
+import { useSession } from '@/store/session';
+import { decodeToken, canUseModule } from '@/lib/jwt';
 import { staggerContainer, staggerItem } from '@/lib/motion';
 import { SalesTrendChart, PaymentMixChart, type TrendPoint, type PaymentMixDatum } from '@/components/BiCharts';
 import { InsightsPanel, type Insight } from '@/components/InsightsPanel';
@@ -57,28 +59,40 @@ function cssVar(name: string, fallback: string): string {
  * (/api/v1/bi) protegido por el módulo 'bi' en el backend.
  */
 export function DashboardPage() {
+  // Gating por permiso: el BI (/api/v1/bi) lo protege el módulo 'bi' en backend. Roles sin BI
+  // (PANADERO, cajera) no deben disparar estos fetch (evita 6×403 ruidosos). Mismo patrón que
+  // HomePage/SalesModulePage: enabled: canSeeBi en todas las queries de BI.
+  const token = useSession((s) => s.token);
+  const canSeeBi = canUseModule(decodeToken(token), 'bi');
+
   const summary = useQuery({
     queryKey: ['dashboard', 'today'],
+    enabled: canSeeBi,
     queryFn: async () => (await api.get<DashboardSummary>('/bi/dashboard/today')).data,
   });
   const series = useQuery({
     queryKey: ['dashboard', 'series'],
+    enabled: canSeeBi,
     queryFn: async () => (await api.get<TrendPoint[]>('/bi/sales/series?days=30')).data,
   });
   const comparison = useQuery({
     queryKey: ['dashboard', 'comparison'],
+    enabled: canSeeBi,
     queryFn: async () => (await api.get<PeriodComparison>('/bi/comparison')).data,
   });
   const paymentMix = useQuery({
     queryKey: ['dashboard', 'payments-mix'],
+    enabled: canSeeBi,
     queryFn: async () => (await api.get<PaymentMixDatum[]>('/bi/payments/mix?days=30')).data,
   });
   const top = useQuery({
     queryKey: ['dashboard', 'top'],
+    enabled: canSeeBi,
     queryFn: async () => (await api.get<ProductRanking[]>('/bi/products/top?days=30&limit=5')).data,
   });
   const insights = useQuery({
     queryKey: ['dashboard', 'insights'],
+    enabled: canSeeBi,
     queryFn: async () => (await api.get<Insight[]>('/bi/insights')).data,
   });
 

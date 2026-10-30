@@ -15,6 +15,7 @@ import com.mybusinesssilva.inventory.rawmaterial.domain.model.InsufficientRawMat
 import com.mybusinesssilva.inventory.rawmaterial.domain.model.RawMaterial;
 import com.mybusinesssilva.inventory.rawmaterial.domain.model.RawMaterialMovementType;
 import com.mybusinesssilva.inventory.rawmaterial.domain.port.out.RawMaterialRepository;
+import com.mybusinesssilva.sales.domain.port.out.TestModeQueryPort;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -42,30 +43,46 @@ public class BakeryBatchService implements BakeryBatchUseCase {
     private final BatchProductQueryPort productQuery;
     private final BakeryUseCase bakeryUseCase;
     private final YieldAnalyzerPort yieldAnalyzer;
+    private final TestModeQueryPort testModeQueryPort;
 
     public BakeryBatchService(BakeryBatchRepository batchRepository,
                               RawMaterialRepository rawMaterialRepository,
                               BatchProductQueryPort productQuery,
                               BakeryUseCase bakeryUseCase,
-                              YieldAnalyzerPort yieldAnalyzer) {
+                              YieldAnalyzerPort yieldAnalyzer,
+                              TestModeQueryPort testModeQueryPort) {
         this.batchRepository = batchRepository;
         this.rawMaterialRepository = rawMaterialRepository;
         this.productQuery = productQuery;
         this.bakeryUseCase = bakeryUseCase;
         this.yieldAnalyzer = yieldAnalyzer;
+        this.testModeQueryPort = testModeQueryPort;
     }
 
     @Override
     @Transactional
     public long registerBatch(BakeryBatch batch) {
+        // MODO PRUEBA (aprendizaje): decisión server-side leyendo el MISMO flag del
+        // negocio que el POS (admin.business.test_mode). El cliente nunca lo manda.
+        boolean testMode = testModeQueryPort.isTestModeActive();
+
         // --- Paso 1: validación de entrada ---
-        if (batch.inputs().isEmpty()) {
+        // En REAL los insumos son obligatorios (barrera dura). En PRUEBA son OPCIONALES
+        // (modo aprendizaje): se puede guardar solo el pan. El pan es obligatorio SIEMPRE.
+        if (!testMode && batch.inputs().isEmpty()) {
             throw new IllegalArgumentException("La tanda debe tener al menos un insumo.");
         }
         if (batch.outputs().isEmpty()) {
             throw new IllegalArgumentException("La tanda debe tener al menos un pan producido.");
         }
         long branchId = batch.branchId();
+
+        // RF-2.4: la tanda de PRUEBA NO consume materia prima. Aunque el cliente enviara
+        // insumos (la UI los oculta/hace opcionales), se ignoran server-side: una tanda de
+        // prueba nunca descuenta raw_material_stock ni escribe kardex CONSUME. Así la
+        // práctica no toca existencia física real de insumos y el cutover no tiene que
+        // revertir consumos de práctica.
+        List<BatchInput> effectiveInputs = testMode ? List.of() : batch.inputs();
 
         // --- Paso 2: resolver y congelar precios de ficha (ANTES de tocar inventario) ---
         // fichaPrice se usa como ÚNICA fuente para el entryPrice de la producción y para
@@ -85,7 +102,7 @@ public class BakeryBatchService implements BakeryBatchUseCase {
 
         // Resolver insumos (costo congelado del catálogo) y validar existencia/activo.
         List<ResolvedInput> resolvedInputs = new ArrayList<>();
-        for (BatchInput in : batch.inputs()) {
+        for (BatchInput in : effectiveInputs) {
             if (in.quantity() == null || in.quantity().signum() <= 0) {
                 throw new IllegalArgumentException("La cantidad de cada insumo debe ser positiva.");
             }
@@ -102,7 +119,7 @@ public class BakeryBatchService implements BakeryBatchUseCase {
         // --- Paso 3: insertar cabecera para obtener batchId/folio ---
         LocalDate batchDate = LocalDate.now(MX);
         long batchId = batchRepository.insertHeader(
-                branchId, batchDate, batch.createdBy(), batch.createdRole(), batch.notes());
+                branchId, batchDate, batch.createdBy(), batch.createdRole(), batch.notes(), testMode);
 
         // --- Paso 4: consumo de MP (barrera dura de existencia) + kardex ---
         for (ResolvedInput in : resolvedInputs) {

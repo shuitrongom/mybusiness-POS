@@ -13,6 +13,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -178,8 +179,14 @@ public class BakeryBatchController {
     public record BatchRequest(
             @NotNull Long branchId,
             String notes,
-            @NotEmpty List<InputLine> inputs,
-            @NotEmpty List<OutputLine> outputs) {
+            // ⚠️ RF-2.1 (modo prueba / aprendizaje): `inputs` admite lista VACÍA A PROPÓSITO.
+            //    NO volver a @NotEmpty: eso rompería en SILENCIO el modo prueba del panadero
+            //    (devolvería 400 antes del servicio) sin que ningún test de compilación lo note.
+            //    La obligatoriedad de insumos en REAL vive en BakeryBatchService, CONDICIONAL al
+            //    flag test_mode (no en esta anotación). @Valid es obligatorio aquí: sin él las
+            //    restricciones de línea (@NotNull/@Positive/@DecimalMax de InputLine) no se evalúan.
+            @NotNull @Valid @Size(max = 100) List<InputLine> inputs,
+            @NotEmpty @Valid @Size(max = 100) List<OutputLine> outputs) {
     }
 
     public record InputLine(
